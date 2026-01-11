@@ -122,9 +122,9 @@ static int start_maude(const char *maude_path) {
 /* Stop the Maude subprocess */
 static void stop_maude(void) {
     if (maude.pid > 0) {
-        /* Send quit command */
+        /* Send quit command (ignore errors during shutdown) */
         const char *quit_cmd = "quit\n";
-        write(maude.stdin_fd, quit_cmd, strlen(quit_cmd));
+        (void)write(maude.stdin_fd, quit_cmd, strlen(quit_cmd));
 
         /* Give it a moment to exit gracefully */
         usleep(100000);
@@ -149,7 +149,10 @@ static int send_command(const char *cmd, size_t len) {
 
     /* Ensure command ends with newline */
     if (len == 0 || cmd[len - 1] != '\n') {
-        write(maude.stdin_fd, "\n", 1);
+        if (write(maude.stdin_fd, "\n", 1) < 0) {
+            perror("write newline to maude");
+            return -1;
+        }
     }
 
     return 0;
@@ -256,7 +259,7 @@ static int wait_for_ready(void) {
     
     /* With -no-banner, Maude may not output anything until we send a command.
      * Send a simple newline to trigger the prompt. */
-    write(maude.stdin_fd, "\n", 1);
+    (void)write(maude.stdin_fd, "\n", 1);
     
     int result = read_until_prompt(buf, BUFSIZE, 10000);
     if (result >= 0) {
