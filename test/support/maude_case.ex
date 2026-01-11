@@ -74,7 +74,7 @@ defmodule ExMaude.MaudeCase do
   setup context do
     # Skip test if it requires integration but Maude is not available
     if context[:integration] && !context[:maude_available] do
-      {:ok, skip: true}
+      :skip
     else
       :ok
     end
