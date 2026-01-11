@@ -1,0 +1,13 @@
+[package]
+name = "ex_maude_nif"
+version = "0.1.0"
+edition = "2021"
+authors = ["Tobias Bohwalli <hi@futhr.io>"]
+description = "Rustler NIF for ExMaude - manages Maude subprocess"
+
+[lib]
+name = "ex_maude_nif"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.34"
