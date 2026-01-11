@@ -1,0 +1,17 @@
+/_build/
+/cover/
+/deps/
+/doc/
+/tmp/
+erl_crash.dump
+*.ez
+ex_maude-*.tar
+.elixir_ls/
+.cache/
+.vscode/
+compile_commands.json
+priv/plts/
+native/*/target/
+Cargo.lock
+c_src/*.o
+c_src/maude_bridge
