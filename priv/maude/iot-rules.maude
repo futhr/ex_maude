@@ -1,0 +1,393 @@
+*** IoT Rule Conflict Detection Module for Orvane Platform
+*** Based on AutoIoT paper (arxiv.org/abs/2411.10665)
+***
+*** This module implements formal verification of IoT automation rules,
+*** detecting four types of conflicts:
+***
+***   1. State Conflict: Two rules target the same device property with
+***      incompatible values (e.g., light on vs off)
+***
+***   2. Environment Conflict: Two rules produce opposing environmental
+***      effects (e.g., open window vs close window for temperature)
+***
+***   3. State Cascade: A rule's output triggers another rule, potentially
+***      causing unexpected chains (e.g., door -> light -> sound -> light)
+***
+***   4. State-Environment Cascade: Combined state and environment effects
+***      cascade through multiple rules
+
+fmod THING-ID is
+  protecting STRING .
+  sort ThingId .
+  op thing : String -> ThingId [ctor] .
+
+  op eqThingId : ThingId ThingId -> Bool .
+  eq eqThingId(thing(S1:String), thing(S2:String)) = S1:String == S2:String .
+endfm
+
+*** Use String-based values to avoid subsort conflicts
+fmod PROPERTY-VALUE is
+  protecting STRING .
+  protecting BOOL .
+
+  sort PropertyValue .
+
+  *** Wrap all values as strings to avoid type conflicts
+  op strVal : String -> PropertyValue [ctor] .
+  op intVal : String -> PropertyValue [ctor] .
+  op boolVal : Bool -> PropertyValue [ctor] .
+  op null : -> PropertyValue [ctor] .
+
+  op eqPropValue : PropertyValue PropertyValue -> Bool .
+  eq eqPropValue(strVal(S1:String), strVal(S2:String)) = S1:String == S2:String .
+  eq eqPropValue(intVal(S1:String), intVal(S2:String)) = S1:String == S2:String .
+  eq eqPropValue(boolVal(B1:Bool), boolVal(B2:Bool)) = B1:Bool == B2:Bool .
+  eq eqPropValue(V1:PropertyValue, V2:PropertyValue) = false [owise] .
+endfm
+
+fmod CONDITION is
+  protecting PROPERTY-VALUE .
+  protecting THING-ID .
+
+  sort Condition .
+
+  *** Property conditions (device state)
+  op propEq : String PropertyValue -> Condition [ctor] .
+  op propGt : String PropertyValue -> Condition [ctor] .
+  op propLt : String PropertyValue -> Condition [ctor] .
+  op propGte : String PropertyValue -> Condition [ctor] .
+  op propLte : String PropertyValue -> Condition [ctor] .
+
+  *** Environment conditions
+  op envEq : String PropertyValue -> Condition [ctor] .
+  op envGt : String PropertyValue -> Condition [ctor] .
+  op envLt : String PropertyValue -> Condition [ctor] .
+
+  *** Logical operators
+  op and : Condition Condition -> Condition [ctor assoc] .
+  op or : Condition Condition -> Condition [ctor assoc] .
+  op not : Condition -> Condition [ctor] .
+  op always : -> Condition [ctor] .
+
+  *** Extract property name from condition
+  op conditionProperty : Condition -> String .
+  eq conditionProperty(propEq(P:String, V:PropertyValue)) = P:String .
+  eq conditionProperty(propGt(P:String, V:PropertyValue)) = P:String .
+  eq conditionProperty(propLt(P:String, V:PropertyValue)) = P:String .
+  eq conditionProperty(propGte(P:String, V:PropertyValue)) = P:String .
+  eq conditionProperty(propLte(P:String, V:PropertyValue)) = P:String .
+  eq conditionProperty(envEq(P:String, V:PropertyValue)) = P:String .
+  eq conditionProperty(envGt(P:String, V:PropertyValue)) = P:String .
+  eq conditionProperty(envLt(P:String, V:PropertyValue)) = P:String .
+  eq conditionProperty(C:Condition) = "" [owise] .
+
+  *** Extract value from condition
+  op conditionValue : Condition -> PropertyValue .
+  eq conditionValue(propEq(P:String, V:PropertyValue)) = V:PropertyValue .
+  eq conditionValue(envEq(P:String, V:PropertyValue)) = V:PropertyValue .
+  eq conditionValue(C:Condition) = null [owise] .
+endfm
+
+fmod ACTION is
+  protecting THING-ID .
+  protecting PROPERTY-VALUE .
+
+  sort Action .
+  sort ActionList .
+  subsort Action < ActionList .
+
+  *** Device property actions
+  op setProp : ThingId String PropertyValue -> Action [ctor] .
+
+  *** Environment actions
+  op setEnv : String PropertyValue -> Action [ctor] .
+
+  *** Invoke device action (e.g., actuator command)
+  op invoke : ThingId String -> Action [ctor] .
+
+  *** Empty and list constructors
+  op nil : -> ActionList [ctor] .
+  op _;_ : ActionList ActionList -> ActionList [ctor assoc id: nil] .
+
+  *** Extract target thing from action
+  op actionTarget : Action -> ThingId .
+  eq actionTarget(setProp(T:ThingId, P:String, V:PropertyValue)) = T:ThingId .
+  eq actionTarget(invoke(T:ThingId, A:String)) = T:ThingId .
+
+  *** Extract property from action
+  op actionProperty : Action -> String .
+  eq actionProperty(setProp(T:ThingId, P:String, V:PropertyValue)) = P:String .
+  eq actionProperty(setEnv(P:String, V:PropertyValue)) = P:String .
+  eq actionProperty(A:Action) = "" [owise] .
+
+  *** Extract value from action
+  op actionValue : Action -> PropertyValue .
+  eq actionValue(setProp(T:ThingId, P:String, V:PropertyValue)) = V:PropertyValue .
+  eq actionValue(setEnv(P:String, V:PropertyValue)) = V:PropertyValue .
+  eq actionValue(A:Action) = null [owise] .
+endfm
+
+fmod RULE is
+  protecting CONDITION .
+  protecting ACTION .
+
+  sort Rule .
+  sort RuleSet .
+  subsort Rule < RuleSet .
+
+  *** Rule constructor: rule(id, targetThing, trigger, actions, priority)
+  op rule : String ThingId Condition ActionList Nat -> Rule [ctor] .
+
+  *** RuleSet constructors
+  op empty : -> RuleSet [ctor] .
+  op _,_ : RuleSet RuleSet -> RuleSet [ctor assoc comm id: empty] .
+
+  *** Accessors
+  op ruleId : Rule -> String .
+  eq ruleId(rule(Id:String, T:ThingId, C:Condition, A:ActionList, P:Nat)) = Id:String .
+
+  op target : Rule -> ThingId .
+  eq target(rule(Id:String, T:ThingId, C:Condition, A:ActionList, P:Nat)) = T:ThingId .
+
+  op trigger : Rule -> Condition .
+  eq trigger(rule(Id:String, T:ThingId, C:Condition, A:ActionList, P:Nat)) = C:Condition .
+
+  op actions : Rule -> ActionList .
+  eq actions(rule(Id:String, T:ThingId, C:Condition, A:ActionList, P:Nat)) = A:ActionList .
+
+  op priority : Rule -> Nat .
+  eq priority(rule(Id:String, T:ThingId, C:Condition, A:ActionList, P:Nat)) = P:Nat .
+endfm
+
+fmod CONFLICT is
+  protecting RULE .
+
+  sort ConflictType .
+  sort Conflict .
+  sort ConflictSet .
+  subsort Conflict < ConflictSet .
+
+  *** Conflict types
+  ops stateConflict envConflict stateCascade stateEnvCascade : -> ConflictType [ctor] .
+
+  *** Conflict constructor
+  op conflict : ConflictType Rule Rule String -> Conflict [ctor] .
+
+  *** Accessors
+  op conflictType : Conflict -> ConflictType .
+  eq conflictType(conflict(T:ConflictType, R1:Rule, R2:Rule, S:String)) = T:ConflictType .
+
+  op conflictRule1 : Conflict -> Rule .
+  eq conflictRule1(conflict(T:ConflictType, R1:Rule, R2:Rule, S:String)) = R1:Rule .
+
+  op conflictRule2 : Conflict -> Rule .
+  eq conflictRule2(conflict(T:ConflictType, R1:Rule, R2:Rule, S:String)) = R2:Rule .
+
+  op conflictReason : Conflict -> String .
+  eq conflictReason(conflict(T:ConflictType, R1:Rule, R2:Rule, S:String)) = S:String .
+
+  *** ConflictSet constructors
+  op noConflict : -> ConflictSet [ctor] .
+  op _|_ : ConflictSet ConflictSet -> ConflictSet [ctor assoc comm id: noConflict] .
+endfm
+
+fmod CONFLICT-DETECTOR is
+  protecting CONFLICT .
+
+  *** ============================================================
+  *** ACTION CONFLICT DETECTION
+  *** ============================================================
+
+  *** Check if two actions conflict (same target, same property, different values)
+  op actionsConflict : Action Action -> Bool .
+  eq actionsConflict(setProp(T1:ThingId, P1:String, V1:PropertyValue),
+                     setProp(T2:ThingId, P2:String, V2:PropertyValue)) =
+    eqThingId(T1:ThingId, T2:ThingId) and P1:String == P2:String and
+    not eqPropValue(V1:PropertyValue, V2:PropertyValue) .
+  eq actionsConflict(setEnv(P1:String, V1:PropertyValue),
+                     setEnv(P2:String, V2:PropertyValue)) =
+    P1:String == P2:String and not eqPropValue(V1:PropertyValue, V2:PropertyValue) .
+  eq actionsConflict(A1:Action, A2:Action) = false [owise] .
+
+  *** Check if action conflicts with any action in a list
+  op hasConflictingAction : Action ActionList -> Bool .
+  eq hasConflictingAction(A:Action, nil) = false .
+  eq hasConflictingAction(A:Action, A2:Action ; AL:ActionList) =
+    actionsConflict(A:Action, A2:Action) or hasConflictingAction(A:Action, AL:ActionList) .
+
+  *** Check if two action lists have any conflicting actions
+  op actionListsConflict : ActionList ActionList -> Bool .
+  eq actionListsConflict(nil, AL:ActionList) = false .
+  eq actionListsConflict(A:Action ; AL1:ActionList, AL2:ActionList) =
+    hasConflictingAction(A:Action, AL2:ActionList) or actionListsConflict(AL1:ActionList, AL2:ActionList) .
+
+  *** ============================================================
+  *** 1. STATE CONFLICT DETECTION
+  *** Two rules target the same thing with conflicting state changes
+  *** ============================================================
+
+  op detectStateConflict : Rule Rule -> ConflictSet .
+  eq detectStateConflict(R1:Rule, R2:Rule) =
+    if eqThingId(target(R1:Rule), target(R2:Rule)) and
+       actionListsConflict(actions(R1:Rule), actions(R2:Rule))
+    then conflict(stateConflict, R1:Rule, R2:Rule, "Same thing, conflicting state changes")
+    else noConflict
+    fi .
+
+  *** ============================================================
+  *** 2. ENVIRONMENT CONFLICT DETECTION
+  *** Two rules produce opposing environmental effects
+  *** ============================================================
+
+  *** Check if action list contains conflicting env action
+  op hasConflictingEnvAction : Action ActionList -> Bool .
+  eq hasConflictingEnvAction(setEnv(P1:String, V1:PropertyValue), nil) = false .
+  eq hasConflictingEnvAction(setEnv(P1:String, V1:PropertyValue),
+                              setEnv(P2:String, V2:PropertyValue) ; AL:ActionList) =
+    (P1:String == P2:String and not eqPropValue(V1:PropertyValue, V2:PropertyValue)) or
+    hasConflictingEnvAction(setEnv(P1:String, V1:PropertyValue), AL:ActionList) .
+  eq hasConflictingEnvAction(A:Action, A2:Action ; AL:ActionList) =
+    hasConflictingEnvAction(A:Action, AL:ActionList) [owise] .
+
+  *** Check if two action lists have conflicting environment effects
+  op envActionListsConflict : ActionList ActionList -> Bool .
+  eq envActionListsConflict(nil, AL:ActionList) = false .
+  eq envActionListsConflict(setEnv(P:String, V:PropertyValue) ; AL1:ActionList, AL2:ActionList) =
+    hasConflictingEnvAction(setEnv(P:String, V:PropertyValue), AL2:ActionList) or
+    envActionListsConflict(AL1:ActionList, AL2:ActionList) .
+  eq envActionListsConflict(A:Action ; AL1:ActionList, AL2:ActionList) =
+    envActionListsConflict(AL1:ActionList, AL2:ActionList) [owise] .
+
+  op detectEnvConflict : Rule Rule -> ConflictSet .
+  eq detectEnvConflict(R1:Rule, R2:Rule) =
+    if envActionListsConflict(actions(R1:Rule), actions(R2:Rule))
+    then conflict(envConflict, R1:Rule, R2:Rule, "Conflicting environment changes")
+    else noConflict
+    fi .
+
+  *** ============================================================
+  *** 3. STATE CASCADE DETECTION
+  *** One rule's output triggers another rule (chaining)
+  *** ============================================================
+
+  *** Check if an action could trigger a condition
+  op actionTriggers : Action Condition -> Bool .
+  *** setProp triggers propEq if property matches and value equals
+  eq actionTriggers(setProp(T:ThingId, P:String, V:PropertyValue),
+                    propEq(P2:String, V2:PropertyValue)) =
+    P:String == P2:String and eqPropValue(V:PropertyValue, V2:PropertyValue) .
+  *** setEnv triggers envEq if property matches and value equals
+  eq actionTriggers(setEnv(P:String, V:PropertyValue),
+                    envEq(P2:String, V2:PropertyValue)) =
+    P:String == P2:String and eqPropValue(V:PropertyValue, V2:PropertyValue) .
+  eq actionTriggers(A:Action, C:Condition) = false [owise] .
+
+  *** Check if any action in list could trigger condition
+  op actionListTriggers : ActionList Condition -> Bool .
+  eq actionListTriggers(nil, C:Condition) = false .
+  eq actionListTriggers(A:Action ; AL:ActionList, C:Condition) =
+    actionTriggers(A:Action, C:Condition) or actionListTriggers(AL:ActionList, C:Condition) .
+
+  *** Check if R1's actions could trigger R2
+  op ruleTriggers : Rule Rule -> Bool .
+  eq ruleTriggers(R1:Rule, R2:Rule) =
+    actionListTriggers(actions(R1:Rule), trigger(R2:Rule)) .
+
+  op detectStateCascade : Rule Rule -> ConflictSet .
+  eq detectStateCascade(R1:Rule, R2:Rule) =
+    if ruleTriggers(R1:Rule, R2:Rule) and
+       not (ruleId(R1:Rule) == ruleId(R2:Rule))
+    then conflict(stateCascade, R1:Rule, R2:Rule, "Rule output triggers another rule")
+    else noConflict
+    fi .
+
+  *** ============================================================
+  *** 4. STATE-ENVIRONMENT CASCADE DETECTION
+  *** Combined state and environment effects cascade
+  *** ============================================================
+
+  *** Check if R1's state change affects environment which triggers R2
+  op detectStateEnvCascade : Rule Rule -> ConflictSet .
+  eq detectStateEnvCascade(R1:Rule, R2:Rule) =
+    if hasEnvAction(actions(R1:Rule)) and
+       envTriggers(actions(R1:Rule), trigger(R2:Rule)) and
+       not (ruleId(R1:Rule) == ruleId(R2:Rule))
+    then conflict(stateEnvCascade, R1:Rule, R2:Rule, "State-environment cascade detected")
+    else noConflict
+    fi .
+
+  *** Check if action list contains any env action
+  op hasEnvAction : ActionList -> Bool .
+  eq hasEnvAction(nil) = false .
+  eq hasEnvAction(setEnv(P:String, V:PropertyValue) ; AL:ActionList) = true .
+  eq hasEnvAction(A:Action ; AL:ActionList) = hasEnvAction(AL:ActionList) [owise] .
+
+  *** Check if env actions could trigger condition
+  op envTriggers : ActionList Condition -> Bool .
+  eq envTriggers(nil, C:Condition) = false .
+  eq envTriggers(setEnv(P:String, V:PropertyValue) ; AL:ActionList, C:Condition) =
+    actionTriggers(setEnv(P:String, V:PropertyValue), C:Condition) or
+    envTriggers(AL:ActionList, C:Condition) .
+  eq envTriggers(A:Action ; AL:ActionList, C:Condition) =
+    envTriggers(AL:ActionList, C:Condition) [owise] .
+
+  *** ============================================================
+  *** COMBINED CONFLICT DETECTION
+  *** ============================================================
+
+  *** Detect all types of conflicts between two rules
+  op detectPairConflicts : Rule Rule -> ConflictSet .
+  eq detectPairConflicts(R1:Rule, R2:Rule) =
+    detectStateConflict(R1:Rule, R2:Rule) |
+    detectEnvConflict(R1:Rule, R2:Rule) |
+    detectStateCascade(R1:Rule, R2:Rule) |
+    detectStateEnvCascade(R1:Rule, R2:Rule) .
+
+  *** Detect all conflicts within a rule set
+  op detectConflicts : RuleSet -> ConflictSet .
+  eq detectConflicts(empty) = noConflict .
+  eq detectConflicts(R:Rule) = noConflict .
+  eq detectConflicts(R1:Rule, R2:Rule) = detectStateConflict(R1:Rule, R2:Rule) .
+  eq detectConflicts(R1:Rule, R2:Rule, RS:RuleSet) =
+    detectStateConflict(R1:Rule, R2:Rule) |
+    detectConflicts(R1:Rule, RS:RuleSet) |
+    detectConflicts(R2:Rule, RS:RuleSet) .
+
+  *** Detect only environment conflicts
+  op detectEnvConflicts : RuleSet -> ConflictSet .
+  eq detectEnvConflicts(empty) = noConflict .
+  eq detectEnvConflicts(R:Rule) = noConflict .
+  eq detectEnvConflicts(R1:Rule, R2:Rule) = detectEnvConflict(R1:Rule, R2:Rule) .
+  eq detectEnvConflicts(R1:Rule, R2:Rule, RS:RuleSet) =
+    detectEnvConflict(R1:Rule, R2:Rule) |
+    detectEnvConflicts(R1:Rule, RS:RuleSet) |
+    detectEnvConflicts(R2:Rule, RS:RuleSet) .
+
+  *** Detect cascade conflicts (both types)
+  op detectCascades : RuleSet -> ConflictSet .
+  eq detectCascades(empty) = noConflict .
+  eq detectCascades(R:Rule) = noConflict .
+  eq detectCascades(R1:Rule, R2:Rule) =
+    detectStateCascade(R1:Rule, R2:Rule) |
+    detectStateCascade(R2:Rule, R1:Rule) |
+    detectStateEnvCascade(R1:Rule, R2:Rule) |
+    detectStateEnvCascade(R2:Rule, R1:Rule) .
+  eq detectCascades(R1:Rule, R2:Rule, RS:RuleSet) =
+    detectStateCascade(R1:Rule, R2:Rule) |
+    detectStateCascade(R2:Rule, R1:Rule) |
+    detectStateEnvCascade(R1:Rule, R2:Rule) |
+    detectStateEnvCascade(R2:Rule, R1:Rule) |
+    detectCascades(R1:Rule, RS:RuleSet) |
+    detectCascades(R2:Rule, RS:RuleSet) .
+
+  *** Detect all conflict types
+  op detectAllConflicts : RuleSet -> ConflictSet .
+  eq detectAllConflicts(empty) = noConflict .
+  eq detectAllConflicts(R:Rule) = noConflict .
+  eq detectAllConflicts(R1:Rule, R2:Rule) = detectPairConflicts(R1:Rule, R2:Rule) .
+  eq detectAllConflicts(R1:Rule, R2:Rule, RS:RuleSet) =
+    detectPairConflicts(R1:Rule, R2:Rule) |
+    detectAllConflicts(R1:Rule, RS:RuleSet) |
+    detectAllConflicts(R2:Rule, RS:RuleSet) .
+
+endfm
