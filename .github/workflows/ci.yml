@@ -19,12 +19,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - elixir: "1.15"
-            otp: "25"
           - elixir: "1.16"
             otp: "26"
           - elixir: "1.17"
             otp: "27"
+          - elixir: "1.18"
+            otp: "27"
+          - elixir: "1.18"
+            otp: "28"
 
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +56,7 @@ jobs:
         run: mix test --exclude integration
 
       - name: Upload coverage to Coveralls
-        if: matrix.elixir == '1.17' && matrix.otp == '27'
+        if: matrix.elixir == '1.18' && matrix.otp == '28'
         run: mix coveralls.github --exclude integration
 
   quality:
@@ -67,8 +69,8 @@ jobs:
       - name: Setup Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.17"
-          otp-version: "27"
+          elixir-version: "1.18"
+          otp-version: "28"
 
       - name: Restore deps cache
         uses: actions/cache@v4
@@ -76,7 +78,7 @@ jobs:
           path: |
             deps
             _build
-          key: deps-${{ runner.os }}-27-1.17-${{ hashFiles('**/mix.lock') }}
+          key: deps-${{ runner.os }}-28-1.18-${{ hashFiles('**/mix.lock') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -103,8 +105,8 @@ jobs:
       - name: Setup Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.17"
-          otp-version: "27"
+          elixir-version: "1.18"
+          otp-version: "28"
 
       - name: Restore deps cache
         uses: actions/cache@v4
@@ -112,13 +114,13 @@ jobs:
           path: |
             deps
             _build
-          key: deps-${{ runner.os }}-27-1.17-${{ hashFiles('**/mix.lock') }}
+          key: deps-${{ runner.os }}-28-1.18-${{ hashFiles('**/mix.lock') }}
 
       - name: Restore PLT cache
         uses: actions/cache@v4
         with:
           path: priv/plts
-          key: plt-${{ runner.os }}-27-1.17-${{ hashFiles('**/mix.lock') }}
+          key: plt-${{ runner.os }}-28-1.18-${{ hashFiles('**/mix.lock') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -136,8 +138,8 @@ jobs:
       - name: Setup Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.17"
-          otp-version: "27"
+          elixir-version: "1.18"
+          otp-version: "28"
 
       - name: Restore deps cache
         uses: actions/cache@v4
@@ -145,7 +147,7 @@ jobs:
           path: |
             deps
             _build
-          key: deps-${{ runner.os }}-27-1.17-${{ hashFiles('**/mix.lock') }}
+          key: deps-${{ runner.os }}-28-1.18-${{ hashFiles('**/mix.lock') }}
 
       - name: Install dependencies
         run: mix deps.get
