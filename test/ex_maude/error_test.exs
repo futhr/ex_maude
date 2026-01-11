@@ -338,7 +338,7 @@ defmodule ExMaude.ErrorTest do
   describe "Exception behaviour" do
     test "error is an exception" do
       error = Error.new(:test, "test message")
-      assert Exception.exception?(error)
+      assert is_exception(error)
     end
 
     test "can be raised" do
