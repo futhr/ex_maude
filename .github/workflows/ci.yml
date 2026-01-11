@@ -1,4 +1,4 @@
-name: CI
+name: Continuous Integration
 
 on:
   push:
@@ -49,11 +49,11 @@ jobs:
         run: mix compile --warnings-as-errors
 
       - name: Run tests
-        run: mix test --exclude integration
+        run: mix test
 
       - name: Upload coverage to Coveralls
         if: matrix.elixir == '1.18' && matrix.otp == '28'
-        run: mix coveralls.github --exclude integration
+        run: mix coveralls.github
 
   quality:
     name: Code Quality
