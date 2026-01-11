@@ -30,7 +30,7 @@ defmodule ExMaude.Backend.NIFIntegrationTest do
       assert true
     end
   else
-    alias ExMaude.Backend.NIF
+    alias ExMaude.Backend.NIF, warn: false
 
     describe "struct" do
       test "has expected fields" do

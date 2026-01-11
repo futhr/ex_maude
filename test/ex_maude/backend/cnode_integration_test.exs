@@ -36,7 +36,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
       assert true
     end
   else
-    alias ExMaude.Backend.CNode
+    alias ExMaude.Backend.CNode, warn: false
 
     describe "struct" do
       test "has expected fields" do
