@@ -15,3 +15,4 @@ native/*/target/
 Cargo.lock
 c_src/*.o
 c_src/maude_bridge
+priv/maude_bridge
