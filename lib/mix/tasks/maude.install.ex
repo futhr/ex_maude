@@ -86,27 +86,6 @@ defmodule Mix.Tasks.Maude.Install do
   @api_timeout 30_000
   @max_download_size 100 * 1024 * 1024
 
-  # Platform patterns for matching asset names across different release naming conventions
-  @platform_patterns %{
-    "darwin-arm64" => [
-      ~r/macos-arm64\.zip$/i,
-      ~r/macos-arm\.zip$/i,
-      ~r/darwin-arm64\.zip$/i,
-      ~r/darwin64-arm\.zip$/i
-    ],
-    "darwin-x86_64" => [
-      ~r/macos-x86_64\.zip$/i,
-      ~r/macos\.zip$/i,
-      ~r/darwin-x86_64\.zip$/i,
-      ~r/darwin64\.zip$/i
-    ],
-    "linux-x86_64" => [
-      ~r/linux-x86_64\.zip$/i,
-      ~r/linux\.zip$/i,
-      ~r/linux64\.zip$/i
-    ]
-  }
-
   # coveralls-ignore-start
   # Mix task - tested via integration tests with :network tag
 
@@ -376,7 +355,7 @@ defmodule Mix.Tasks.Maude.Install do
   end
 
   defp find_asset_for_platform(release, platform) do
-    patterns = Map.get(@platform_patterns, platform, [])
+    patterns = Map.get(platform_patterns(), platform, [])
     assets = release["assets"] || []
 
     Enum.find_value(assets, :error, fn asset ->
@@ -400,7 +379,7 @@ defmodule Mix.Tasks.Maude.Install do
   defp get_release_platforms(release) do
     assets = release["assets"] || []
 
-    Enum.flat_map(@platform_patterns, fn {platform, patterns} ->
+    Enum.flat_map(platform_patterns(), fn {platform, patterns} ->
       if Enum.any?(assets, fn asset ->
            Enum.any?(patterns, &Regex.match?(&1, asset["name"]))
          end) do
@@ -873,6 +852,30 @@ defmodule Mix.Tasks.Maude.Install do
           Fedora/RHEL:   sudo dnf install gmp ncurses-compat-libs
         """)
     end
+  end
+
+  # Platform patterns for matching asset names across different release naming conventions.
+  # Defined as a function to avoid compile-time serialization issues with Regex structs.
+  defp platform_patterns do
+    %{
+      "darwin-arm64" => [
+        ~r/macos-arm64\.zip$/i,
+        ~r/macos-arm\.zip$/i,
+        ~r/darwin-arm64\.zip$/i,
+        ~r/darwin64-arm\.zip$/i
+      ],
+      "darwin-x86_64" => [
+        ~r/macos-x86_64\.zip$/i,
+        ~r/macos\.zip$/i,
+        ~r/darwin-x86_64\.zip$/i,
+        ~r/darwin64\.zip$/i
+      ],
+      "linux-x86_64" => [
+        ~r/linux-x86_64\.zip$/i,
+        ~r/linux\.zip$/i,
+        ~r/linux64\.zip$/i
+      ]
+    }
   end
 
   # coveralls-ignore-stop
