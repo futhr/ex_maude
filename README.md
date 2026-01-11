@@ -24,6 +24,8 @@ a powerful formal specification language based on rewriting logic. Use ExMaude f
 - **Formal Verification** - Verify properties of concurrent and distributed systems
 - **IoT Rule Conflict Detection** - Detect conflicts in automation rules
 
+---
+
 ## Features
 
 | Feature | Description |
@@ -34,6 +36,8 @@ a powerful formal specification language based on rewriting logic. Use ExMaude f
 | **Output Parsing** | Structured parsing of Maude results |
 | **Telemetry** | Built-in observability events |
 | **IoT Module** | Formal conflict detection for automation rules |
+
+---
 
 ## Installation
 
@@ -54,6 +58,8 @@ mix deps.get
 mix maude.install
 ```
 
+---
+
 ## Quick Start
 
 ```elixir
@@ -69,6 +75,8 @@ mix maude.install
 # Load a custom module
 :ok = ExMaude.load_file("/path/to/my-module.maude")
 ```
+
+---
 
 ## Configuration
 
@@ -109,6 +117,8 @@ ExMaude.Backend.available_backends()
 # Switch backend at runtime (for testing)
 Application.put_env(:ex_maude, :backend, :cnode)
 ```
+
+---
 
 ## API Reference
 
@@ -151,6 +161,8 @@ endfm
 {:ok, version} = ExMaude.version()
 ```
 
+---
+
 ## IoT Rule Conflict Detection
 
 ExMaude includes a Maude module implementing formal conflict detection for IoT automation rules,
@@ -177,6 +189,8 @@ based on the [AutoIoT paper](https://arxiv.org/abs/2411.10665).
 | **Environment Conflict** | Opposing environmental effects |
 | **State Cascading** | Rule output triggers conflicting rule |
 | **State-Env Cascading** | Combined cascading effects |
+
+---
 
 ## Telemetry
 
@@ -240,6 +254,8 @@ end
 
 For complete event documentation, see `ExMaude.Telemetry`.
 
+---
+
 ## Architecture
 
 ExMaude uses a pluggable backend architecture, allowing different communication strategies:
@@ -277,6 +293,8 @@ ExMaude
     └── ExMaude.Telemetry  Telemetry events and helpers
 ```
 
+---
+
 ## Development
 
 ```bash
@@ -289,25 +307,21 @@ mix docs  # Generate documentation
 ### Running Benchmarks
 
 ```bash
-# Parser benchmarks
-mix bench
-
-# Backend benchmarks (Port backend only)
-mix bench.backends
-
-# Backend benchmarks (All backends: Port + C-Node)
-mix bench.backends.all
+mix bench              # Parser benchmarks
+mix bench.backends     # Backend benchmarks (Port backend only)
+mix bench.backends.all # Backend benchmarks (All backends: Port + C-Node)
 ```
 
 **C-Node Testing:**
 ```bash
-# Run C-Node integration tests
-mix test.cnode
+mix test.cnode # Run C-Node integration tests
 ```
 
 **Note:** C-Node requires:
 1. Compiled binary: `cd c_src && make`
 2. The `mix bench.backends.all` and `mix test.cnode` aliases automatically handle Erlang distribution
+
+---
 
 ## Performance
 
@@ -332,21 +346,14 @@ ExMaude includes comprehensive benchmarks to help you understand performance cha
 
 See [Development](#development) section for benchmark commands.
 
-## Quality Assurance
-
-ExMaude maintains high code quality standards:
-
-- **Credo** - Static code analysis
-- **Dialyzer** - Type checking via Dialyxir
-- **ExCoveralls** - Test coverage reporting
-- **Doctor** - Documentation coverage
-- **Sobelow** - Security analysis
-- **MixAudit** - Dependency vulnerability scanning
+---
 
 ## Documentation
 
 - [HexDocs](https://hexdocs.pm/ex_maude) - Full API documentation
 - [AGENTS.md](AGENTS.md) - AI agent integration guide
+
+---
 
 ## References
 
@@ -355,9 +362,13 @@ ExMaude maintains high code quality standards:
 - [AutoIoT Paper](https://arxiv.org/abs/2411.10665) - IoT conflict detection research
 - [Haskell Maude Bindings](https://hackage.haskell.org/package/maude) - Reference implementation
 
+---
+
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
 
 ## License
 
