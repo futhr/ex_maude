@@ -1,16 +1,2 @@
-# Git LFS configuration for binary files
-# See: https://git-lfs.github.com/
-
-# Maude platform-specific binaries (~15-20MB each)
-priv/maude/bin/maude filter=lfs diff=lfs merge=lfs -text
-priv/maude/bin/maude-* filter=lfs diff=lfs merge=lfs -text
-
-# C-Node bridge binary (Phase 2)
-priv/maude_bridge filter=lfs diff=lfs merge=lfs -text
-
-# Shared libraries that may be bundled
-priv/**/*.so filter=lfs diff=lfs merge=lfs -text
-priv/**/*.dylib filter=lfs diff=lfs merge=lfs -text
-
 # Auto-detect text files and normalize line endings
 * text=auto
