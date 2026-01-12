@@ -1,0 +1,197 @@
+# ExMaude Benchmarks
+
+```elixir
+Mix.install(
+  [
+    {:ex_maude, path: Path.join(__DIR__, ".."), env: :dev}
+  ],
+  config_path: :ex_maude,
+  lockfile: :ex_maude,
+  config: [
+    ex_maude: [start_pool: true, use_pty: false]
+  ]
+)
+```
+
+## Pool Status
+
+```elixir
+ExMaude.Pool.status()
+```
+
+## Single Operation Timing
+
+### Reduce Operations
+
+```elixir
+# Warm up
+ExMaude.reduce("NAT", "1 + 1")
+
+# Measure single reduce
+{time_us, {:ok, _result}} = :timer.tc(fn ->
+  ExMaude.reduce("NAT", "100 * 100")
+end)
+
+IO.puts("Single reduce: #{time_us} µs (#{Float.round(time_us / 1000, 2)} ms)")
+```
+
+### Complex Expressions
+
+```elixir
+# More complex computation
+{time_us, {:ok, result}} = :timer.tc(fn ->
+  ExMaude.reduce("NAT", "2 ^ 10")
+end)
+
+IO.puts("2^10 reduce: #{time_us} µs")
+IO.puts("Result: #{result.term}")
+```
+
+## Concurrent Operations
+
+### Parallel Reduce
+
+```elixir
+# Number of concurrent operations
+n = 20
+
+{time_us, results} = :timer.tc(fn ->
+  1..n
+  |> Enum.map(fn i ->
+    Task.async(fn -> ExMaude.reduce("NAT", "#{i} * #{i}") end)
+  end)
+  |> Task.await_many()
+end)
+
+success_count = Enum.count(results, &match?({:ok, _}, &1))
+
+IO.puts("#{n} concurrent operations: #{time_us} µs (#{Float.round(time_us / 1000, 2)} ms)")
+IO.puts("Successful: #{success_count}/#{n}")
+IO.puts("Average per operation: #{Float.round(time_us / n, 2)} µs")
+```
+
+### Throughput Test
+
+```elixir
+# Measure throughput over 1 second
+duration_ms = 1000
+start_time = System.monotonic_time(:millisecond)
+end_time = start_time + duration_ms
+
+count =
+  Stream.repeatedly(fn -> ExMaude.reduce("NAT", "1 + 1") end)
+  |> Stream.take_while(fn _ -> System.monotonic_time(:millisecond) < end_time end)
+  |> Enum.count()
+
+IO.puts("Throughput: #{count} operations/second")
+```
+
+## Search Performance
+
+```elixir
+# Load traffic light module
+traffic_light = """
+mod TRAFFIC-LIGHT is
+  sort Light .
+  ops red yellow green : -> Light [ctor] .
+
+  rl [to-green] : red => green .
+  rl [to-yellow] : green => yellow .
+  rl [to-red] : yellow => red .
+endm
+"""
+
+ExMaude.load_module(traffic_light)
+```
+
+```elixir
+# Search timing at different depths
+for depth <- [1, 3, 5, 10] do
+  {time_us, {:ok, result}} = :timer.tc(fn ->
+    ExMaude.search("TRAFFIC-LIGHT", "red", "L:Light",
+      max_solutions: 100,
+      max_depth: depth
+    )
+  end)
+
+  IO.puts("Depth #{depth}: #{time_us} µs, #{result.solutions} solutions")
+end
+
+:ok
+```
+
+## String Operations
+
+```elixir
+# String concatenation performance
+{time_us, {:ok, result}} = :timer.tc(fn ->
+  ExMaude.reduce("STRING", ~s("a" + "b" + "c" + "d" + "e"))
+end)
+
+IO.puts("String concat (5 strings): #{time_us} µs")
+IO.puts("Result: #{result.term}")
+```
+
+```elixir
+# Longer string operations
+{time_us, {:ok, result}} = :timer.tc(fn ->
+  ExMaude.reduce("STRING", ~s(length("Hello World from ExMaude benchmarks!")))
+end)
+
+IO.puts("String length: #{time_us} µs")
+IO.puts("Result: #{result.term}")
+```
+
+## Batch Operations
+
+```elixir
+# Compare sequential vs parallel
+batch_size = 50
+expressions = for i <- 1..batch_size, do: "#{i} + #{i}"
+
+# Sequential
+{seq_time, _} = :timer.tc(fn ->
+  Enum.map(expressions, &ExMaude.reduce("NAT", &1))
+end)
+
+# Parallel
+{par_time, _} = :timer.tc(fn ->
+  expressions
+  |> Enum.map(&Task.async(fn -> ExMaude.reduce("NAT", &1) end))
+  |> Task.await_many()
+end)
+
+IO.puts("Batch of #{batch_size} operations:")
+IO.puts("  Sequential: #{seq_time} µs (#{Float.round(seq_time / 1000, 2)} ms)")
+IO.puts("  Parallel:   #{par_time} µs (#{Float.round(par_time / 1000, 2)} ms)")
+IO.puts("  Speedup:    #{Float.round(seq_time / par_time, 2)}x")
+```
+
+## Memory and Pool Health
+
+```elixir
+# Check pool status after benchmarks
+status = ExMaude.Pool.status()
+
+IO.puts("Pool Status:")
+IO.puts("  Size: #{status.size}")
+IO.puts("  Available: #{status.available}")
+IO.puts("  In Use: #{status.in_use}")
+IO.puts("  Overflow: #{status.overflow}")
+IO.puts("  State: #{status.state}")
+```
+
+## Summary
+
+This notebook demonstrates ExMaude's performance characteristics:
+
+* **Single operations**: Typically complete in microseconds
+* **Concurrent operations**: Pool enables efficient parallelism
+* **Search operations**: Time scales with search depth
+* **Batch processing**: Parallel execution provides significant speedup
+
+## Next Steps
+
+* [Quick Start](quickstart.livemd) - Basic operations
+* [Advanced Usage](advanced.livemd) - Custom modules, IoT, pooling
+* [Term Rewriting](rewriting.livemd) - Deep dive into rewriting and search

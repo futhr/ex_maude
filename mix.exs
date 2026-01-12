@@ -133,14 +133,24 @@ defmodule ExMaude.MixProject do
     [
       main: "readme",
       extras: [
-        "README.md",
-        "CHANGELOG.md",
-        "LICENSE",
-        "AGENTS.md",
-        "CONTRIBUTING.md",
-        "usage-rules.md",
-        "bench/output/benchmarks.md",
-        "bench/output/backend_comparison.md"
+        "README.md": [title: "Overview"],
+        "notebooks/quickstart.livemd": [title: "Quick Start"],
+        "notebooks/advanced.livemd": [title: "Advanced Usage"],
+        "notebooks/rewriting.livemd": [title: "Term Rewriting"],
+        "notebooks/benchmarks.livemd": [title: "Benchmarks"],
+        "CHANGELOG.md": [title: "Changelog"],
+        "CONTRIBUTING.md": [title: "Contributing"],
+        "AGENTS.md": [title: "AI Agents"],
+        "usage-rules.md": [title: "Usage Rules"],
+        "bench/output/benchmarks.md": [title: "Benchmark Results"],
+        "bench/output/backend_comparison.md": [title: "Backend Comparison"],
+        LICENSE: [title: "License"]
+      ],
+      groups_for_extras: [
+        "Getting Started": ~r/README/,
+        "Interactive Tutorials": ~r/notebooks\//,
+        Reference: ~r/CHANGELOG|CONTRIBUTING|AGENTS|usage-rules|LICENSE/,
+        Performance: ~r/bench\/output/
       ],
       source_ref: "v#{@version}",
       source_url: @source_url,

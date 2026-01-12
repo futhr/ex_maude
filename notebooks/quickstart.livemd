@@ -1,0 +1,138 @@
+# ExMaude Quick Start
+
+```elixir
+Mix.install(
+  [
+    {:ex_maude, path: Path.join(__DIR__, ".."), env: :dev}
+  ],
+  config_path: :ex_maude,
+  lockfile: :ex_maude,
+  config: [
+    ex_maude: [start_pool: true, use_pty: false]
+  ]
+)
+```
+
+## Introduction
+
+[ExMaude](https://github.com/futhr/ex_maude) is an Elixir client for [Maude](http://maude.cs.illinois.edu/), a high-performance reflective language and system supporting equational and rewriting logic specification and programming.
+
+Maude excels at:
+
+* **Term rewriting** - Reducing expressions to normal forms
+* **Equational reasoning** - Working with algebraic specifications
+* **State space exploration** - Model checking and search
+* **Formal verification** - Proving properties about systems
+
+## Basic Operations
+
+### Reduce
+
+The `reduce` command evaluates a term to its normal form using equations:
+
+```elixir
+# Simple arithmetic in the NAT (natural numbers) module
+ExMaude.reduce("NAT", "1 + 1")
+```
+
+```elixir
+# More complex expression
+ExMaude.reduce("NAT", "2 * 3 + 4")
+```
+
+```elixir
+# Working with integers (negative numbers)
+ExMaude.reduce("INT", "-5 + 10")
+```
+
+### Parse
+
+The `parse` command checks if a term is valid without evaluating it:
+
+```elixir
+ExMaude.parse("NAT", "1 + 2 * 3")
+```
+
+```elixir
+# Invalid term returns an error
+ExMaude.parse("NAT", "invalid syntax here")
+```
+
+### Rewrite
+
+The `rewrite` command applies rewrite rules (which may be non-deterministic):
+
+```elixir
+# Rewrite with a maximum number of rewrites
+ExMaude.rewrite("NAT", "s(0) + s(s(0))", max_rewrites: 100)
+```
+
+## Working with Strings
+
+Maude has a built-in STRING module:
+
+```elixir
+ExMaude.reduce("STRING", ~s("Hello" + " " + "World"))
+```
+
+```elixir
+ExMaude.reduce("STRING", ~s(length("ExMaude")))
+```
+
+```elixir
+ExMaude.reduce("STRING", ~s(substr("Hello World", 0, 5)))
+```
+
+## Error Handling
+
+ExMaude returns `{:ok, result}` or `{:error, reason}` tuples:
+
+```elixir
+# Successful operation
+case ExMaude.reduce("NAT", "1 + 1") do
+  {:ok, result} -> "Result: #{result.term}"
+  {:error, error} -> "Error: #{inspect(error)}"
+end
+```
+
+```elixir
+# Module not found
+ExMaude.reduce("NONEXISTENT-MODULE", "1 + 1")
+```
+
+```elixir
+# Parse error in term
+ExMaude.reduce("NAT", "1 + + 1")
+```
+
+## Raw Command Execution
+
+For advanced use cases, you can execute raw Maude commands:
+
+```elixir
+ExMaude.execute("reduce in NAT : 10 * 10 .")
+```
+
+```elixir
+ExMaude.execute("show module NAT .")
+```
+
+## Checking Maude Version
+
+```elixir
+ExMaude.version()
+```
+
+## Pool Status
+
+ExMaude uses a pool of Maude processes for concurrent operations:
+
+```elixir
+ExMaude.Pool.status()
+```
+
+## Next Steps
+
+* [Advanced Usage](advanced.livemd) - Custom modules, IoT conflict detection, pooling
+* [Term Rewriting](rewriting.livemd) - Deep dive into rewriting and search
+* [Benchmarks](benchmarks.livemd) - Performance metrics

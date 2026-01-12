@@ -1,0 +1,224 @@
+# ExMaude Advanced Usage
+
+```elixir
+Mix.install(
+  [
+    {:ex_maude, path: Path.join(__DIR__, ".."), env: :dev}
+  ],
+  config_path: :ex_maude,
+  lockfile: :ex_maude,
+  config: [
+    ex_maude: [start_pool: true, use_pty: false]
+  ]
+)
+```
+
+## Loading Custom Modules
+
+ExMaude can load custom Maude modules from files or strings.
+
+### Loading from File
+
+```elixir
+# Load the bundled IoT rules module
+ExMaude.load_file(ExMaude.iot_rules_path())
+```
+
+### Loading from String
+
+```elixir
+# Define a simple counter module
+counter_module = """
+mod COUNTER is
+  protecting NAT .
+
+  sort Counter .
+  op counter : Nat -> Counter [ctor] .
+  op inc : Counter -> Counter .
+  op dec : Counter -> Counter .
+  op value : Counter -> Nat .
+
+  var N : Nat .
+
+  eq inc(counter(N)) = counter(s(N)) .
+  eq dec(counter(0)) = counter(0) .
+  eq dec(counter(s(N))) = counter(N) .
+  eq value(counter(N)) = N .
+endm
+"""
+
+ExMaude.load_module(counter_module)
+```
+
+```elixir
+# Use the custom module
+ExMaude.reduce("COUNTER", "value(inc(inc(counter(0))))")
+```
+
+```elixir
+ExMaude.reduce("COUNTER", "value(dec(counter(5)))")
+```
+
+## IoT Conflict Detection
+
+ExMaude includes a powerful IoT rule conflict detection system based on formal verification techniques from the [AutoIoT paper](https://arxiv.org/abs/2411.10665).
+
+### Conflict Types
+
+1. **State Conflict** - Two rules target the same device with incompatible values
+2. **Environment Conflict** - Two rules produce opposing environmental effects
+3. **State Cascade** - A rule's output triggers another rule unexpectedly
+4. **State-Environment Cascade** - Combined effects cascade through rules
+
+### Example: Detecting State Conflicts
+
+```elixir
+# First, load the IoT rules module
+ExMaude.load_file(ExMaude.iot_rules_path())
+```
+
+```elixir
+# Define conflicting rules
+rules = [
+  %{
+    id: "motion-light",
+    thing_id: "light-1",
+    trigger: {:prop_eq, "motion", true},
+    actions: [{:set_prop, "light-1", "state", "on"}],
+    priority: 1
+  },
+  %{
+    id: "night-light",
+    thing_id: "light-1",
+    trigger: {:prop_gt, "time", 2300},
+    actions: [{:set_prop, "light-1", "state", "off"}],
+    priority: 1
+  }
+]
+
+ExMaude.IoT.detect_conflicts(rules)
+```
+
+### Complex Rule Definitions
+
+```elixir
+# Rules with compound triggers
+complex_rules = [
+  %{
+    id: "smart-ac",
+    thing_id: "ac-1",
+    trigger: {:and, {:prop_gt, "temperature", 25}, {:prop_eq, "presence", true}},
+    actions: [{:set_prop, "ac-1", "state", "on"}, {:set_env, "temperature", 22}],
+    priority: 2
+  },
+  %{
+    id: "window-vent",
+    thing_id: "window-1",
+    trigger: {:prop_gt, "co2", 800},
+    actions: [{:set_prop, "window-1", "state", "open"}],
+    priority: 1
+  },
+  %{
+    id: "ac-saver",
+    thing_id: "ac-1",
+    trigger: {:prop_eq, "window-open", true},
+    actions: [{:set_prop, "ac-1", "state", "off"}],
+    priority: 3
+  }
+]
+
+ExMaude.IoT.detect_conflicts(complex_rules)
+```
+
+## Pool Management
+
+ExMaude uses a pool of Maude processes for concurrent operations.
+
+### Pool Status
+
+```elixir
+ExMaude.Pool.status()
+```
+
+### Concurrent Operations
+
+```elixir
+# Run multiple operations concurrently
+tasks =
+  for i <- 1..5 do
+    Task.async(fn ->
+      ExMaude.reduce("NAT", "#{i} * #{i}")
+    end)
+  end
+
+Task.await_many(tasks)
+```
+
+## Telemetry
+
+ExMaude emits telemetry events for monitoring and observability.
+
+### Available Events
+
+```elixir
+ExMaude.Telemetry.events()
+```
+
+### Attaching a Handler
+
+```elixir
+# Simple logging handler
+handler = fn event, measurements, metadata, _config ->
+  IO.puts("Event: #{inspect(event)}")
+  IO.puts("  Duration: #{measurements[:duration]} native units")
+  IO.puts("  Metadata: #{inspect(metadata)}")
+end
+
+:telemetry.attach(
+  "demo-handler",
+  [:ex_maude, :command, :stop],
+  handler,
+  nil
+)
+```
+
+```elixir
+# This will trigger the telemetry event
+ExMaude.reduce("NAT", "100 + 200")
+```
+
+```elixir
+# Clean up
+:telemetry.detach("demo-handler")
+```
+
+## Raw Command Execution
+
+For full control, execute raw Maude commands:
+
+```elixir
+# Show module information
+ExMaude.execute("show module NAT .")
+```
+
+```elixir
+# List all loaded modules
+ExMaude.execute("show modules .")
+```
+
+```elixir
+# Execute multiple commands
+commands = """
+reduce in NAT : 1 + 1 .
+reduce in NAT : 2 * 3 .
+reduce in INT : -5 + 10 .
+"""
+
+ExMaude.execute(commands)
+```
+
+## Next Steps
+
+* [Quick Start](quickstart.livemd) - Basic operations
+* [Term Rewriting](rewriting.livemd) - Deep dive into rewriting and search
+* [Benchmarks](benchmarks.livemd) - Performance metrics

@@ -353,6 +353,19 @@ See [Development](#development) section for benchmark commands.
 
 ---
 
+## Interactive Notebooks
+
+Explore ExMaude interactively with Livebook:
+
+| Notebook | Description | Livebook |
+|----------|-------------|----------|
+| [Quick Start](notebooks/quickstart.livemd) | Basic usage and examples | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fquickstart.livemd) |
+| [Advanced Usage](notebooks/advanced.livemd) | IoT, custom modules, pooling | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fadvanced.livemd) |
+| [Term Rewriting](notebooks/rewriting.livemd) | Rewriting and search deep dive | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Frewriting.livemd) |
+| [Benchmarks](notebooks/benchmarks.livemd) | Performance metrics | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fbenchmarks.livemd) |
+
+---
+
 ## Documentation
 
 - [HexDocs](https://hexdocs.pm/ex_maude) - Full API documentation

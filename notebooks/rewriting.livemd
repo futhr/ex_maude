@@ -1,0 +1,204 @@
+# Term Rewriting with ExMaude
+
+```elixir
+Mix.install(
+  [
+    {:ex_maude, path: Path.join(__DIR__, ".."), env: :dev}
+  ],
+  config_path: :ex_maude,
+  lockfile: :ex_maude,
+  config: [
+    ex_maude: [start_pool: true, use_pty: false]
+  ]
+)
+```
+
+## Introduction to Term Rewriting
+
+Term rewriting is a computational model where expressions are transformed by repeatedly applying rules. Maude distinguishes between:
+
+* **Equations** (`eq`) - Deterministic, used for simplification
+* **Rules** (`rl`) - Non-deterministic, model state transitions
+
+## Reduce vs Rewrite
+
+### Reduce (Equations Only)
+
+`reduce` applies equations until no more can be applied:
+
+```elixir
+# Equations are applied deterministically
+ExMaude.reduce("NAT", "s(s(0)) + s(s(s(0)))")
+```
+
+### Rewrite (Rules + Equations)
+
+`rewrite` applies both rules and equations:
+
+```elixir
+# Rewrite with bounded steps
+ExMaude.rewrite("NAT", "s(0)", max_rewrites: 10)
+```
+
+## Custom Rewriting System
+
+Let's define a simple state machine:
+
+```elixir
+state_machine = """
+mod TRAFFIC-LIGHT is
+  sort Light .
+  ops red yellow green : -> Light [ctor] .
+
+  rl [to-green] : red => green .
+  rl [to-yellow] : green => yellow .
+  rl [to-red] : yellow => red .
+endm
+"""
+
+ExMaude.load_module(state_machine)
+```
+
+```elixir
+# Rewrite from red - non-deterministic choice
+ExMaude.rewrite("TRAFFIC-LIGHT", "red", max_rewrites: 1)
+```
+
+```elixir
+# Multiple rewrites - cycles through states
+ExMaude.rewrite("TRAFFIC-LIGHT", "red", max_rewrites: 3)
+```
+
+## Search Operations
+
+The `search` command explores the state space to find terms matching a pattern.
+
+### Basic Search
+
+```elixir
+# Search for any reachable state from red
+ExMaude.search("TRAFFIC-LIGHT", "red", "L:Light", max_solutions: 10, max_depth: 5)
+```
+
+### Search with Conditions
+
+```elixir
+# Define a counter with non-deterministic increment/decrement
+counter_system = """
+mod NONDET-COUNTER is
+  protecting NAT .
+  sort Counter .
+  op c : Nat -> Counter [ctor] .
+
+  var N : Nat .
+
+  rl [inc] : c(N) => c(s(N)) .
+  crl [dec] : c(s(N)) => c(N) if N > 0 .
+endm
+"""
+
+ExMaude.load_module(counter_system)
+```
+
+```elixir
+# Find paths from c(2) to c(5)
+ExMaude.search("NONDET-COUNTER", "c(s(s(0)))", "c(s(s(s(s(s(0))))))",
+  max_solutions: 3,
+  max_depth: 10
+)
+```
+
+## Petri Net Example
+
+Petri nets are a classic example of concurrent systems:
+
+```elixir
+petri_net = """
+mod PETRI-NET is
+  protecting NAT .
+
+  sorts Place Marking .
+  subsort Place < Marking .
+
+  op empty : -> Marking [ctor] .
+  op __ : Marking Marking -> Marking [ctor assoc comm id: empty] .
+  op p : Nat Nat -> Place [ctor] .  *** place(id, tokens)
+
+  vars I T T1 T2 : Nat .
+
+  *** Transition: move token from place 1 to place 2
+  rl [t1] : p(1, s(T1)) p(2, T2) => p(1, T1) p(2, s(T2)) .
+
+  *** Transition: move token from place 2 to place 1
+  rl [t2] : p(1, T1) p(2, s(T2)) => p(1, s(T1)) p(2, T2) .
+endm
+"""
+
+ExMaude.load_module(petri_net)
+```
+
+```elixir
+# Initial marking: 2 tokens in place 1, 1 token in place 2
+initial = "p(1, s(s(0))) p(2, s(0))"
+
+# Search for reachable markings
+ExMaude.search("PETRI-NET", initial, "M:Marking", max_solutions: 10, max_depth: 5)
+```
+
+## Understanding Results
+
+### Reduce Result
+
+```elixir
+{:ok, result} = ExMaude.reduce("NAT", "10 + 20 + 30")
+
+IO.puts("Term: #{result.term}")
+IO.puts("Sort: #{result.sort}")
+IO.puts("Rewrites: #{result.rewrites}")
+```
+
+### Search Result
+
+```elixir
+{:ok, result} = ExMaude.search("TRAFFIC-LIGHT", "red", "L:Light",
+  max_solutions: 5,
+  max_depth: 3
+)
+
+IO.puts("Solutions found: #{result.solutions}")
+
+for {i, solution} <- Enum.with_index(result.states, 1) do
+  IO.puts("  #{i}. #{solution.term} (#{solution.sort})")
+end
+```
+
+## Rewriting Strategies
+
+### Bounded Rewriting
+
+Limit the number of rule applications:
+
+```elixir
+# Stop after 5 rewrites
+ExMaude.rewrite("TRAFFIC-LIGHT", "red", max_rewrites: 5)
+```
+
+### Search Depth
+
+Control exploration depth:
+
+```elixir
+# Shallow search
+ExMaude.search("TRAFFIC-LIGHT", "red", "L:Light", max_depth: 1, max_solutions: 10)
+```
+
+```elixir
+# Deeper search
+ExMaude.search("TRAFFIC-LIGHT", "red", "L:Light", max_depth: 10, max_solutions: 10)
+```
+
+## Next Steps
+
+* [Quick Start](quickstart.livemd) - Basic operations
+* [Advanced Usage](advanced.livemd) - Custom modules, IoT, pooling
+* [Benchmarks](benchmarks.livemd) - Performance metrics
