@@ -49,9 +49,6 @@ jobs:
       - name: Compile
         run: mix compile --warnings-as-errors
 
-      - name: Install Maude
-        run: mix maude.install --force
-
       - name: Run tests
         run: mix test
 
