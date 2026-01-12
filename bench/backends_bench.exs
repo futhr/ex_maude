@@ -290,7 +290,7 @@ defmodule ExMaude.Bench.Backends do
     formatters = [
       Benchee.Formatters.Console,
       {Benchee.Formatters.Markdown,
-       file: "bench/BACKEND_COMPARISON.md",
+       file: "bench/output/backend_comparison.md",
        description: description}
     ]
 

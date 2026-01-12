@@ -329,8 +329,8 @@ ExMaude includes comprehensive benchmarks to help you understand performance cha
 
 ### Benchmark Results
 
-- **[BENCHMARKS.md](BENCHMARKS.md)** - Parser and Maude integration benchmarks
-- **[bench/BACKEND_COMPARISON.md](bench/BACKEND_COMPARISON.md)** - Port vs C-Node backend comparison
+- **[bench/output/benchmarks.md](bench/output/benchmarks.md)** - Parser and Maude integration benchmarks
+- **[bench/output/backend_comparison.md](bench/output/backend_comparison.md)** - Port vs C-Node backend comparison
 
 ### Key Takeaways
 
@@ -373,9 +373,3 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 ## License
 
 ExMaude is released under the MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-<div align="center">
-  <sub>Built by <a href="https://github.com/futhr">Tobias Bohwalli</a></sub>
-</div>

@@ -124,7 +124,7 @@ defmodule ExMaude.MixProject do
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url, "Maude" => "https://maude.cs.illinois.edu"},
       files:
-        ~w(lib priv/maude .formatter.exs mix.exs README.md LICENSE CHANGELOG.md usage-rules.md BENCHMARKS.md),
+        ~w(lib priv/maude .formatter.exs mix.exs README.md LICENSE CHANGELOG.md usage-rules.md bench/output),
       maintainers: ["Tobias Bohwalli <hi@futhr.io>"]
     ]
   end
@@ -139,8 +139,8 @@ defmodule ExMaude.MixProject do
         "AGENTS.md",
         "CONTRIBUTING.md",
         "usage-rules.md",
-        "BENCHMARKS.md",
-        "bench/BACKEND_COMPARISON.md"
+        "bench/output/benchmarks.md",
+        "bench/output/backend_comparison.md"
       ],
       source_ref: "v#{@version}",
       source_url: @source_url,

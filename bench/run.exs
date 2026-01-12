@@ -150,7 +150,7 @@ defmodule ExMaude.Bench do
       memory_time: 2,
       formatters: [
         Benchee.Formatters.Console,
-        {Benchee.Formatters.Markdown, file: "BENCHMARKS.md", description: """
+        {Benchee.Formatters.Markdown, file: "bench/output/benchmarks.md", description: """
         # ExMaude Performance Benchmarks
 
         Comprehensive performance benchmarks for ExMaude's parser and Maude integration.
@@ -169,7 +169,7 @@ defmodule ExMaude.Bench do
         - Ensure parsing overhead is minimal
         - Guide pool sizing for production deployments
 
-        For backend comparison (Port vs C-Node), see `bench/BACKEND_COMPARISON.md`.
+        For backend comparison (Port vs C-Node), see `bench/output/backend_comparison.md`.
 
         ## Parser Benchmarks (Pure Elixir, No Maude Required)
         """}
@@ -193,7 +193,7 @@ defmodule ExMaude.Bench do
       memory_time: 2,
       formatters: [
         Benchee.Formatters.Console,
-        {Benchee.Formatters.Markdown, file: "BENCHMARKS.md", description: """
+        {Benchee.Formatters.Markdown, file: "bench/output/benchmarks.md", description: """
         ## Maude Reduce Benchmarks
 
         Full round-trip time for term reduction including IPC overhead.
@@ -218,7 +218,7 @@ defmodule ExMaude.Bench do
       time: 5,
       formatters: [
         Benchee.Formatters.Console,
-        {Benchee.Formatters.Markdown, file: "BENCHMARKS.md", description: """
+        {Benchee.Formatters.Markdown, file: "bench/output/benchmarks.md", description: """
         ## Pool Benchmarks
 
         Poolboy worker pool operation overhead.
@@ -245,7 +245,7 @@ defmodule ExMaude.Bench do
       time: 10,
       formatters: [
         Benchee.Formatters.Console,
-        {Benchee.Formatters.Markdown, file: "BENCHMARKS.md", description: """
+        {Benchee.Formatters.Markdown, file: "bench/output/benchmarks.md", description: """
         ## Concurrency Benchmarks
 
         Validates worker pool provides expected concurrency benefits.
