@@ -41,6 +41,11 @@ a powerful formal specification language based on rewriting logic. Use ExMaude f
 
 ## Installation
 
+### Requirements
+
+- Elixir ~> 1.17
+- Erlang/OTP 26+
+
 Add `ex_maude` to your dependencies in `mix.exs`:
 
 ```elixir

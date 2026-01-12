@@ -293,6 +293,7 @@ defmodule Mix.Tasks.Maude.InstallTest do
     end
 
     @tag :integration
+    @tag :network
     test "extracts library files alongside binary", %{tmp_dir: tmp_dir} do
       # Use existing installation or skip
       existing_path = Path.expand("priv/maude/bin", Mix.Project.app_path())
