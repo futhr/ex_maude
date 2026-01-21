@@ -93,22 +93,22 @@ defmodule ExMaude.TermTest do
     end
   end
 
-  describe "is_sort?/2" do
+  describe "sort?/2" do
     test "returns true for matching sort" do
       term = Term.new("42", "Nat")
-      assert Term.is_sort?(term, "Nat") == true
+      assert Term.sort?(term, "Nat") == true
     end
 
     test "returns false for non-matching sort" do
       term = Term.new("42", "Nat")
-      assert Term.is_sort?(term, "Int") == false
+      assert Term.sort?(term, "Int") == false
     end
 
     test "is case-sensitive" do
       term = Term.new("true", "Bool")
-      assert Term.is_sort?(term, "Bool") == true
-      assert Term.is_sort?(term, "bool") == false
-      assert Term.is_sort?(term, "BOOL") == false
+      assert Term.sort?(term, "Bool") == true
+      assert Term.sort?(term, "bool") == false
+      assert Term.sort?(term, "BOOL") == false
     end
   end
 
@@ -317,16 +317,16 @@ defmodule ExMaude.TermTest do
     end
   end
 
-  describe "is_sort?/2 additional edge cases" do
+  describe "sort?/2 additional edge cases" do
     test "handles complex sort names" do
       term = Term.new("empty", "List{Nat}")
-      assert Term.is_sort?(term, "List{Nat}") == true
-      assert Term.is_sort?(term, "List") == false
+      assert Term.sort?(term, "List{Nat}") == true
+      assert Term.sort?(term, "List") == false
     end
 
     test "handles parameterized sorts" do
       term = Term.new("pair", "Pair{Nat, Bool}")
-      assert Term.is_sort?(term, "Pair{Nat, Bool}") == true
+      assert Term.sort?(term, "Pair{Nat, Bool}") == true
     end
   end
 

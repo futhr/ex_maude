@@ -88,11 +88,11 @@ defmodule ExMaude.Term do
   ## Examples
 
       term = ExMaude.Term.new("42", "Nat")
-      ExMaude.Term.is_sort?(term, "Nat")   #=> true
-      ExMaude.Term.is_sort?(term, "Bool")  #=> false
+      ExMaude.Term.sort?(term, "Nat")   #=> true
+      ExMaude.Term.sort?(term, "Bool")  #=> false
   """
-  @spec is_sort?(t(), String.t()) :: boolean()
-  def is_sort?(%__MODULE__{sort: sort}, expected_sort) do
+  @spec sort?(t(), String.t()) :: boolean()
+  def sort?(%__MODULE__{sort: sort}, expected_sort) do
     sort == expected_sort
   end
 
