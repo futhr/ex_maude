@@ -2,6 +2,13 @@ defmodule ExMaude.Backend.NIF do
   @moduledoc """
   NIF-based backend for ExMaude using Rustler.
 
+  > #### Work in Progress {: .warning}
+  >
+  > This backend is under active development (Phase 3). For production use,
+  > configure the `:port` backend instead:
+  >
+  >     config :ex_maude, backend: :port
+
   This backend manages a Maude subprocess from Rust, providing lower latency
   than the Port backend by avoiding Elixir process overhead.
 
