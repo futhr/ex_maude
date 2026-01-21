@@ -97,11 +97,13 @@ defmodule ExMaude.Parser do
   @spec parse_errors(String.t()) :: :ok | {:error, nonempty_list({:warning | :error, String.t()})}
   def parse_errors(output) do
     warnings =
-      Regex.scan(~r/Warning:\s*(.+)/m, output)
+      output
+      |> then(&Regex.scan(~r/Warning:\s*(.+)/m, &1))
       |> Enum.map(fn [_, msg] -> {:warning, String.trim(msg)} end)
 
     errors =
-      Regex.scan(~r/Error:\s*(.+)/m, output)
+      output
+      |> then(&Regex.scan(~r/Error:\s*(.+)/m, &1))
       |> Enum.map(fn [_, msg] -> {:error, String.trim(msg)} end)
 
     case warnings ++ errors do
@@ -125,7 +127,8 @@ defmodule ExMaude.Parser do
   """
   @spec parse_module_list(String.t()) :: list(map())
   def parse_module_list(output) do
-    Regex.scan(~r/(fmod|mod|fth|th|view)\s+(\S+)/m, output)
+    output
+    |> then(&Regex.scan(~r/(fmod|mod|fth|th|view)\s+(\S+)/m, &1))
     |> Enum.map(fn [_, type, name] ->
       %{type: parse_module_type(type), name: name}
     end)
@@ -174,7 +177,8 @@ defmodule ExMaude.Parser do
 
     # Parse substitutions (VAR:Sort --> value)
     substitution =
-      Regex.scan(~r/(\S+)\s*-->\s*(.+)/m, text)
+      text
+      |> then(&Regex.scan(~r/(\S+)\s*-->\s*(.+)/m, &1))
       |> Enum.map(fn [_, var, value] ->
         {String.trim(var), String.trim(value)}
       end)

@@ -214,7 +214,7 @@ defmodule ExMaude.Binary do
   defp system_architecture do
     :erlang.system_info(:system_architecture)
     |> to_string()
-    |> String.split("-")
+    |> then(&String.split(&1, "-"))
     |> List.first()
   end
 

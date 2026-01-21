@@ -125,8 +125,7 @@ defmodule ExMaude.Backend do
   """
   @spec available_backends() :: [atom()]
   def available_backends do
-    [:port, :cnode, :nif]
-    |> Enum.filter(&available?/1)
+    Enum.filter([:port, :cnode, :nif], &available?/1)
   end
 
   @doc """

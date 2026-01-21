@@ -212,8 +212,7 @@ defmodule Mix.Tasks.Maude.Install do
   end
 
   defp default_install_path do
-    Path.join([Mix.Project.build_path(), "..", "..", "priv", "maude", "bin"])
-    |> Path.expand()
+    Path.expand(Path.join([Mix.Project.build_path(), "..", "..", "priv", "maude", "bin"]))
   end
 
   defp install_maude(version, install_path) do
@@ -431,7 +430,7 @@ defmodule Mix.Tasks.Maude.Install do
 
   defp detect_platform do
     arch =
-      case :erlang.system_info(:system_architecture) |> to_string() do
+      case to_string(:erlang.system_info(:system_architecture)) do
         "aarch64" <> _ -> "arm64"
         "arm64" <> _ -> "arm64"
         "x86_64" <> _ -> "x86_64"
@@ -621,7 +620,8 @@ defmodule Mix.Tasks.Maude.Install do
     Mix.shell().info("Verifying checksum...")
 
     actual_sha =
-      File.stream!(path, 2048)
+      path
+      |> File.stream!(2048)
       |> Enum.reduce(:crypto.hash_init(:sha256), &:crypto.hash_update(&2, &1))
       |> :crypto.hash_final()
       |> Base.encode16(case: :lower)
@@ -776,7 +776,8 @@ defmodule Mix.Tasks.Maude.Install do
     unless found do
       # List what we actually extracted
       files =
-        File.ls!(install_path)
+        install_path
+        |> File.ls!()
         |> Enum.reject(&File.dir?(Path.join(install_path, &1)))
 
       Mix.shell().error("""

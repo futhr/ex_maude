@@ -118,11 +118,15 @@ defmodule ExMaude.IoT.ConflictParser do
 
   defp parse_conflict_list(output) do
     # Normalize output - remove newlines and extra whitespace
-    normalized = output |> String.replace(~r/\r?\n/, " ") |> String.replace(~r/\s+/, " ")
+    normalized =
+      output
+      |> String.replace(~r/\r?\n/, " ")
+      |> String.replace(~r/\s+/, " ")
 
     # Extract individual conflicts from the output
     # Conflicts can be joined with | or appear individually
-    extract_conflicts(normalized)
+    normalized
+    |> extract_conflicts()
     |> Enum.map(&parse_single_conflict/1)
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
@@ -198,13 +202,15 @@ defmodule ExMaude.IoT.ConflictParser do
     # Extract rule IDs - they're the first quoted string after "rule("
     # Note: Maude output may have whitespace between "rule(" and the quote
     rule_ids =
-      Regex.scan(~r/rule\(\s*"([^"]+)"/, conflict_str)
+      conflict_str
+      |> then(&Regex.scan(~r/rule\(\s*"([^"]+)"/, &1))
       |> Enum.map(fn [_, id] -> id end)
 
     # Extract the reason - it's the last quoted string before the final ")"
     # We find all quoted strings and take the last one that looks like a reason
     all_quoted =
-      Regex.scan(~r/"([^"]+)"/, conflict_str)
+      conflict_str
+      |> then(&Regex.scan(~r/"([^"]+)"/, &1))
       |> Enum.map(fn [_, str] -> str end)
 
     # The reason is a complete sentence/phrase, usually at the end
