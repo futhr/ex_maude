@@ -401,7 +401,7 @@ defmodule ExMaude.IoT.ConflictParserTest do
 
       conflicts = ConflictParser.parse_conflicts(output)
       # Different reasons mean different conflicts
-      assert length(conflicts) >= 1
+      assert conflicts != []
     end
   end
 

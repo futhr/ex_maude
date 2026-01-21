@@ -179,10 +179,10 @@ defmodule ExMaude.IoTTest do
 
       {:ok, conflicts} = IoT.detect_conflicts(rules)
 
-      assert length(conflicts) >= 1
+      assert conflicts != []
 
       state_conflicts = Enum.filter(conflicts, &(&1.type == :state_conflict))
-      assert length(state_conflicts) >= 1
+      assert state_conflicts != []
 
       conflict = hd(state_conflicts)
       assert conflict.rule1 in ["motion-light", "night-mode"]
@@ -210,7 +210,7 @@ defmodule ExMaude.IoTTest do
       {:ok, conflicts} = IoT.detect_conflicts(rules)
 
       env_conflicts = Enum.filter(conflicts, &(&1.type == :env_conflict))
-      assert length(env_conflicts) >= 1
+      assert env_conflicts != []
     end
 
     test "detects state cascade when rule output triggers another", %{maude_available: true} do
@@ -234,7 +234,7 @@ defmodule ExMaude.IoTTest do
       {:ok, conflicts} = IoT.detect_conflicts(rules)
 
       cascade_conflicts = Enum.filter(conflicts, &(&1.type == :state_cascade))
-      assert length(cascade_conflicts) >= 1
+      assert cascade_conflicts != []
     end
 
     test "returns empty list when no conflicts exist", %{maude_available: true} do

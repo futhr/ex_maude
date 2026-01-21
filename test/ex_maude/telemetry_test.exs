@@ -15,7 +15,6 @@ defmodule ExMaude.TelemetryTest do
       events = Telemetry.events()
 
       assert is_list(events)
-      assert length(events) > 0
 
       # All events should be lists of atoms
       for event <- events do

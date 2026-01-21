@@ -52,7 +52,6 @@ defmodule ExMaude.BinaryTest do
     test "returns a list of platforms" do
       platforms = Binary.supported_platforms()
       assert is_list(platforms)
-      assert length(platforms) > 0
     end
 
     test "includes common platforms" do

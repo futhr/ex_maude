@@ -119,7 +119,7 @@ defmodule ExMaude.IntegrationTest do
       :ok = ExMaude.load_file(path)
 
       {:ok, solutions} = ExMaude.search("LIGHT", "off", "on", max_depth: 5)
-      assert length(solutions) >= 1
+      assert solutions != []
       assert hd(solutions).state_num != nil
     end
 

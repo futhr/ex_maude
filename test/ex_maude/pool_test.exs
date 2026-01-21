@@ -184,7 +184,7 @@ defmodule ExMaude.PoolTest do
         end)
 
       assert is_list(results)
-      assert length(results) > 0
+      assert results != []
       assert Enum.all?(results, &is_pid/1)
     end
 
