@@ -123,56 +123,58 @@ defmodule ExMaude.Error do
   @spec from_output(String.t()) :: t()
   def from_output(output) when is_binary(output) do
     cond do
-      String.contains?(output, "No parse for term") ->
-        %__MODULE__{
-          type: :parse_error,
-          message: extract_parse_error(output),
-          raw_output: output
-        }
+      parse_error?(output) ->
+        %__MODULE__{type: :parse_error, message: extract_parse_error(output), raw_output: output}
 
-      String.contains?(output, "module") and String.contains?(output, "not found") ->
+      module_not_found?(output) ->
         %__MODULE__{
           type: :module_not_found,
           message: extract_module_not_found(output),
           raw_output: output
         }
 
-      String.contains?(output, "syntax error") or String.contains?(output, "Syntax error") ->
+      syntax_error?(output) ->
         %__MODULE__{
           type: :syntax_error,
           message: extract_syntax_error(output),
           raw_output: output
         }
 
-      String.contains?(output, "ambiguous") ->
+      ambiguous_error?(output) ->
         %__MODULE__{
           type: :ambiguous_term,
           message: extract_ambiguous_error(output),
           raw_output: output
         }
 
-      String.contains?(output, "sort") and String.contains?(output, "error") ->
-        %__MODULE__{
-          type: :sort_error,
-          message: extract_sort_error(output),
-          raw_output: output
-        }
+      sort_error?(output) ->
+        %__MODULE__{type: :sort_error, message: extract_sort_error(output), raw_output: output}
 
-      String.contains?(output, "Warning:") or String.contains?(output, "Error:") ->
-        %__MODULE__{
-          type: :unknown,
-          message: extract_warning_or_error(output),
-          raw_output: output
-        }
+      generic_error?(output) ->
+        %__MODULE__{type: :unknown, message: extract_warning_or_error(output), raw_output: output}
 
       true ->
-        %__MODULE__{
-          type: :unknown,
-          message: String.slice(output, 0, 200),
-          raw_output: output
-        }
+        %__MODULE__{type: :unknown, message: String.slice(output, 0, 200), raw_output: output}
     end
   end
+
+  # Error detection predicates for improved readability
+
+  defp parse_error?(output), do: String.contains?(output, "No parse for term")
+
+  defp module_not_found?(output),
+    do: String.contains?(output, "module") and String.contains?(output, "not found")
+
+  defp syntax_error?(output),
+    do: String.contains?(output, "syntax error") or String.contains?(output, "Syntax error")
+
+  defp ambiguous_error?(output), do: String.contains?(output, "ambiguous")
+
+  defp sort_error?(output),
+    do: String.contains?(output, "sort") and String.contains?(output, "error")
+
+  defp generic_error?(output),
+    do: String.contains?(output, "Warning:") or String.contains?(output, "Error:")
 
   @doc """
   Creates a timeout error.
@@ -315,7 +317,7 @@ defmodule ExMaude.Error do
 
   defp extract_parse_error(output) do
     case Regex.run(~r/No parse for term[:\s]*(.+)/s, output) do
-      [_, term] -> "No parse for term: #{String.trim(term) |> String.slice(0, 100)}"
+      [_, term] -> "No parse for term: #{String.slice(String.trim(term), 0, 100)}"
       nil -> "Failed to parse term"
     end
   end
@@ -329,28 +331,28 @@ defmodule ExMaude.Error do
 
   defp extract_syntax_error(output) do
     case Regex.run(~r/[Ss]yntax error[:\s]*(.+)/s, output) do
-      [_, msg] -> String.trim(msg) |> String.slice(0, 200)
+      [_, msg] -> String.slice(String.trim(msg), 0, 200)
       nil -> "Syntax error in input"
     end
   end
 
   defp extract_ambiguous_error(output) do
     case Regex.run(~r/ambiguous[:\s]*(.+)/is, output) do
-      [_, msg] -> "Ambiguous: #{String.trim(msg) |> String.slice(0, 200)}"
+      [_, msg] -> "Ambiguous: #{String.slice(String.trim(msg), 0, 200)}"
       nil -> "Ambiguous term"
     end
   end
 
   defp extract_sort_error(output) do
     case Regex.run(~r/sort[:\s]*(.+error.+)/is, output) do
-      [_, msg] -> String.trim(msg) |> String.slice(0, 200)
+      [_, msg] -> String.slice(String.trim(msg), 0, 200)
       nil -> "Sort error"
     end
   end
 
   defp extract_warning_or_error(output) do
     case Regex.run(~r/(Warning|Error):\s*(.+)/m, output) do
-      [_, _level, msg] -> String.trim(msg) |> String.slice(0, 200)
+      [_, _level, msg] -> String.slice(String.trim(msg), 0, 200)
       nil -> String.slice(output, 0, 200)
     end
   end
