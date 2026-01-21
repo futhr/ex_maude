@@ -36,7 +36,7 @@ defmodule ExMaude.Server do
 
   alias ExMaude.Backend
 
-  @default_timeout 5_000
+  @default_timeout_ms 5_000
 
   @doc """
   Starts a new Maude server process using the configured backend.
@@ -87,5 +87,5 @@ defmodule ExMaude.Server do
   Returns the default timeout in milliseconds.
   """
   @spec default_timeout() :: 5000
-  def default_timeout, do: @default_timeout
+  def default_timeout, do: @default_timeout_ms
 end

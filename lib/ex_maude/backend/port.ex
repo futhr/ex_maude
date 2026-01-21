@@ -32,7 +32,7 @@ defmodule ExMaude.Backend.Port do
 
   alias ExMaude.{Binary, Error}
 
-  @default_timeout 5_000
+  @default_timeout_ms 5_000
   @prompt_marker "Maude>"
 
   @typedoc """
@@ -57,7 +57,7 @@ defmodule ExMaude.Backend.Port do
 
   @impl ExMaude.Backend
   def execute(server, command, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
 
     try do
       GenServer.call(server, {:execute, command, timeout}, timeout + 1_000)
@@ -179,7 +179,7 @@ defmodule ExMaude.Backend.Port do
 
   def handle_info(:command_timeout, state) do
     if state.from do
-      GenServer.reply(state.from, {:error, Error.timeout(@default_timeout)})
+      GenServer.reply(state.from, {:error, Error.timeout(@default_timeout_ms)})
     end
 
     emit_telemetry(:timeout, %{buffer_size: byte_size(state.buffer)})

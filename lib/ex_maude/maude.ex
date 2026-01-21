@@ -35,8 +35,8 @@ defmodule ExMaude.Maude do
 
   alias ExMaude.{Error, Pool, Server, Parser, Telemetry}
 
-  @default_timeout 5_000
-  @search_timeout 30_000
+  @default_timeout_ms 5_000
+  @search_timeout_ms 30_000
 
   @doc """
   Reduces a term in the given module to its normal form.
@@ -122,14 +122,8 @@ defmodule ExMaude.Maude do
           {:ok, list(map())} | {:error, term()}
   def search(module, initial, pattern, opts \\ []) do
     Telemetry.span([:ex_maude, :command], %{operation: :search, module: module}, fn ->
-      max_depth = Keyword.get(opts, :max_depth, 100)
-      max_solutions = Keyword.get(opts, :max_solutions, 1)
-      arrow = Keyword.get(opts, :arrow, "=>*")
-      condition = Keyword.get(opts, :condition)
-      timeout = Keyword.get(opts, :timeout, @search_timeout)
-
-      command =
-        build_search_command(module, initial, pattern, arrow, max_depth, max_solutions, condition)
+      timeout = Keyword.get(opts, :timeout, @search_timeout_ms)
+      command = build_search_command(module, initial, pattern, opts)
 
       case do_execute(command, timeout: timeout) do
         {:ok, output} -> {:ok, Parser.parse_search_results(output)}
@@ -233,7 +227,7 @@ defmodule ExMaude.Maude do
 
   # Internal execute without telemetry (used by instrumented functions)
   defp do_execute(command, opts) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
 
     Pool.transaction(
       fn worker ->
@@ -303,7 +297,12 @@ defmodule ExMaude.Maude do
     execute("show modules .", opts)
   end
 
-  defp build_search_command(module, initial, pattern, arrow, max_depth, max_solutions, condition) do
+  defp build_search_command(module, initial, pattern, opts) do
+    max_depth = Keyword.get(opts, :max_depth, 100)
+    max_solutions = Keyword.get(opts, :max_solutions, 1)
+    arrow = Keyword.get(opts, :arrow, "=>*")
+    condition = Keyword.get(opts, :condition)
+
     base = "search [#{max_solutions}, #{max_depth}] in #{module} : #{initial} #{arrow} #{pattern}"
 
     if condition do

@@ -52,7 +52,7 @@ defmodule ExMaude.Pool do
   @pool_name :ex_maude_pool
   @default_pool_size 4
   @default_max_overflow 2
-  @checkout_timeout 5_000
+  @checkout_timeout_ms 5_000
 
   @doc """
   Returns the child spec for the pool supervisor.
@@ -99,7 +99,7 @@ defmodule ExMaude.Pool do
   @spec transaction((pid() -> result), keyword()) :: result | {:error, Error.t()}
         when result: any()
   def transaction(fun, opts \\ []) when is_function(fun, 1) do
-    timeout = Keyword.get(opts, :timeout, @checkout_timeout)
+    timeout = Keyword.get(opts, :timeout, @checkout_timeout_ms)
     start_time = System.monotonic_time()
 
     backend = config_backend()
@@ -234,7 +234,7 @@ defmodule ExMaude.Pool do
   """
   @spec checkout(keyword()) :: pid() | :full | {:error, Error.t()}
   def checkout(opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, @checkout_timeout)
+    timeout = Keyword.get(opts, :timeout, @checkout_timeout_ms)
     block = Keyword.get(opts, :block, true)
 
     try do
