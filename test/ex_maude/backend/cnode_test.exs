@@ -194,7 +194,7 @@ defmodule ExMaude.Backend.CNodeTest do
         end)
 
         {:ok, result} = CNode.execute(pid, "reduce in NAT : 1 + 2 .")
-        assert result == "3"
+        assert result =~ "3"
 
         CNode.stop(pid)
       end

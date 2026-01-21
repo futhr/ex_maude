@@ -108,7 +108,9 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
       end
 
       test "handles syntax errors gracefully", %{pid: pid} do
-        result = CNode.execute(pid, "reduce in NAT : 1 +")
+        # Incomplete commands may timeout as Maude waits for more input,
+        # or return a warning. Both are acceptable behaviors.
+        result = CNode.execute(pid, "reduce in NAT : 1 + .", timeout: 5000)
         assert match?({:ok, _}, result) or match?({:error, _}, result)
       end
 
