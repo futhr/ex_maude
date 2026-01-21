@@ -97,6 +97,17 @@ static int start_maude(const char *maude_path) {
         close(stdin_pipe[0]);
         close(stdout_pipe[1]);
 
+        /* Set MAUDE_LIB to the directory containing the Maude binary
+         * so that Maude can find prelude.maude and other library files */
+        char maude_lib[4096];
+        strncpy(maude_lib, maude_path, sizeof(maude_lib) - 1);
+        maude_lib[sizeof(maude_lib) - 1] = '\0';
+        char *last_slash = strrchr(maude_lib, '/');
+        if (last_slash != NULL) {
+            *last_slash = '\0';
+            setenv("MAUDE_LIB", maude_lib, 1);
+        }
+
         /* Execute Maude with options to suppress banner and enable interactive mode */
         execl(maude_path, "maude", "-no-banner", "-no-wrap", "-no-advise", "-interactive", NULL);
 
@@ -168,7 +179,6 @@ static int read_until_prompt(char *output, int max_len, int timeout_ms) {
     int total = 0;
     fd_set readfds;
     struct timeval tv;
-    int prompt_check_start;
     int prompt_found = 0;
 
     while (total < max_len - 1) {
@@ -213,11 +223,11 @@ static int read_until_prompt(char *output, int max_len, int timeout_ms) {
         memcpy(output + total, buf, copy_len);
         total += copy_len;
 
-        /* Check for prompt at end of buffer */
-        prompt_check_start = (total > PROMPT_LEN) ? (total - PROMPT_LEN) : 0;
+        /* Check for prompt - search entire buffer for small buffers,
+         * or just the tail for large buffers (optimization) */
         output[total] = '\0';
-
-        if (strstr(output + prompt_check_start, PROMPT) != NULL) {
+        
+        if (strstr(output, PROMPT) != NULL) {
             /* Found prompt, remove it from output */
             char *prompt_pos = strstr(output, PROMPT);
             if (prompt_pos != NULL) {

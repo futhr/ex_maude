@@ -173,22 +173,23 @@ defmodule ExMaude.Backend.CNode do
   end
 
   def handle_info({port, {:data, data}}, %{port: port} = state) do
-    case String.trim(to_string(data)) do
-      "READY" ->
-        Logger.info("C-Node ready, connecting...")
+    output = to_string(data)
+    Logger.debug("C-Node output: #{String.trim(output)}")
 
-        case connect_to_cnode(state) do
-          {:ok, state} ->
-            {:noreply, state}
+    # Check if the output contains READY signal (may be mixed with other output)
+    if String.contains?(output, "READY") and not state.connected do
+      Logger.info("C-Node ready, connecting...")
 
-          {:error, reason} ->
-            Logger.error("Failed to connect to C-Node: #{inspect(reason)}")
-            {:stop, {:connect_failed, reason}, state}
-        end
+      case connect_to_cnode(state) do
+        {:ok, state} ->
+          {:noreply, state}
 
-      other ->
-        Logger.debug("C-Node output: #{other}")
-        {:noreply, state}
+        {:error, reason} ->
+          Logger.error("Failed to connect to C-Node: #{inspect(reason)}")
+          {:stop, {:connect_failed, reason}, state}
+      end
+    else
+      {:noreply, state}
     end
   end
 
@@ -301,9 +302,9 @@ defmodule ExMaude.Backend.CNode do
 
   defp send_cnode_command(cnode_name, command) do
     try do
-      # Send to the registered process on the C-Node
-      # The C-Node doesn't register a process name, we send to the C-Node itself
-      send({:any, cnode_name}, {self(), command})
+      # Send command to C-Node using the :any registered name pattern
+      # The C-Node expects: {:execute, binary} or atoms like :ping, :stop
+      send({:any, cnode_name}, command)
 
       receive do
         response -> response
