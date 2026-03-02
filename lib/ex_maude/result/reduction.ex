@@ -110,9 +110,13 @@ defmodule ExMaude.Result.Reduction do
           %ExMaude.Result.Reduction{term: term, rewrites: rewrites, time_ms: time_ms},
           _opts
         ) do
-      parts = ["term: #{term.value} : #{term.sort}"]
-      parts = if rewrites, do: parts ++ ["rewrites: #{rewrites}"], else: parts
-      parts = if time_ms, do: parts ++ ["time: #{time_ms}ms"], else: parts
+      parts =
+        [
+          "term: #{term.value} : #{term.sort}",
+          if(rewrites, do: "rewrites: #{rewrites}"),
+          if(time_ms, do: "time: #{time_ms}ms")
+        ]
+        |> Enum.reject(&is_nil/1)
 
       "#ExMaude.Result.Reduction<#{Enum.join(parts, ", ")}>"
     end

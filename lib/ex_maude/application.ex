@@ -50,7 +50,7 @@ defmodule ExMaude.Application do
 
   use Application
 
-  @impl true
+  @impl Application
   def start(_type, _args) do
     children =
       if Application.get_env(:ex_maude, :start_pool, false) do

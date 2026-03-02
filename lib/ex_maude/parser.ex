@@ -219,7 +219,10 @@ defmodule ExMaude.Parser do
     # Simple comma-separated arg parsing (doesn't handle nested parens well)
     args_str
     |> String.split(",")
-    |> Enum.map(&String.trim/1)
-    |> Enum.map(&do_parse_term/1)
+    |> Enum.map(fn arg ->
+      arg
+      |> String.trim()
+      |> do_parse_term()
+    end)
   end
 end

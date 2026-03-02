@@ -81,12 +81,7 @@ defmodule ExMaude.IoT.Encoder do
   def encode_rules([]), do: {:ok, "empty"}
 
   def encode_rules(rules) do
-    encoded =
-      rules
-      |> Enum.map(&encode_rule/1)
-      |> Enum.join(", ")
-
-    {:ok, encoded}
+    {:ok, Enum.map_join(rules, ", ", &encode_rule/1)}
   end
 
   @doc """
@@ -98,7 +93,7 @@ defmodule ExMaude.IoT.Encoder do
     thing_id = encode_thing_id(rule.thing_id)
     trigger = encode_trigger(rule.trigger)
     actions = encode_actions(rule.actions)
-    priority = rule[:priority] || 1
+    priority = Map.get(rule, :priority, 1)
 
     "rule(#{id}, #{thing_id}, #{trigger}, #{actions}, #{priority})"
   end
@@ -157,9 +152,7 @@ defmodule ExMaude.IoT.Encoder do
   def encode_actions([]), do: "nil"
 
   def encode_actions(actions) do
-    actions
-    |> Enum.map(&encode_action/1)
-    |> Enum.join(" ; ")
+    Enum.map_join(actions, " ; ", &encode_action/1)
   end
 
   @doc """

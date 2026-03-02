@@ -19,23 +19,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
   # Check prerequisites at module load time
   @cnode_available Backend.available?(:cnode) and Node.alive?()
 
-  if not @cnode_available do
-    setup_all do
-      if not Backend.available?(:cnode) do
-        IO.puts("\n⚠️  Skipping C-Node integration tests: maude_bridge not compiled")
-        IO.puts("   Compile with: cd c_src && make\n")
-      else
-        IO.puts("\n⚠️  Skipping C-Node integration tests: distribution not enabled")
-        IO.puts("   Run with: elixir --sname test -S mix test --include cnode_integration\n")
-      end
-
-      :ok
-    end
-
-    test "C-Node prerequisites not met - skipping all tests" do
-      assert true
-    end
-  else
+  if @cnode_available do
     alias ExMaude.Backend.CNode, warn: false
 
     describe "struct" do

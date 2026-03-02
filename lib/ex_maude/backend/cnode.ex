@@ -233,17 +233,18 @@ defmodule ExMaude.Backend.CNode do
   defp start_cnode(state) do
     bridge_path = bridge_executable()
 
-    unless File.exists?(bridge_path) do
-      {:error, {:missing_binary, bridge_path}}
-    else
-      # Generate both string (for args) and atom (for cnode_name) forms
-      {node_name_str, cnode_name_atom} = generate_node_name()
-      erlang_node = Atom.to_string(Node.self())
+    cond do
+      not File.exists?(bridge_path) ->
+        {:error, {:missing_binary, bridge_path}}
 
-      # Ensure we're running as a distributed node
-      unless Node.alive?() do
+      not Node.alive?() ->
         {:error, :node_not_distributed}
-      else
+
+      true ->
+        # Generate both string (for args) and atom (for cnode_name) forms
+        {node_name_str, cnode_name_atom} = generate_node_name()
+        erlang_node = Atom.to_string(Node.self())
+
         args = [
           node_name_str,
           state.cookie,
@@ -273,7 +274,6 @@ defmodule ExMaude.Backend.CNode do
              os_pid: os_pid,
              cnode_name: cnode_name_atom
          }}
-      end
     end
   end
 
@@ -284,18 +284,16 @@ defmodule ExMaude.Backend.CNode do
     else
       Process.sleep(500)
 
-      case Node.connect(state.cnode_name) do
-        true ->
-          Node.monitor(state.cnode_name, true)
-          Logger.info("Connected to C-Node: #{state.cnode_name}")
-          {:ok, %{state | connected: true}}
+      if Node.connect(state.cnode_name) do
+        Node.monitor(state.cnode_name, true)
+        Logger.info("Connected to C-Node: #{state.cnode_name}")
+        {:ok, %{state | connected: true}}
+      else
+        Logger.warning(
+          "Connect attempt to #{state.cnode_name} failed, #{retries - 1} retries left"
+        )
 
-        false ->
-          Logger.warning(
-            "Connect attempt to #{state.cnode_name} failed, #{retries - 1} retries left"
-          )
-
-          connect_to_cnode(state, retries - 1)
+        connect_to_cnode(state, retries - 1)
       end
     end
   end
@@ -342,7 +340,13 @@ defmodule ExMaude.Backend.CNode do
     id = :erlang.unique_integer([:positive])
     node_str = "maude_bridge_#{id}"
     # Extract hostname from current node (e.g., test@studio -> studio)
-    hostname = Node.self() |> Atom.to_string() |> String.split("@") |> List.last()
+    hostname =
+      Node.self()
+      |> Atom.to_string()
+      |> String.split("@")
+      |> List.last()
+
+    # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
     node_atom = :"maude_bridge_#{id}@#{hostname}"
     {node_str, node_atom}
   end

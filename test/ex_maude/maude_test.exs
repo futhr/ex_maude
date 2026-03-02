@@ -5,8 +5,8 @@ defmodule ExMaude.MaudeTest do
 
   use ExMaude.MaudeCase
 
-  alias ExMaude.Maude
   alias ExMaude.Error
+  alias ExMaude.Maude
 
   doctest ExMaude.Maude
 
@@ -406,7 +406,7 @@ defmodule ExMaude.MaudeTest do
 
     test "search default timeout is 30000ms" do
       search_timeout = 30_000
-      assert search_timeout == 30000
+      assert search_timeout == 30_000
     end
   end
 

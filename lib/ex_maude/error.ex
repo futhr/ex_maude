@@ -68,7 +68,7 @@ defmodule ExMaude.Error do
           raw_output: String.t() | nil
         }
 
-  @impl true
+  @impl Exception
   def message(%__MODULE__{type: type, message: msg}) do
     "[#{type}] #{msg}"
   end

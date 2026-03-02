@@ -5,8 +5,8 @@ defmodule ExMaude.PoolTest do
 
   use ExMaude.MaudeCase
 
-  alias ExMaude.Pool
   alias ExMaude.Error
+  alias ExMaude.Pool
 
   doctest ExMaude.Pool
 

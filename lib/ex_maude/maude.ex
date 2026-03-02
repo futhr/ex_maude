@@ -33,7 +33,7 @@ defmodule ExMaude.Maude do
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
 
-  alias ExMaude.{Error, Pool, Server, Parser, Telemetry}
+  alias ExMaude.{Error, Parser, Pool, Server, Telemetry}
 
   @default_timeout_ms 5_000
   @search_timeout_ms 30_000
@@ -145,9 +145,7 @@ defmodule ExMaude.Maude do
   """
   @spec load_file(Path.t()) :: :ok | {:error, Error.t()}
   def load_file(path) do
-    unless File.exists?(path) do
-      {:error, Error.file_not_found(path)}
-    else
+    if File.exists?(path) do
       results =
         Pool.broadcast(fn worker ->
           Server.load_file(worker, path)
@@ -162,6 +160,8 @@ defmodule ExMaude.Maude do
         {:error, Error.partial_load(failures)}
         # coveralls-ignore-stop
       end
+    else
+      {:error, Error.file_not_found(path)}
     end
   end
 

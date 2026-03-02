@@ -63,7 +63,7 @@ defmodule ExMaude.Result.Search do
 
   alias ExMaude.Result.Solution
 
-  defstruct solutions: [], states_explored: nil, time_ms: nil
+  defstruct [:states_explored, :time_ms, solutions: []]
 
   @type t :: %__MODULE__{
           solutions: [Solution.t()],
@@ -178,9 +178,13 @@ defmodule ExMaude.Result.Search do
           %ExMaude.Result.Search{solutions: sols, states_explored: states, time_ms: time},
           _opts
         ) do
-      parts = ["#{length(sols)} solution(s)"]
-      parts = if states, do: parts ++ ["states: #{states}"], else: parts
-      parts = if time, do: parts ++ ["time: #{time}ms"], else: parts
+      parts =
+        [
+          "#{length(sols)} solution(s)",
+          if(states, do: "states: #{states}"),
+          if(time, do: "time: #{time}ms")
+        ]
+        |> Enum.reject(&is_nil/1)
 
       "#ExMaude.Result.Search<#{Enum.join(parts, ", ")}>"
     end

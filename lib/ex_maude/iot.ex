@@ -67,8 +67,8 @@ defmodule ExMaude.IoT do
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
 
+  alias ExMaude.IoT.{ConflictParser, Encoder, Validator}
   alias ExMaude.Maude
-  alias ExMaude.IoT.{Encoder, ConflictParser, Validator}
 
   @type thing_id :: String.t()
 

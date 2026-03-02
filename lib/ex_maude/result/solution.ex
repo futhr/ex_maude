@@ -114,15 +114,15 @@ defmodule ExMaude.Result.Solution do
   defimpl Inspect do
     @spec inspect(ExMaude.Result.Solution.t(), Inspect.Opts.t()) :: String.t()
     def inspect(%ExMaude.Result.Solution{number: num, state_num: state, substitution: sub}, _opts) do
-      parts = ["##{num}"]
-      parts = if state, do: parts ++ ["state: #{state}"], else: parts
+      bindings = Enum.map_join(sub, ", ", fn {k, v} -> "#{k} = #{v}" end)
 
-      bindings =
-        sub
-        |> Enum.map(fn {k, v} -> "#{k} = #{v}" end)
-        |> Enum.join(", ")
-
-      parts = if bindings != "", do: parts ++ [bindings], else: parts
+      parts =
+        [
+          "##{num}",
+          if(state, do: "state: #{state}"),
+          if(bindings != "", do: bindings)
+        ]
+        |> Enum.reject(&is_nil/1)
 
       "#ExMaude.Result.Solution<#{Enum.join(parts, ", ")}>"
     end

@@ -19,17 +19,7 @@ defmodule ExMaude.Backend.NIFIntegrationTest do
   # Check prerequisites at module load time
   @nif_available Backend.available?(:nif)
 
-  if not @nif_available do
-    setup_all do
-      IO.puts("\n⚠️  Skipping NIF tests: Rustler NIF not compiled or not loaded")
-      IO.puts("   Ensure Rust is installed and run: mix compile\n")
-      :ok
-    end
-
-    test "NIF prerequisites not met - skipping all tests" do
-      assert true
-    end
-  else
+  if @nif_available do
     alias ExMaude.Backend.NIF, warn: false
 
     describe "struct" do

@@ -184,10 +184,15 @@ defmodule ExMaude.Telemetry do
   @spec span([atom(), ...], map(), (-> {:ok, term()} | {:error, term()})) ::
           {:ok, term()} | {:error, term()}
   def span(event, start_metadata, fun) when is_list(event) and is_map(start_metadata) do
+    # credo:disable-for-lines:3 Credo.Check.Refactor.AppendSingleItem
+    start_event = event ++ [:start]
+    stop_event = event ++ [:stop]
+    exception_event = event ++ [:exception]
+
     start_time = System.monotonic_time()
 
     :telemetry.execute(
-      event ++ [:start],
+      start_event,
       %{system_time: System.system_time()},
       start_metadata
     )
@@ -198,7 +203,7 @@ defmodule ExMaude.Telemetry do
       result_atom = if is_tuple(result), do: elem(result, 0), else: :ok
 
       :telemetry.execute(
-        event ++ [:stop],
+        stop_event,
         %{duration: duration},
         Map.put(start_metadata, :result, result_atom)
       )
@@ -209,7 +214,7 @@ defmodule ExMaude.Telemetry do
         duration = System.monotonic_time() - start_time
 
         :telemetry.execute(
-          event ++ [:exception],
+          exception_event,
           %{duration: duration},
           Map.merge(start_metadata, %{kind: :error, reason: e})
         )
@@ -220,7 +225,7 @@ defmodule ExMaude.Telemetry do
         duration = System.monotonic_time() - start_time
 
         :telemetry.execute(
-          event ++ [:exception],
+          exception_event,
           %{duration: duration},
           Map.merge(start_metadata, %{kind: kind, reason: reason})
         )
