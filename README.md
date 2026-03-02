@@ -4,11 +4,11 @@
 
 **Elixir bindings for the Maude formal verification system**
 
-[![Hex.pm](https://img.shields.io/hexpm/v/ex_maude.svg?style=flat-square)](https://hex.pm/packages/ex_maude) [![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg?style=flat-square)](https://hexdocs.pm/ex_maude) [![CI](https://github.com/futhr/ex_maude/actions/workflows/ci.yml/badge.svg)](https://github.com/futhr/ex_maude/actions/workflows/ci.yml) [![Coverage](https://codecov.io/gh/futhr/ex_maude/branch/main/graph/badge.svg)](https://codecov.io/gh/futhr/ex_maude) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Docs](https://img.shields.io/badge/docs-GitHub-blue.svg?style=flat-square)](https://github.com/futhr/ex_maude) [![CI](https://github.com/futhr/ex_maude/actions/workflows/ci.yml/badge.svg)](https://github.com/futhr/ex_maude/actions/workflows/ci.yml) [![Coverage](https://codecov.io/gh/futhr/ex_maude/branch/main/graph/badge.svg)](https://codecov.io/gh/futhr/ex_maude) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 [Installation](#installation) |
 [Quick Start](#quick-start) |
-[Documentation](https://hexdocs.pm/ex_maude)
+[Documentation](https://github.com/futhr/ex_maude)
 
 </div>
 
@@ -41,6 +41,8 @@ a powerful formal specification language based on rewriting logic. Use ExMaude f
 
 ## Installation
 
+_Note: This project is currently in production evaluation and has not yet been released to Hex. Documentation is available on [GitHub](https://github.com/futhr/ex_maude)._
+
 ### Requirements
 
 - Elixir ~> 1.17
@@ -51,7 +53,7 @@ Add `ex_maude` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_maude, "~> 0.1.0"}
+    {:ex_maude, github: "futhr/ex_maude"}
   ]
 end
 ```
@@ -368,7 +370,7 @@ Explore ExMaude interactively with Livebook:
 
 ## Documentation
 
-- [HexDocs](https://hexdocs.pm/ex_maude) - Full API documentation
+- [GitHub](https://github.com/futhr/ex_maude) - Documentation and source code
 - [AGENTS.md](AGENTS.md) - AI agent integration guide
 
 ---
