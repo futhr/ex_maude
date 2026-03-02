@@ -4,7 +4,7 @@
 
 **Elixir bindings for the Maude formal verification system**
 
-[![Hex.pm](https://img.shields.io/hexpm/v/ex_maude.svg?style=flat-square)](https://hex.pm/packages/ex_maude) [![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg?style=flat-square)](https://hexdocs.pm/ex_maude) [![CI](https://github.com/futhr/ex_maude/actions/workflows/ci.yml/badge.svg)](https://github.com/futhr/ex_maude/actions/workflows/ci.yml) [![Coverage Status](https://coveralls.io/repos/github/futhr/ex_maude/badge.svg?branch=main)](https://coveralls.io/github/futhr/ex_maude?branch=main) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Hex.pm](https://img.shields.io/hexpm/v/ex_maude.svg?style=flat-square)](https://hex.pm/packages/ex_maude) [![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg?style=flat-square)](https://hexdocs.pm/ex_maude) [![CI](https://github.com/futhr/ex_maude/actions/workflows/ci.yml/badge.svg)](https://github.com/futhr/ex_maude/actions/workflows/ci.yml) [![Coverage](https://codecov.io/gh/futhr/ex_maude/branch/main/graph/badge.svg)](https://codecov.io/gh/futhr/ex_maude) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 [Installation](#installation) |
 [Quick Start](#quick-start) |

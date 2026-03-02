@@ -52,9 +52,17 @@ jobs:
       - name: Run tests
         run: mix test
 
-      - name: Upload coverage to Coveralls
+      - name: Run tests with coverage
         if: matrix.elixir == '1.18' && matrix.otp == '28'
-        run: mix coveralls.github
+        run: mix coveralls.json
+
+      - name: Upload to Codecov
+        if: matrix.elixir == '1.18' && matrix.otp == '28'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: cover/excoveralls.json
+          fail_ci_if_error: false
 
   quality:
     name: Code Quality

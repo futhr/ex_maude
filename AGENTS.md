@@ -102,7 +102,8 @@ mix sobelow                     # Security analysis
 mix docs                        # Generate docs
 mix maude.install               # Install Maude binary
 mix maude.install --check       # Check Maude availability
-mix coveralls                   # Test coverage report
+mix coveralls                   # Test coverage report (text)
+mix coveralls.json              # Test coverage report (json/codecov)
 mix bench                       # Run main benchmarks
 mix bench.backends              # Run backend comparison benchmarks
 ```

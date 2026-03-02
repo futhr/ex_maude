@@ -77,7 +77,7 @@ defmodule ExMaude.MixProject do
         coveralls: :test,
         "coveralls.detail": :test,
         "coveralls.html": :test,
-        "coveralls.github": :test,
+        "coveralls.json": :test,
         cover: :test,
         "cover.html": :test,
         "test.network": :test,
