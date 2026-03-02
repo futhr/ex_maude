@@ -67,13 +67,13 @@ defmodule ExMaude.Pool do
   @spec child_spec(keyword()) ::
           {atom(), {:poolboy, :start_link, [any()]}, :permanent, 5000, :worker, [:poolboy]}
   def child_spec(opts \\ []) do
-    worker_module = opts[:worker_module] || Backend.impl()
+    worker_module = Keyword.get(opts, :worker_module, Backend.impl())
 
     pool_config = [
       name: {:local, @pool_name},
       worker_module: worker_module,
-      size: opts[:pool_size] || config_pool_size(),
-      max_overflow: opts[:pool_max_overflow] || config_max_overflow()
+      size: Keyword.get(opts, :pool_size, config_pool_size()),
+      max_overflow: Keyword.get(opts, :pool_max_overflow, config_max_overflow())
     ]
 
     worker_opts = Keyword.drop(opts, [:pool_size, :pool_max_overflow, :worker_module])

@@ -133,7 +133,7 @@ defmodule ExMaude.IoT.Validator do
       |> Enum.reduce(%{}, fn {rule, idx}, acc ->
         case validate_rule(rule) do
           :ok -> acc
-          {:error, errs} -> Map.put(acc, rule[:id] || "rule_#{idx}", errs)
+          {:error, errs} -> Map.put(acc, Map.get(rule, :id, "rule_#{idx}"), errs)
         end
       end)
 
