@@ -298,7 +298,7 @@ fmod NAT"
 
     test "parses result with parameterized type" do
       output = "result List{Nat}: 1 2 3"
-      assert {:ok, "1 2 3", _type} = Parser.parse_result(output)
+      assert {:ok, "1 2 3", _} = Parser.parse_result(output)
     end
 
     test "parses result from full reduction output" do
@@ -606,7 +606,7 @@ fmod NAT"
       assert {:error, issues} = Parser.parse_errors(output)
       assert length(issues) == 3
 
-      messages = Enum.map(issues, fn {_type, msg} -> msg end)
+      messages = Enum.map(issues, fn {_, msg} -> msg end)
       assert Enum.any?(messages, &String.contains?(&1, "NAT"))
       assert Enum.any?(messages, &String.contains?(&1, "Foo"))
     end

@@ -108,7 +108,7 @@ defmodule ExMaude.Result.Reduction do
     @spec inspect(ExMaude.Result.Reduction.t(), Inspect.Opts.t()) :: String.t()
     def inspect(
           %ExMaude.Result.Reduction{term: term, rewrites: rewrites, time_ms: time_ms},
-          _opts
+          _
         ) do
       parts =
         [

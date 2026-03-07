@@ -41,7 +41,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
         assert Process.alive?(pid)
 
         connected =
-          Enum.reduce_while(1..40, false, fn _i, _acc ->
+          Enum.reduce_while(1..40, false, fn _, _ ->
             if CNode.alive?(pid) do
               {:halt, true}
             else
@@ -73,7 +73,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
       setup do
         {:ok, pid} = CNode.start_link([])
 
-        Enum.reduce_while(1..40, false, fn _i, _acc ->
+        Enum.reduce_while(1..40, false, fn _, _ ->
           if CNode.alive?(pid) do
             {:halt, true}
           else
@@ -114,7 +114,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
       setup do
         {:ok, pid} = CNode.start_link([])
 
-        Enum.reduce_while(1..40, false, fn _i, _acc ->
+        Enum.reduce_while(1..40, false, fn _, _ ->
           if CNode.alive?(pid) do
             {:halt, true}
           else

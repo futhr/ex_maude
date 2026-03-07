@@ -130,26 +130,26 @@ defmodule ExMaude.Backend.CNode do
   end
 
   @impl GenServer
-  def handle_call({:execute, command}, _from, %{connected: true} = state) do
+  def handle_call({:execute, command}, _, %{connected: true} = state) do
     result = send_cnode_command(state.cnode_name, {:execute, command})
     emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
     {:reply, result, state}
   end
 
-  def handle_call({:execute, _command}, _from, %{connected: false} = state) do
+  def handle_call({:execute, _}, _, %{connected: false} = state) do
     {:reply, {:error, Error.exception(:not_connected, "C-Node not connected")}, state}
   end
 
-  def handle_call({:load_file, path}, _from, %{connected: true} = state) do
+  def handle_call({:load_file, path}, _, %{connected: true} = state) do
     result = send_cnode_command(state.cnode_name, {:load_file, path})
     {:reply, result, state}
   end
 
-  def handle_call({:load_file, _path}, _from, %{connected: false} = state) do
+  def handle_call({:load_file, _}, _, %{connected: false} = state) do
     {:reply, {:error, Error.exception(:not_connected, "C-Node not connected")}, state}
   end
 
-  def handle_call(:alive?, _from, state) do
+  def handle_call(:alive?, _, state) do
     {:reply, state.connected, state}
   end
 
@@ -199,7 +199,7 @@ defmodule ExMaude.Backend.CNode do
     {:stop, {:cnode_exit, status}, state}
   end
 
-  def handle_info(_msg, state) do
+  def handle_info(_, state) do
     {:noreply, state}
   end
 

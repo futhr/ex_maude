@@ -154,41 +154,41 @@ defmodule ExMaude.IoT.Validator do
   end
 
   # Trigger validation with depth limiting to prevent infinite recursion
-  defp validate_trigger(errors, _trigger, depth) when depth > @max_trigger_depth do
+  defp validate_trigger(errors, _, depth) when depth > @max_trigger_depth do
     ["trigger nesting exceeds maximum depth of #{@max_trigger_depth}" | errors]
   end
 
-  defp validate_trigger(errors, nil, _depth), do: errors
+  defp validate_trigger(errors, nil, _), do: errors
 
-  defp validate_trigger(errors, {:prop_eq, prop, _}, _depth) when is_binary(prop), do: errors
+  defp validate_trigger(errors, {:prop_eq, prop, _}, _) when is_binary(prop), do: errors
 
-  defp validate_trigger(errors, {:prop_gt, prop, v}, _depth)
+  defp validate_trigger(errors, {:prop_gt, prop, v}, _)
        when is_binary(prop) and is_number(v),
        do: errors
 
-  defp validate_trigger(errors, {:prop_lt, prop, v}, _depth)
+  defp validate_trigger(errors, {:prop_lt, prop, v}, _)
        when is_binary(prop) and is_number(v),
        do: errors
 
-  defp validate_trigger(errors, {:prop_gte, prop, v}, _depth)
+  defp validate_trigger(errors, {:prop_gte, prop, v}, _)
        when is_binary(prop) and is_number(v),
        do: errors
 
-  defp validate_trigger(errors, {:prop_lte, prop, v}, _depth)
+  defp validate_trigger(errors, {:prop_lte, prop, v}, _)
        when is_binary(prop) and is_number(v),
        do: errors
 
-  defp validate_trigger(errors, {:env_eq, prop, _}, _depth) when is_binary(prop), do: errors
+  defp validate_trigger(errors, {:env_eq, prop, _}, _) when is_binary(prop), do: errors
 
-  defp validate_trigger(errors, {:env_gt, prop, v}, _depth)
+  defp validate_trigger(errors, {:env_gt, prop, v}, _)
        when is_binary(prop) and is_number(v),
        do: errors
 
-  defp validate_trigger(errors, {:env_lt, prop, v}, _depth)
+  defp validate_trigger(errors, {:env_lt, prop, v}, _)
        when is_binary(prop) and is_number(v),
        do: errors
 
-  defp validate_trigger(errors, {:always}, _depth), do: errors
+  defp validate_trigger(errors, {:always}, _), do: errors
 
   defp validate_trigger(errors, {:and, t1, t2}, depth) do
     errors
@@ -203,7 +203,7 @@ defmodule ExMaude.IoT.Validator do
   end
 
   defp validate_trigger(errors, {:not, t}, depth), do: validate_trigger(errors, t, depth + 1)
-  defp validate_trigger(errors, _, _depth), do: ["invalid trigger format" | errors]
+  defp validate_trigger(errors, _, _), do: ["invalid trigger format" | errors]
 
   defp validate_actions(errors, nil), do: errors
 

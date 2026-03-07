@@ -352,14 +352,14 @@ defmodule ExMaude.Error do
 
   defp extract_warning_or_error(output) do
     case Regex.run(~r/(Warning|Error):\s*(.+)/m, output) do
-      [_, _level, msg] -> String.slice(String.trim(msg), 0, 200)
+      [_, _, msg] -> String.slice(String.trim(msg), 0, 200)
       nil -> String.slice(output, 0, 200)
     end
   end
 
   defimpl Inspect do
     @spec inspect(ExMaude.Error.t(), Inspect.Opts.t()) :: String.t()
-    def inspect(%ExMaude.Error{type: type, message: message}, _opts) do
+    def inspect(%ExMaude.Error{type: type, message: message}, _) do
       "#ExMaude.Error<#{type}: #{message}>"
     end
   end

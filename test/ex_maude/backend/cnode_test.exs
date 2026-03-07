@@ -161,7 +161,7 @@ defmodule ExMaude.Backend.CNodeTest do
 
         # Wait for connection with timeout
         result =
-          Enum.reduce_while(1..40, false, fn _i, _acc ->
+          Enum.reduce_while(1..40, false, fn _, _ ->
             if CNode.alive?(pid) do
               {:halt, true}
             else
@@ -184,7 +184,7 @@ defmodule ExMaude.Backend.CNodeTest do
         {:ok, pid} = CNode.start_link([])
 
         # Wait for connection
-        Enum.reduce_while(1..40, false, fn _i, _acc ->
+        Enum.reduce_while(1..40, false, fn _, _ ->
           if CNode.alive?(pid) do
             {:halt, true}
           else

@@ -113,7 +113,7 @@ defmodule ExMaude.Result.Solution do
 
   defimpl Inspect do
     @spec inspect(ExMaude.Result.Solution.t(), Inspect.Opts.t()) :: String.t()
-    def inspect(%ExMaude.Result.Solution{number: num, state_num: state, substitution: sub}, _opts) do
+    def inspect(%ExMaude.Result.Solution{number: num, state_num: state, substitution: sub}, _) do
       bindings = Enum.map_join(sub, ", ", fn {k, v} -> "#{k} = #{v}" end)
 
       parts =

@@ -114,8 +114,7 @@
           {Credo.Check.Readability.PreferImplicitTry, false},
           # LazyLogging - Not compatible with Elixir >= 1.7.0
           {Credo.Check.Warning.LazyLogging, false},
-          # UnusedVariableNames - Named unused vars (_worker, _type) are intentional for readability
-          {Credo.Check.Consistency.UnusedVariableNames, false}
+          {Credo.Check.Consistency.UnusedVariableNames, [force: :anonymous]}
         ]
       }
     }

@@ -414,7 +414,7 @@ defmodule Mix.Tasks.Maude.Install do
     ]
 
     case :httpc.request(:get, {url, headers}, http_opts, body_format: :binary) do
-      {:ok, {{_, 200, _}, _headers, body}} ->
+      {:ok, {{_, 200, _}, _, body}} ->
         {:ok, Jason.decode!(body)}
 
       {:ok, {{_, 403, _}, _, _}} ->
@@ -535,7 +535,7 @@ defmodule Mix.Tasks.Maude.Install do
     ]
 
     case :httpc.request(:get, {url_charlist, []}, http_opts, body_format: :binary) do
-      {:ok, {{_, 200, _}, _headers, body}} when byte_size(body) > @max_download_size ->
+      {:ok, {{_, 200, _}, _, body}} when byte_size(body) > @max_download_size ->
         Mix.raise("""
         Downloaded file exceeds maximum size limit.
 
@@ -543,7 +543,7 @@ defmodule Mix.Tasks.Maude.Install do
         Limit: #{div(@max_download_size, 1024 * 1024)} MB
         """)
 
-      {:ok, {{_, 200, _}, _headers, body}} ->
+      {:ok, {{_, 200, _}, _, body}} ->
         File.write!(destination, body)
         size_kb = div(byte_size(body), 1024)
         Mix.shell().info("Downloaded #{size_kb} KB")
@@ -611,7 +611,7 @@ defmodule Mix.Tasks.Maude.Install do
     download_with_httpc(location, destination)
   end
 
-  defp verify_checksum(_path, nil) do
+  defp verify_checksum(_, nil) do
     Mix.shell().info("(No checksum available, skipping verification)")
     :ok
   end
@@ -687,7 +687,7 @@ defmodule Mix.Tasks.Maude.Install do
     end
   end
 
-  defp extract_with_unzip(unzip, zip_path, install_path, _version) do
+  defp extract_with_unzip(unzip, zip_path, install_path, _) do
     # -o: overwrite without prompting
     # -q: quiet
     args = ["-o", "-q", zip_path, "-d", install_path]

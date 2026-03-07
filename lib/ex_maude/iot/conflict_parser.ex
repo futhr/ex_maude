@@ -193,7 +193,7 @@ defmodule ExMaude.IoT.ConflictParser do
     end
   end
 
-  defp extract_balanced_parens(_str, _depth, _pos), do: :error
+  defp extract_balanced_parens(_, _, _), do: :error
 
   defp parse_single_conflict(conflict_str) do
     # Extract conflict type (first identifier after "conflict(")
@@ -243,5 +243,5 @@ defmodule ExMaude.IoT.ConflictParser do
   defp parse_conflict_type("envConflict"), do: :env_conflict
   defp parse_conflict_type("stateCascade"), do: :state_cascade
   defp parse_conflict_type("stateEnvCascade"), do: :state_env_cascade
-  defp parse_conflict_type(_other), do: :unknown_conflict
+  defp parse_conflict_type(_), do: :unknown_conflict
 end

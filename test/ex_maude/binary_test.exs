@@ -306,7 +306,7 @@ defmodule ExMaude.BinaryTest do
       # For platforms not in the supported list,
       # the format should still be "os-arch"
       platform = Binary.platform()
-      [_os, _arch] = String.split(platform, "-", parts: 2)
+      [_, _] = String.split(platform, "-", parts: 2)
     end
   end
 

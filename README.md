@@ -251,7 +251,7 @@ end
 :telemetry.attach(
   "my-logger",
   [:ex_maude, :command, :stop],
-  fn _event, %{duration: d}, %{operation: op, result: r}, _ ->
+  fn _, %{duration: d}, %{operation: op, result: r}, _ ->
     ms = System.convert_time_unit(d, :native, :millisecond)
     Logger.info("ExMaude #{op}: #{r} in #{ms}ms")
   end,

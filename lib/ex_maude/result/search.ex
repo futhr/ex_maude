@@ -176,7 +176,7 @@ defmodule ExMaude.Result.Search do
     @spec inspect(ExMaude.Result.Search.t(), Inspect.Opts.t()) :: String.t()
     def inspect(
           %ExMaude.Result.Search{solutions: sols, states_explored: states, time_ms: time},
-          _opts
+          _
         ) do
       parts =
         [

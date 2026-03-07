@@ -120,25 +120,25 @@ defmodule ExMaude.Backend.NIF do
 
     @doc false
     @spec start(String.t()) :: {:ok, reference()} | {:error, term()} | reference()
-    def start(_maude_path) do
+    def start(_) do
       :erlang.nif_error(:nif_not_loaded)
     end
 
     @doc false
     @spec execute(reference(), String.t()) :: binary() | {:ok, String.t()} | {:error, term()}
-    def execute(_handle, _command) do
+    def execute(_, _) do
       :erlang.nif_error(:nif_not_loaded)
     end
 
     @doc false
     @spec stop(reference()) :: :ok | {:error, term()}
-    def stop(_handle) do
+    def stop(_) do
       :erlang.nif_error(:nif_not_loaded)
     end
 
     @doc false
     @spec alive(reference()) :: boolean()
-    def alive(_handle) do
+    def alive(_) do
       :erlang.nif_error(:nif_not_loaded)
     end
   end
@@ -228,7 +228,7 @@ defmodule ExMaude.Backend.NIF do
            initialized: true
          }}
 
-      {:error, %Error{type: :nif_not_loaded} = _error} ->
+      {:error, %Error{type: :nif_not_loaded} = _} ->
         # Start in stub mode when NIF is not available
         Logger.debug("ExMaude.Backend.NIF starting in stub mode (NIF not loaded)")
 
@@ -245,7 +245,7 @@ defmodule ExMaude.Backend.NIF do
   end
 
   @impl GenServer
-  def handle_call({:execute, command}, _from, %{initialized: true, handle: handle} = state) do
+  def handle_call({:execute, command}, _, %{initialized: true, handle: handle} = state) do
     result =
       try do
         case Native.execute(handle, command) do
@@ -262,7 +262,7 @@ defmodule ExMaude.Backend.NIF do
     {:reply, result, state}
   end
 
-  def handle_call({:execute, _command}, _from, state) do
+  def handle_call({:execute, _}, _, state) do
     {:reply,
      {:error,
       Error.exception(
@@ -271,7 +271,7 @@ defmodule ExMaude.Backend.NIF do
       )}, state}
   end
 
-  def handle_call({:load_file, path}, _from, %{initialized: true, handle: handle} = state) do
+  def handle_call({:load_file, path}, _, %{initialized: true, handle: handle} = state) do
     command = "load #{path}"
 
     result =
@@ -298,7 +298,7 @@ defmodule ExMaude.Backend.NIF do
     {:reply, result, state}
   end
 
-  def handle_call({:load_file, _path}, _from, state) do
+  def handle_call({:load_file, _}, _, state) do
     {:reply,
      {:error,
       Error.exception(
@@ -307,7 +307,7 @@ defmodule ExMaude.Backend.NIF do
       )}, state}
   end
 
-  def handle_call(:alive?, _from, %{initialized: true, handle: handle} = state) do
+  def handle_call(:alive?, _, %{initialized: true, handle: handle} = state) do
     alive =
       try do
         Native.alive(handle)
@@ -318,12 +318,12 @@ defmodule ExMaude.Backend.NIF do
     {:reply, alive, state}
   end
 
-  def handle_call(:alive?, _from, state) do
+  def handle_call(:alive?, _, state) do
     {:reply, false, state}
   end
 
   @impl GenServer
-  def handle_info(_msg, state) do
+  def handle_info(_, state) do
     {:noreply, state}
   end
 
@@ -340,7 +340,7 @@ defmodule ExMaude.Backend.NIF do
     :ok
   end
 
-  def terminate(reason, _state) do
+  def terminate(reason, _) do
     Logger.debug("ExMaude.Backend.NIF terminating: #{inspect(reason)}")
     :ok
   end
@@ -357,7 +357,7 @@ defmodule ExMaude.Backend.NIF do
         handle when is_reference(handle) -> {:ok, handle}
       end
     rescue
-      _e in UndefinedFunctionError ->
+      _ in UndefinedFunctionError ->
         {:error,
          Error.exception(
            :nif_not_loaded,

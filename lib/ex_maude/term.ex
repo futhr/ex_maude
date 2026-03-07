@@ -169,7 +169,7 @@ defmodule ExMaude.Term do
 
   defimpl Inspect do
     @spec inspect(ExMaude.Term.t(), Inspect.Opts.t()) :: String.t()
-    def inspect(%ExMaude.Term{value: value, sort: sort, module: module}, _opts) do
+    def inspect(%ExMaude.Term{value: value, sort: sort, module: module}, _) do
       if module do
         "#ExMaude.Term<#{value} : #{sort} in #{module}>"
       else

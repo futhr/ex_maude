@@ -168,7 +168,7 @@ ExMaude.Telemetry.events()
 
 ```elixir
 # Simple logging handler
-handler = fn event, measurements, metadata, _config ->
+handler = fn event, measurements, metadata, _ ->
   IO.puts("Event: #{inspect(event)}")
   IO.puts("  Duration: #{measurements[:duration]} native units")
   IO.puts("  Metadata: #{inspect(metadata)}")

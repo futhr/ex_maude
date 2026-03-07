@@ -51,7 +51,7 @@ defmodule ExMaude.Application do
   use Application
 
   @impl Application
-  def start(_type, _args) do
+  def start(_, _) do
     children =
       if Application.get_env(:ex_maude, :start_pool, false) do
         [ExMaude.Pool.child_spec()]

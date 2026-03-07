@@ -69,7 +69,7 @@ defmodule ExMaude.Backend.Port do
   @impl ExMaude.Backend
   def load_file(server, path) do
     case execute(server, "load #{path}") do
-      {:ok, _output} -> :ok
+      {:ok, _} -> :ok
       error -> error
     end
   end
@@ -135,7 +135,7 @@ defmodule ExMaude.Backend.Port do
     {:noreply, %{state | from: from, buffer: "", timeout_ref: timeout_ref}}
   end
 
-  def handle_call(:alive?, _from, state) do
+  def handle_call(:alive?, _, state) do
     alive = port_alive?(state.port)
     {:reply, alive, state}
   end
@@ -187,7 +187,7 @@ defmodule ExMaude.Backend.Port do
     {:noreply, %{state | from: nil, buffer: "", timeout_ref: nil}}
   end
 
-  def handle_info(_msg, state) do
+  def handle_info(_, state) do
     {:noreply, state}
   end
 
@@ -423,7 +423,7 @@ defmodule ExMaude.Backend.Port do
     String.slice(string, 0, max_length) <> "..."
   end
 
-  defp truncate(string, _max_length), do: string
+  defp truncate(string, _), do: string
 
   defp emit_telemetry(event, measurements) do
     :telemetry.execute(

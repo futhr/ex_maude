@@ -49,7 +49,7 @@ defmodule ExMaude.Backend.PortTest do
       result = Port.start_link(maude_path: "/nonexistent/maude/binary")
 
       case result do
-        {:error, _reason} ->
+        {:error, _} ->
           # Expected error return
           assert true
 

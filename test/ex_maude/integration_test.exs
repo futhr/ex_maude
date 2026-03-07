@@ -70,7 +70,7 @@ defmodule ExMaude.IntegrationTest do
     end
 
     test "handles timeout option", %{maude_available: true} do
-      {:ok, _result} = ExMaude.reduce("NAT", "1 + 1", timeout: 10_000)
+      {:ok, _} = ExMaude.reduce("NAT", "1 + 1", timeout: 10_000)
     end
   end
 

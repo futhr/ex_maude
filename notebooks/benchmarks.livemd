@@ -28,7 +28,7 @@ ExMaude.Pool.status()
 ExMaude.reduce("NAT", "1 + 1")
 
 # Measure single reduce
-{time_us, {:ok, _result}} = :timer.tc(fn ->
+{time_us, {:ok, _}} = :timer.tc(fn ->
   ExMaude.reduce("NAT", "100 * 100")
 end)
 

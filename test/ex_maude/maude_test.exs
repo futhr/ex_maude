@@ -221,7 +221,7 @@ defmodule ExMaude.MaudeTest do
 
     @tag :integration
     test "respects max_rewrites", %{maude_available: true} do
-      {:ok, _result} = Maude.rewrite("NAT", "1", max_rewrites: 1)
+      {:ok, _} = Maude.rewrite("NAT", "1", max_rewrites: 1)
       # Should complete without error
     end
   end

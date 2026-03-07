@@ -41,7 +41,7 @@ defmodule ExMaude.PoolTest do
       spec = Pool.child_spec([])
       # Poolboy child spec is a tuple {id, {module, function, args}, ...}
       assert tuple_size(spec) >= 3
-      {id, {module, func, _args}, _restart, _timeout, _type, _modules} = spec
+      {id, {module, func, _}, _, _, _, _} = spec
       assert id == :ex_maude_pool
       assert module == :poolboy
       assert func == :start_link
@@ -70,7 +70,7 @@ defmodule ExMaude.PoolTest do
   describe "broadcast/1" do
     test "function type requirement" do
       # Broadcast requires a 1-arity function
-      fun = fn _worker -> :ok end
+      fun = fn _ -> :ok end
       assert is_function(fun, 1)
     end
   end
@@ -157,7 +157,7 @@ defmodule ExMaude.PoolTest do
     @tag :integration
     test "transaction returns function result" do
       result =
-        Pool.transaction(fn _worker ->
+        Pool.transaction(fn _ ->
           {:ok, 42}
         end)
 
@@ -218,7 +218,7 @@ defmodule ExMaude.PoolTest do
     test "multiple transactions in sequence" do
       results =
         for i <- 1..5 do
-          Pool.transaction(fn _worker ->
+          Pool.transaction(fn _ ->
             i * 2
           end)
         end
@@ -231,7 +231,7 @@ defmodule ExMaude.PoolTest do
       tasks =
         for i <- 1..10 do
           Task.async(fn ->
-            Pool.transaction(fn _worker ->
+            Pool.transaction(fn _ ->
               Process.sleep(10)
               i
             end)
@@ -264,7 +264,7 @@ defmodule ExMaude.PoolTest do
 
     test "child spec includes worker module" do
       spec = Pool.child_spec([])
-      {_, {_, _, [pool_config, _worker_opts]}, _, _, _, _} = spec
+      {_, {_, _, [pool_config, _]}, _, _, _, _} = spec
       # Pool uses Backend.impl() which defaults to Backend.Port
       assert Keyword.get(pool_config, :worker_module) == ExMaude.Backend.impl()
     end
@@ -308,7 +308,7 @@ defmodule ExMaude.PoolTest do
   describe "transaction/2 error handling" do
     test "function must be 1-arity" do
       # Verify the guard requirement
-      fun = fn _worker -> :ok end
+      fun = fn _ -> :ok end
       assert is_function(fun, 1)
     end
 
@@ -321,7 +321,7 @@ defmodule ExMaude.PoolTest do
   describe "broadcast/1 behavior" do
     test "returns list of results" do
       # Broadcast should return a list
-      fun = fn _w -> :result end
+      fun = fn _ -> :result end
       assert is_function(fun, 1)
     end
   end
@@ -452,14 +452,14 @@ defmodule ExMaude.PoolTest do
       :telemetry.attach(
         handler_id,
         [:ex_maude, :pool, :checkout, :stop],
-        fn _event, measurements, metadata, _config ->
+        fn _, measurements, metadata, _ ->
           send(test_pid, {:telemetry, measurements, metadata})
         end,
         nil
       )
 
       # Trigger transaction
-      result = Pool.transaction(fn _worker -> :ok end)
+      result = Pool.transaction(fn _ -> :ok end)
       assert result == :ok
 
       # Should receive telemetry event with ok result
@@ -483,7 +483,7 @@ defmodule ExMaude.PoolTest do
   describe "broadcast/1 with running pool" do
     @tag :integration
     test "broadcast executes on workers", %{maude_available: true} do
-      results = Pool.broadcast(fn _worker -> :ok end)
+      results = Pool.broadcast(fn _ -> :ok end)
 
       # Results should be a list with :ok for each worker
       assert is_list(results)
@@ -532,7 +532,7 @@ defmodule ExMaude.PoolTest do
       try do
         Application.put_env(:ex_maude, :backend, :port)
         # Trigger transaction to test config_backend is called
-        _result = Pool.transaction(fn _w -> :ok end)
+        _ = Pool.transaction(fn _ -> :ok end)
         # If we get here, config was read (even if transaction failed)
         assert true
       after
