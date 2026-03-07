@@ -602,13 +602,10 @@ defmodule Mix.Tasks.Maude.Install do
   end
 
   defp handle_redirect(headers, destination) do
-    location =
-      headers
-      |> Enum.find(fn {key, _} -> String.downcase(to_string(key)) == "location" end)
-      |> elem(1)
-      |> to_string()
-
-    download_with_httpc(location, destination)
+    case Enum.find(headers, fn {key, _} -> String.downcase(to_string(key)) == "location" end) do
+      {_, location} -> download_with_httpc(to_string(location), destination)
+      nil -> {:error, "no Location header in redirect response"}
+    end
   end
 
   defp verify_checksum(_, nil) do
