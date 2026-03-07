@@ -196,12 +196,7 @@ defmodule ExMaude.Binary do
 
   defp validate_path(path) do
     expanded = Path.expand(path)
-
-    cond do
-      not File.exists?(expanded) -> nil
-      not executable?(expanded) -> nil
-      true -> expanded
-    end
+    if File.exists?(expanded) and executable?(expanded), do: expanded
   end
 
   defp executable?(path) do
