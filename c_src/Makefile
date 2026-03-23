@@ -85,6 +85,7 @@ OBJS := $(SRCS:.c=.o)
 .PHONY: all clean info install
 
 all: $(TARGET)
+	@:
 
 # Create priv directory if needed
 $(PRIV_DIR):

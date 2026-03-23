@@ -39,13 +39,23 @@ defmodule ExMaude.MixProject do
     ]
   end
 
-  # Only add elixir_make compiler if c_src exists and erl_interface is available
+  # Only add elixir_make compiler if c_src exists, erl_interface is available,
+  # and the binary actually needs (re)building
   defp maybe_add_make_compiler do
-    if File.dir?("c_src") and erl_interface_available?() do
+    if File.dir?("c_src") and erl_interface_available?() and needs_compilation?() do
       [:elixir_make] ++ Mix.compilers()
     else
       Mix.compilers()
     end
+  end
+
+  defp needs_compilation? do
+    binary = "priv/maude_bridge"
+
+    not File.exists?(binary) or
+      Enum.any?(Path.wildcard("c_src/*.c") ++ Path.wildcard("c_src/*.h"), fn src ->
+        File.stat!(src).mtime > File.stat!(binary).mtime
+      end)
   end
 
   defp erl_interface_available? do
