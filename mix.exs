@@ -198,7 +198,10 @@ defmodule ExMaude.MixProject do
       "bench.all": ["bench", "bench.backends"],
       # C-Node specific tests (requires distribution)
       # C-Node integration tests
-      "test.cnode": ["cmd ./bin/test_cnode.sh"]
+      "test.cnode": ["cmd ./bin/test_cnode.sh"],
+
+      # Release
+      release: ["git_ops.release"]
     ]
   end
 end
