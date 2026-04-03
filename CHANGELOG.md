@@ -1,51 +1,61 @@
-# Changelog
+# Change Log
 
 All notable changes to this project will be documented in this file.
+See [Conventional Commits](Https://conventionalcommits.org) for commit guidelines.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+<!-- changelog -->
 
-## [Unreleased]
+## [v0.1.0](https://github.com/futhr/ex_maude/compare/v0.1.0...v0.1.0) (2026-04-03)
 
-### Added
 
-- **Pluggable backend architecture** with three communication backends:
-  - `ExMaude.Backend.Port` - Default, PTY-based communication (safe, works everywhere)
-  - `ExMaude.Backend.CNode` - Erlang C-Node with binary protocol (lower latency)
-  - `ExMaude.Backend.NIF` - Native integration stub (Phase 3, not yet implemented)
-- `ExMaude.Backend` behaviour defining unified interface for all backends
-- `ExMaude.Binary` module for Maude binary management and platform detection
-- Bundled Maude binaries for common platforms (darwin-arm64, darwin-x64, linux-x64)
-- Git LFS configuration for binary storage (`.gitattributes`)
-- C-Node bridge source code (`c_src/maude_bridge.c`) and Makefile
-- `elixir_make` dependency for native code compilation
-- Backend comparison benchmarks (`bench/backends_bench.exs`)
-- `mix maude.install --check` option to diagnose Maude availability
-- Comprehensive test suites for all backend modules
 
-### Changed
 
-- `ExMaude.Server` now delegates to `ExMaude.Backend.impl()` for backend selection
-- `ExMaude.Pool` uses configured backend module for worker processes
-- `mix maude.install` updated to show bundled binary is now the default
-- Configuration now supports `backend: :port | :cnode | :nif` option
+### Features:
 
-## [0.1.0] - 2026-01-11
+* add Livebook notebooks for interactive documentation by Tobias Bohwalli
 
-### Added
+* add bundled Maude binaries and IoT rules module by Tobias Bohwalli
 
-- Initial release
-- Port-based GenServer for Maude process communication
-- Poolboy worker pool for concurrent operations
-- High-level API: `reduce/3`, `rewrite/3`, `search/4`
-- Module loading: `load_file/1`, `load_module/1`
-- Output parsing utilities for results, search solutions, errors
-- Mix task `mix maude.install` for Maude binary installation
-- IoT rule conflict detection Maude module based on AutoIoT paper
-- Comprehensive documentation and typespecs
-- Telemetry events for observability
-- GitHub Actions CI/CD workflows
-- ex_check integration with credo, dialyzer, doctor, sobelow
+* add NIF backend stub with Rustler scaffolding by Tobias Bohwalli
 
-[Unreleased]: https://github.com/futhr/ex_maude/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/futhr/ex_maude/releases/tag/v0.1.0
+* add C-Node backend with maude_bridge by Tobias Bohwalli
+
+* add mix maude.install task for binary installation by Tobias Bohwalli
+
+* add IoT rule conflict detection module by Tobias Bohwalli
+
+* add Maude binary management, server, pool, and public API by Tobias Bohwalli
+
+* add backend behaviour and Port backend implementation by Tobias Bohwalli
+
+* add parser and telemetry modules by Tobias Bohwalli
+
+* add core types (Error, Term, Result structs) by Tobias Bohwalli
+
+### Bug Fixes:
+
+* remove HTML div wrapper and pre-release notice for hex.pm rendering by Tobias Bohwalli
+
+* suppress noisy make output when binary is up-to-date by Tobias Bohwalli
+
+* handle missing Location header in redirect safely by Tobias Bohwalli
+
+* tighten encoder specs to resolve dialyzer contract_supertype warning by Tobias Bohwalli
+
+* make CNode backend fully functional by Tobias Bohwalli
+
+* split telemetry tests to use MaudeCase for integration tests by Tobias Bohwalli
+
+* handle write() return values in maude_bridge.c by Tobias Bohwalli
+
+* add ex_doc and doctor to test env for CI by Tobias Bohwalli
+
+* suppress unused alias warnings in conditional test blocks by Tobias Bohwalli
+
+* replace deprecated Exception.exception?/1 with is_exception/1 by Tobias Bohwalli
+
+* convert @platform_patterns to function for compile-time compatibility by Tobias Bohwalli
+
+### Performance Improvements:
+
+* add benchmark suite by Tobias Bohwalli
