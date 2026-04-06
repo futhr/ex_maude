@@ -21,7 +21,6 @@ defmodule ExMaude.Backend.NIF do
   ## Trade-offs
 
     * **No process isolation** - NIF crash takes down the BEAM
-    * Requires Rust toolchain for compilation
     * More complex deployment than Port backend
 
   ## Configuration
@@ -41,15 +40,12 @@ defmodule ExMaude.Backend.NIF do
   3. Switch to `:cnode` for binary protocol benefits
   4. Only use `:nif` if latency is critical
 
-  ## Requirements
+  ## Precompiled Binaries
 
-  The Rustler NIF must be compiled:
+  Precompiled NIF binaries are downloaded automatically for supported
+  platforms. To force a build from source (requires Rust toolchain):
 
-      # Ensure Rust toolchain is installed
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-      # Compile the NIF (happens automatically with mix compile if rustler is available)
-      cd native/ex_maude_nif && cargo build --release
+      EX_MAUDE_BUILD=1 mix deps.compile ex_maude
 
   """
 
@@ -77,70 +73,48 @@ defmodule ExMaude.Backend.NIF do
     initialized: false
   ]
 
-  # Native module - loads the Rustler NIF
+  # Native module — loads precompiled NIF or builds from source
   defmodule Native do
     @moduledoc false
 
-    @on_load :load_nif
+    mix_config = Mix.Project.config()
+    version = mix_config[:version]
+    github_url = mix_config[:package][:links]["GitHub"]
 
-    @doc false
-    @spec load_nif() :: :ok
-    def load_nif do
-      # Try to find the NIF in various locations
-      nif_paths = [
-        # Release build location
-        Application.app_dir(:ex_maude, "priv/native/libex_maude_nif"),
-        # Dev/test build location
-        Path.join([File.cwd!(), "priv/native/libex_maude_nif"]),
-        # Alternative naming without lib prefix
-        Application.app_dir(:ex_maude, "priv/native/ex_maude_nif"),
-        Path.join([File.cwd!(), "priv/native/ex_maude_nif"])
-      ]
+    use RustlerPrecompiled,
+      otp_app: :ex_maude,
+      crate: "ex_maude_nif",
+      base_url: "#{github_url}/releases/download/v#{version}",
+      version: version,
+      targets: ~w(
+        aarch64-apple-darwin
+        aarch64-unknown-linux-gnu
+        aarch64-unknown-linux-musl
+        x86_64-apple-darwin
+        x86_64-unknown-linux-gnu
+        x86_64-unknown-linux-musl
+        x86_64-pc-windows-gnu
+        x86_64-pc-windows-msvc
+      ),
+      force_build: System.get_env("EX_MAUDE_BUILD") in ["1", "true"]
 
-      result =
-        Enum.find_value(nif_paths, :not_found, fn path ->
-          case :erlang.load_nif(String.to_charlist(path), 0) do
-            :ok -> :ok
-            {:error, {:reload, _}} -> :ok
-            {:error, {:upgrade, _}} -> :ok
-            _ -> nil
-          end
-        end)
-
-      case result do
-        :ok -> :ok
-        # NIF not found - this is expected when Rust NIF isn't compiled
-        # Return :ok to prevent BEAM warnings (stubs will be used instead)
-        :not_found -> :ok
-      end
-    end
-
-    # NIF stubs - these are replaced at load time by the Rust implementations
-    # If the NIF is not loaded, these return appropriate errors
+    # NIF stubs — replaced at load time by Rust implementations
 
     @doc false
     @spec start(String.t()) :: {:ok, reference()} | {:error, term()} | reference()
-    def start(_) do
-      :erlang.nif_error(:nif_not_loaded)
-    end
+    def start(_), do: :erlang.nif_error(:nif_not_loaded)
 
     @doc false
     @spec execute(reference(), String.t()) :: binary() | {:ok, String.t()} | {:error, term()}
-    def execute(_, _) do
-      :erlang.nif_error(:nif_not_loaded)
-    end
+    def execute(_, _), do: :erlang.nif_error(:nif_not_loaded)
 
     @doc false
     @spec stop(reference()) :: :ok | {:error, term()}
-    def stop(_) do
-      :erlang.nif_error(:nif_not_loaded)
-    end
+    def stop(_), do: :erlang.nif_error(:nif_not_loaded)
 
     @doc false
     @spec alive(reference()) :: boolean()
-    def alive(_) do
-      :erlang.nif_error(:nif_not_loaded)
-    end
+    def alive(_), do: :erlang.nif_error(:nif_not_loaded)
   end
 
   # Client API

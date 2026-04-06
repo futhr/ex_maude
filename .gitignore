@@ -12,7 +12,8 @@ ex_maude-*.tar
 compile_commands.json
 priv/plts/
 native/*/target/
-Cargo.lock
+priv/native/
+# Cargo.lock is tracked for reproducible NIF builds
 c_src/*.o
 c_src/maude_bridge
 priv/maude_bridge

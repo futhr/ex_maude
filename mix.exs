@@ -107,7 +107,10 @@ defmodule ExMaude.MixProject do
       {:jason, "~> 1.4"},
       # Native code compilation
       {:elixir_make, "~> 0.8", runtime: false},
-      {:rustler, "~> 0.34", runtime: false, optional: true},
+      # NIF — precompiled binaries downloaded at install time
+      {:rustler_precompiled, "~> 0.8"},
+      # Rustler only needed when force-building from source
+      {:rustler, "~> 0.37", optional: true},
       # Development tools
       {:ex_doc, "~> 0.34", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
@@ -133,8 +136,24 @@ defmodule ExMaude.MixProject do
       name: "ex_maude",
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url, "Maude" => "https://maude.cs.illinois.edu"},
-      files:
-        ~w(lib priv/maude .formatter.exs mix.exs README.md LICENSE CHANGELOG.md usage-rules.md bench/output),
+      files: ~w[
+        lib
+        c_src/maude_bridge.c
+        c_src/Makefile
+        native/ex_maude_nif/src
+        native/ex_maude_nif/Cargo.toml
+        native/ex_maude_nif/Cargo.lock
+        native/ex_maude_nif/.cargo
+        checksum-Elixir.ExMaude.Backend.NIF.Native.exs
+        priv/maude
+        .formatter.exs
+        mix.exs
+        README.md
+        LICENSE
+        CHANGELOG.md
+        usage-rules.md
+        bench/output
+      ],
       maintainers: ["Tobias Bohwalli <hi@futhr.io>"]
     ]
   end
