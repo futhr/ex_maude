@@ -37,9 +37,6 @@ jobs:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Restore deps cache
         uses: actions/cache@v5
         with:
@@ -49,21 +46,10 @@ jobs:
           key: deps-${{ runner.os }}-${{ steps.setup-beam.outputs.otp-version }}-${{ steps.setup-beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: deps-${{ runner.os }}-${{ steps.setup-beam.outputs.otp-version }}-${{ steps.setup-beam.outputs.elixir-version }}-
 
-      - name: Restore Cargo cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            native/ex_maude_nif/target
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-${{ runner.os }}-${{ hashFiles('native/ex_maude_nif/Cargo.lock') }}
-
       - name: Install dependencies
         run: mix deps.get
 
       - name: Compile
-        env:
-          EX_MAUDE_BUILD: "1"
         run: mix compile --warnings-as-errors
 
       - name: Run tests
@@ -96,9 +82,6 @@ jobs:
           elixir-version: "1.19"
           otp-version: "28"
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Restore deps cache
         uses: actions/cache@v5
         with:
@@ -106,15 +89,6 @@ jobs:
             deps
             _build
           key: deps-${{ runner.os }}-${{ steps.setup-beam.outputs.otp-version }}-${{ steps.setup-beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
-
-      - name: Restore Cargo cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            native/ex_maude_nif/target
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-${{ runner.os }}-${{ hashFiles('native/ex_maude_nif/Cargo.lock') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -146,9 +120,6 @@ jobs:
           elixir-version: "1.19"
           otp-version: "28"
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Restore deps cache
         uses: actions/cache@v5
         with:
@@ -162,15 +133,6 @@ jobs:
         with:
           path: priv/plts
           key: plt-${{ runner.os }}-${{ steps.setup-beam.outputs.otp-version }}-${{ steps.setup-beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
-
-      - name: Restore Cargo cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            native/ex_maude_nif/target
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-${{ runner.os }}-${{ hashFiles('native/ex_maude_nif/Cargo.lock') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -196,9 +158,6 @@ jobs:
           elixir-version: "1.19"
           otp-version: "28"
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Restore deps cache
         uses: actions/cache@v5
         with:
@@ -206,15 +165,6 @@ jobs:
             deps
             _build
           key: deps-${{ runner.os }}-${{ steps.setup-beam.outputs.otp-version }}-${{ steps.setup-beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
-
-      - name: Restore Cargo cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            native/ex_maude_nif/target
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-${{ runner.os }}-${{ hashFiles('native/ex_maude_nif/Cargo.lock') }}
 
       - name: Install dependencies
         run: mix deps.get
