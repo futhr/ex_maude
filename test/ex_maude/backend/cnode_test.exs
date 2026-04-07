@@ -199,6 +199,5 @@ defmodule ExMaude.Backend.CNodeTest do
         CNode.stop(pid)
       end
     end
-
   end
 end
