@@ -5,6 +5,17 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.1.1](https://github.com/futhr/ex_maude/compare/v0.1.0...v0.1.1) (2026-04-07)
+
+
+
+
+### Bug Fixes:
+
+* align NIF precompiled build config with production patterns by Tobias Bohwalli
+
+* switch NIF to RustlerPrecompiled for proper Hex packaging by Tobias Bohwalli
+
 ## [v0.1.0](https://github.com/futhr/ex_maude/compare/v0.1.0...v0.1.0) (2026-04-03)
 
 
