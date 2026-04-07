@@ -135,7 +135,11 @@ static void stop_maude(void) {
     if (maude.pid > 0) {
         /* Send quit command (ignore errors during shutdown) */
         const char *quit_cmd = "quit\n";
-        (void)write(maude.stdin_fd, quit_cmd, strlen(quit_cmd));
+        /* GCC ignores (void) cast for warn_unused_result; use pragma */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
+        write(maude.stdin_fd, quit_cmd, strlen(quit_cmd));
+#pragma GCC diagnostic pop
 
         /* Give it a moment to exit gracefully */
         usleep(100000);
@@ -269,7 +273,11 @@ static int wait_for_ready(void) {
     
     /* With -no-banner, Maude may not output anything until we send a command.
      * Send a simple newline to trigger the prompt. */
-    (void)write(maude.stdin_fd, "\n", 1);
+    /* GCC ignores (void) cast for warn_unused_result; use pragma */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
+    write(maude.stdin_fd, "\n", 1);
+#pragma GCC diagnostic pop
     
     int result = read_until_prompt(buf, BUFSIZE, 10000);
     if (result >= 0) {
