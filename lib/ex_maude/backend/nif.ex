@@ -77,26 +77,39 @@ defmodule ExMaude.Backend.NIF do
   defmodule Native do
     @moduledoc false
 
-    mix_config = Mix.Project.config()
-    version = mix_config[:version]
-    github_url = mix_config[:package][:links]["GitHub"]
+    @force_build System.get_env("EX_MAUDE_BUILD") in ["1", "true"]
+    @checksum_file "checksum-Elixir.ExMaude.Backend.NIF.Native.exs"
+    @has_precompiled (case File.read(@checksum_file) do
+                        {:ok, content} ->
+                          {checksums, _} = Code.eval_string(content)
+                          map_size(checksums) > 0
 
-    use RustlerPrecompiled,
-      otp_app: :ex_maude,
-      crate: "ex_maude_nif",
-      base_url: "#{github_url}/releases/download/v#{version}",
-      version: version,
-      targets: ~w(
-        aarch64-apple-darwin
-        aarch64-unknown-linux-gnu
-        aarch64-unknown-linux-musl
-        x86_64-apple-darwin
-        x86_64-unknown-linux-gnu
-        x86_64-unknown-linux-musl
-        x86_64-pc-windows-gnu
-        x86_64-pc-windows-msvc
-      ),
-      force_build: System.get_env("EX_MAUDE_BUILD") in ["1", "true"]
+                        _ ->
+                          false
+                      end)
+
+    if @has_precompiled or @force_build do
+      mix_config = Mix.Project.config()
+      version = mix_config[:version]
+      github_url = mix_config[:package][:links]["GitHub"]
+
+      use RustlerPrecompiled,
+        otp_app: :ex_maude,
+        crate: "ex_maude_nif",
+        base_url: "#{github_url}/releases/download/v#{version}",
+        version: version,
+        targets: ~w(
+          aarch64-apple-darwin
+          aarch64-unknown-linux-gnu
+          aarch64-unknown-linux-musl
+          x86_64-apple-darwin
+          x86_64-unknown-linux-gnu
+          x86_64-unknown-linux-musl
+          x86_64-pc-windows-gnu
+          x86_64-pc-windows-msvc
+        ),
+        force_build: @force_build
+    end
 
     # NIF stubs — replaced at load time by Rust implementations
 
