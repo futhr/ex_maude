@@ -200,12 +200,5 @@ defmodule ExMaude.Backend.CNodeTest do
       end
     end
 
-    test "skipped when C-Node not available", context do
-      if context[:skip] do
-        IO.puts("Skipping: #{context[:skip]}")
-      end
-
-      :ok
-    end
   end
 end
