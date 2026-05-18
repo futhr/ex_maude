@@ -105,6 +105,11 @@ defmodule ExMaude.MixProject do
       {:nimble_parsec, "~> 1.4"},
       {:telemetry, "~> 1.2"},
       {:jason, "~> 1.4"},
+
+      # Security override: decimal < 3.1.0 has a DoS via unbounded
+      # exponent parsing (GHSA-rhv4-8758-jx7v / elixirforum 75261).
+      # Pulled transitively; force >= 3.1.
+      {:decimal, "~> 3.1", override: true},
       # Native code compilation
       {:elixir_make, "~> 0.8", runtime: false},
       # NIF — precompiled binaries downloaded at install time
