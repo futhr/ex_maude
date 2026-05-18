@@ -105,11 +105,10 @@ defmodule ExMaude.Backend.Port do
           maude_path: maude_path
         }
 
-        # Wait for initial banner/prompt
-        state = wait_for_ready(state)
-
-        # Preload configured modules
-        state = preload_modules(state, preload_modules)
+        state =
+          state
+          |> wait_for_ready()
+          |> preload_modules(preload_modules)
 
         emit_telemetry(:start, %{maude_path: maude_path})
         {:ok, state}
@@ -121,13 +120,8 @@ defmodule ExMaude.Backend.Port do
 
   @impl GenServer
   def handle_call({:execute, command, timeout}, from, state) do
-    # Ensure command ends with period and newline
     command = ensure_command_format(command)
-
-    # Send command to Maude
     Port.command(state.port, command)
-
-    # Set timeout
     timeout_ref = Process.send_after(self(), :command_timeout, timeout)
 
     emit_telemetry(:command_start, %{command: truncate(command, 100)})
@@ -145,10 +139,8 @@ defmodule ExMaude.Backend.Port do
     buffer = state.buffer <> to_string(data)
 
     if response_complete?(buffer) do
-      # Cancel timeout
       if state.timeout_ref, do: Process.cancel_timer(state.timeout_ref)
 
-      # Parse and send response
       response = parse_response(buffer)
 
       if state.from do
@@ -198,15 +190,12 @@ defmodule ExMaude.Backend.Port do
     if state.port do
       try do
         if port_alive?(state.port) do
-          # Try graceful shutdown
           Port.command(state.port, "quit\n")
           Process.sleep(100)
           Port.close(state.port)
         end
       rescue
-        ArgumentError ->
-          # Port was already closed, nothing to do
-          :ok
+        ArgumentError -> :ok
       end
     end
 
@@ -268,24 +257,19 @@ defmodule ExMaude.Backend.Port do
   defp pty_wrapper(executable, args) do
     case :os.type() do
       {:unix, :darwin} ->
-        # macOS: use script -q /dev/null
-        script_path = System.find_executable("script")
-
-        if script_path do
-          # script -q /dev/null maude args...
-          {script_path, ["-q", "/dev/null", executable | args]}
-        else
-          {executable, args}
+        case System.find_executable("script") do
+          nil -> {executable, args}
+          script_path -> {script_path, ["-q", "/dev/null", executable | args]}
         end
 
       {:unix, _} ->
-        # Linux: try unbuffer first, then script
+        # Linux: prefer `unbuffer` (from expect); fall back to `script -qc`
+        # whose syntax differs from macOS.
         cond do
           unbuffer = System.find_executable("unbuffer") ->
             {unbuffer, [executable | args]}
 
           script = System.find_executable("script") ->
-            # Linux script syntax differs: script -qc "command" /dev/null
             cmd = Enum.join([executable | args], " ")
             {script, ["-qc", cmd, "/dev/null"]}
 
@@ -306,12 +290,10 @@ defmodule ExMaude.Backend.Port do
   end
 
   defp find_maude_path do
-    # Delegate to ExMaude.Binary for centralized binary management
     Binary.find() || "maude"
   end
 
   defp wait_for_ready(state) do
-    # Collect initial output until we see the prompt
     receive do
       {port, {:data, data}} when port == state.port ->
         buffer = state.buffer <> to_string(data)
@@ -354,66 +336,16 @@ defmodule ExMaude.Backend.Port do
     command <> "\n"
   end
 
-  defp response_complete?(buffer) do
-    # Response is complete when we see the prompt
-    String.contains?(buffer, @prompt_marker)
-  end
+  defp response_complete?(buffer), do: String.contains?(buffer, @prompt_marker)
 
   defp parse_response(buffer) do
-    # Remove the prompt from the end
-    output =
-      buffer
-      |> String.split(@prompt_marker)
-      |> List.first()
-      |> String.trim()
-
-    # Check for errors - but be more careful about false positives
-    cond do
-      has_maude_error?(output) ->
-        {:error, Error.from_output(output)}
-
-      String.contains?(output, "result") ->
-        # Extract result value
-        result = extract_result(output)
-        {:ok, result}
-
-      true ->
-        {:ok, output}
-    end
+    buffer
+    |> String.split(@prompt_marker)
+    |> List.first()
+    |> ExMaude.Parser.parse_backend_response()
   end
 
-  # Check if output contains actual Maude errors (not just the word "error" in content)
-  defp has_maude_error?(output) do
-    # Look for Maude error patterns
-    error_patterns = [
-      ~r/Error:/,
-      ~r/Warning:/,
-      ~r/No parse for term/,
-      ~r/no module\s+\S+/i,
-      ~r/module\s+\S+\s+not found/i,
-      ~r/syntax error/i,
-      ~r/Advisory:/
-    ]
-
-    Enum.any?(error_patterns, fn pattern ->
-      Regex.match?(pattern, output)
-    end)
-  end
-
-  defp extract_result(output) do
-    # Parse "result Type: value" format
-    case Regex.run(~r/result\s+\w+:\s*(.+)/s, output) do
-      [_, value] -> String.trim(value)
-      nil -> output
-    end
-  end
-
-  defp port_alive?(port) do
-    case Port.info(port) do
-      nil -> false
-      _ -> true
-    end
-  end
+  defp port_alive?(port), do: Port.info(port) != nil
 
   defp config_preload_modules do
     Application.get_env(:ex_maude, :preload_modules, [])
