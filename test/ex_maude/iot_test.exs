@@ -1,20 +1,5 @@
 defmodule ExMaude.IoTTest do
-  @moduledoc """
-  Tests for `ExMaude.IoT` - IoT rule conflict detection.
-
-  This module tests the IoT conflict detection functionality, including
-  all four conflict types from the AutoIoT paper:
-
-    * State Conflict - Same device, incompatible state changes
-    * Environment Conflict - Opposing environmental effects
-    * State Cascade - Rule output triggers another rule
-    * State-Environment Cascade - Combined cascading effects
-
-  ## Test Categories
-
-    * Unit tests - Validation and encoding (no Maude required)
-    * Integration tests - Full conflict detection (Maude required)
-  """
+  @moduledoc false
 
   use ExMaude.MaudeCase
 

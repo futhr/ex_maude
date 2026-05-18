@@ -51,11 +51,24 @@ defmodule ExMaude.Telemetry do
 
   `[:ex_maude, :iot, :detect_conflicts, :start]`
   - Measurements: `%{system_time: integer, rule_count: integer}`
-  - Metadata: `%{}`
+  - Metadata: `%{template: :iot_rules}`
 
   `[:ex_maude, :iot, :detect_conflicts, :stop]`
   - Measurements: `%{duration: integer, conflict_count: integer}`
-  - Metadata: `%{result: :ok | :error}`
+  - Metadata: `%{result: :ok | :error, template: :iot_rules}`
+
+  ### AI Events
+
+  Emitted for AI conflict detection operations. Mirrors the IoT envelope so
+  handlers can dispatch on the `:template` metadata key.
+
+  `[:ex_maude, :ai, :detect_conflicts, :start]`
+  - Measurements: `%{system_time: integer, rule_count: integer}`
+  - Metadata: `%{template: :ai_rules}`
+
+  `[:ex_maude, :ai, :detect_conflicts, :stop]`
+  - Measurements: `%{duration: integer, conflict_count: integer}`
+  - Metadata: `%{result: :ok | :error, template: :ai_rules}`
 
   ## Attaching Handlers
 
@@ -159,7 +172,9 @@ defmodule ExMaude.Telemetry do
       [:ex_maude, :pool, :checkout, :start],
       [:ex_maude, :pool, :checkout, :stop],
       [:ex_maude, :iot, :detect_conflicts, :start],
-      [:ex_maude, :iot, :detect_conflicts, :stop]
+      [:ex_maude, :iot, :detect_conflicts, :stop],
+      [:ex_maude, :ai, :detect_conflicts, :start],
+      [:ex_maude, :ai, :detect_conflicts, :stop]
     ]
   end
 

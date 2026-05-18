@@ -1,11 +1,11 @@
 defmodule ExMaude.IoT.EncoderTest do
-  @moduledoc """
-  Tests for `ExMaude.IoT.Encoder` - Maude encoding functions.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 
   alias ExMaude.IoT.Encoder
+
+  doctest ExMaude.IoT.Encoder
 
   describe "encode_rules/1" do
     test "encodes empty list" do

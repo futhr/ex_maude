@@ -170,6 +170,7 @@ defmodule ExMaude.MixProject do
         "README.md": [title: "Overview"],
         "notebooks/quickstart.livemd": [title: "Quick Start"],
         "notebooks/advanced.livemd": [title: "Advanced Usage"],
+        "notebooks/ai-rules.livemd": [title: "AI Rules"],
         "notebooks/rewriting.livemd": [title: "Term Rewriting"],
         "notebooks/benchmarks.livemd": [title: "Benchmarks"],
         "CHANGELOG.md": [title: "Changelog"],

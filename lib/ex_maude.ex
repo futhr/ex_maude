@@ -8,7 +8,8 @@ defmodule ExMaude do
   - Term reduction and normalization
   - Module loading and management
   - Search operations for state space exploration
-  - IoT rule conflict detection (via included Maude modules)
+  - IoT rule conflict detection (`ExMaude.IoT`)
+  - AI rule conflict detection (`ExMaude.AI`)
   - Pluggable backend architecture (Port, C-Node, NIF)
 
   ## Quick Start
@@ -173,5 +174,21 @@ defmodule ExMaude do
     :ex_maude
     |> :code.priv_dir()
     |> Path.join("maude/iot-rules.maude")
+  end
+
+  @doc """
+  Returns the path to the bundled AI rules Maude module.
+
+  AI rules extend the IoT rules vocabulary with capability ontology,
+  tool-invocation arguments, budget arithmetic via interval reasoning,
+  sovereignty constraints, authority levels, and approval gates. Used
+  by `ExMaude.AI` for verifying AI-generated automation rules and
+  multi-tenant agent policies.
+  """
+  @spec ai_rules_path() :: Path.t()
+  def ai_rules_path do
+    :ex_maude
+    |> :code.priv_dir()
+    |> Path.join("maude/ai-rules.maude")
   end
 end

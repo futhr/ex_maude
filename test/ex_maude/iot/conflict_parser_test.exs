@@ -1,11 +1,11 @@
 defmodule ExMaude.IoT.ConflictParserTest do
-  @moduledoc """
-  Tests for `ExMaude.IoT.ConflictParser` - Maude output parsing.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 
   alias ExMaude.IoT.ConflictParser
+
+  doctest ExMaude.IoT.ConflictParser
 
   describe "parse_conflicts/1" do
     test "returns empty list for noConflict output" do

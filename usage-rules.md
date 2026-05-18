@@ -216,6 +216,35 @@ ExMaude.Pool.broadcast(fn worker ->
 end)
 ```
 
+## Backend Selection
+
+ExMaude ships three production-ready backends:
+
+```elixir
+config :ex_maude, backend: :port    # default — text I/O, full process isolation
+config :ex_maude, backend: :cnode   # binary protocol, full process isolation
+config :ex_maude, backend: :nif     # Rustler NIF, lowest latency
+```
+
+| Backend | When to choose it |
+|---|---|
+| `:port` | Default. Safest. Works on any platform with a Maude binary. Maude crash never affects the BEAM. |
+| `:cnode` | High-throughput production. Binary Erlang-term protocol via `maude_bridge`. Full process isolation. Requires the C bridge to be compiled (`mix compile` triggers this when `c_src/` is present). |
+| `:nif` | Latency-critical hot paths. Native code drives the Maude subprocess directly via stdin/stdout pipes. Shares the BEAM's OS process (a segfault in the NIF — though Rustler catches Rust panics — crashes the VM). |
+
+Precompiled NIF binaries are published on Hex for macOS aarch64/x86_64, Linux gnu/musl × aarch64/x86_64, and Windows gnu/msvc. On platforms outside that list, force a local build:
+
+```bash
+EX_MAUDE_BUILD=1 mix deps.compile ex_maude
+```
+
+Verify availability at runtime:
+
+```elixir
+ExMaude.Backend.available_backends()
+#=> [:port, :cnode, :nif]
+```
+
 ## Error Handling Patterns
 
 ```elixir
@@ -293,6 +322,112 @@ ExMaude.reduce("MY-CUSTOM-MOD", term)  # Will fail
 :ok = ExMaude.load_file("my-custom-mod.maude")
 {:ok, result} = ExMaude.reduce("MY-CUSTOM-MOD", term)
 ```
+
+## AI Rules (v0.2.0+)
+
+`ExMaude.AI` is the parallel API to `ExMaude.IoT` for AI-generated
+rules over Agents, Capabilities, ToolInvocations, and richer
+predicates. It targets the bundled `priv/maude/ai-rules.maude`
+template.
+
+### Supported predicate shapes
+
+```elixir
+# Property-style (carry-over from iot-rules)
+{:prop_eq, "key", value}
+{:prop_gt, "key", value}
+{:prop_lt, "key", value}
+{:prop_gte, "key", value}
+{:prop_lte, "key", value}
+
+# Capability ontology
+{:capability_required, "name"}
+{:capability_granted, "name"}
+
+# Quantitative (interval-based, sound symbolic reasoning)
+{:budget_within, "scope", {:interval, lo, hi}}
+
+# Authority levels
+{:authority_at_least, n}
+{:authority_required, n}
+
+# Sovereignty
+{:jurisdiction_allowed, :eu}
+{:jurisdiction_forbidden, :us}
+
+# Latency
+{:latency_at_most, ms}
+
+# Logical operators
+{:always}
+{:and, p1, p2}
+{:or, p1, p2}
+{:not, p}
+```
+
+### Tool invocations
+
+```elixir
+# Direct tool invocation
+{:invoke_tool, "tool_name", %{"arg" => value}, "capability_required", :eu}
+
+# Approval gate — must precede high_impact invocations
+{:require_approval, "approval_class"}
+```
+
+### Conflict types detected
+
+| Type | Detection |
+|------|-----------|
+| `:tool_call_conflict` | equational, pairwise |
+| `:capability_shadowing` | equational, pairwise |
+| `:pack_tool_composition_mismatch` | equational, pairwise |
+| `:sovereignty_violation` | equational, single-rule |
+| `:approval_gate_bypass` | equational, single-rule |
+| `:authority_escalation` | equational, pairwise |
+| `:agent_loop_cascade` | equational, pairwise |
+| `:budget_cascade` | search-based (deferred to follow-up release) |
+| `:cost_ceiling_infeasibility` | search-based (deferred) |
+| `:provider_routing_infeasibility` | search-based (deferred) |
+
+### Example
+
+```elixir
+rules = [
+  %{
+    id: "approve-then-dose",
+    agent_id: {"acme", "ph-controller"},
+    trigger: {:prop_lt, "ph", {:int, 6}},
+    invocations: [
+      {:require_approval, "dosing_high_delta"},
+      {:invoke_tool, "dose", %{"ml" => 50}, "high_impact", :eu}
+    ],
+    capability_grants: [{:cap, "ph_dosing", "v1"}],
+    authority_required: 2,
+    priority: 1
+  }
+]
+
+{:ok, conflicts} = ExMaude.AI.detect_conflicts(rules, jurisdictions: [:eu, :ch])
+```
+
+### When to choose AI rules over IoT rules
+
+Use `ExMaude.IoT` when modelling Things, Properties, and Actions
+in a single deployment (one building, one factory, one farm).
+Use `ExMaude.AI` when modelling Agents with capability ontologies,
+tool-invocation argument structure, tenant scoping, sovereignty,
+authority levels, or approval gates. Both can ship in the same
+application — the templates and APIs are independent.
+
+### Unverifiable predicates
+
+`:contains` and `:matches` (regex / string-search) are not
+decidable in Maude's equational fragment. The validator returns
+`{:error, "...unverifiable..."}` for these. Route them to a
+separate string-match safety net (sandbox, regex matcher,
+LLM-as-judge) rather than trying to encode them into the Maude
+template.
 
 ## Links
 

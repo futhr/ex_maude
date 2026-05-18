@@ -1,11 +1,11 @@
 defmodule ExMaude.IoT.ValidatorTest do
-  @moduledoc """
-  Tests for `ExMaude.IoT.Validator` - rule validation.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 
   alias ExMaude.IoT.Validator
+
+  doctest ExMaude.IoT.Validator
 
   describe "validate_rule/1" do
     test "accepts valid rule" do

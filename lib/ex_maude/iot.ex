@@ -44,15 +44,10 @@ defmodule ExMaude.IoT do
         }
       ]
 
-      # Detect conflicts
+      # Detect conflicts (the bundled iot-rules.maude module is loaded
+      # automatically on first call)
       {:ok, conflicts} = ExMaude.IoT.detect_conflicts(rules)
       # => [%{type: :state_conflict, rule1: "motion-light", rule2: "night-light", ...}]
-
-  ## Prerequisites
-
-  Before using conflict detection, load the IoT rules module:
-
-      ExMaude.load_file(ExMaude.iot_rules_path())
 
   ## Telemetry
 
@@ -62,7 +57,8 @@ defmodule ExMaude.IoT do
   - `[:ex_maude, :iot, :detect_conflicts, :stop]` - Emitted when detection completes
 
   Measurements include `:duration` in native time units, `:rule_count`, and
-  `:conflict_count`. Metadata includes `:result` (`:ok` or `:error`).
+  `:conflict_count`. Metadata includes `:result` (`:ok` or `:error`) and
+  `:template` (`:iot_rules`).
 
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
@@ -141,7 +137,7 @@ defmodule ExMaude.IoT do
     :telemetry.execute(
       [:ex_maude, :iot, :detect_conflicts, :start],
       %{system_time: System.system_time(), rule_count: rule_count},
-      %{}
+      %{template: :iot_rules}
     )
 
     result =
@@ -162,7 +158,7 @@ defmodule ExMaude.IoT do
     :telemetry.execute(
       [:ex_maude, :iot, :detect_conflicts, :stop],
       %{duration: duration, conflict_count: conflict_count},
-      %{result: result_atom}
+      %{result: result_atom, template: :iot_rules}
     )
 
     result
@@ -253,8 +249,6 @@ defmodule ExMaude.IoT do
   """
   @spec validate_rules([rule()]) :: :ok | {:error, %{String.t() => [String.t()]}}
   defdelegate validate_rules(rules), to: Validator
-
-  # Private functions
 
   defp ensure_iot_module_loaded do
     path = ExMaude.iot_rules_path()
