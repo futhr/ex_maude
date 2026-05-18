@@ -24,6 +24,11 @@ jobs:
             otp: "27"
           - elixir: "1.18"
             otp: "27"
+          # Mirror the publish.yml env so OTP-28-only compile errors
+          # (e.g. References embedded in module attributes) surface here
+          # instead of during release.
+          - elixir: "1.18"
+            otp: "28"
           - elixir: "1.19"
             otp: "28"
 
