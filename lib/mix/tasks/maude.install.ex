@@ -279,7 +279,6 @@ defmodule Mix.Tasks.Maude.Install do
   end
 
   defp find_release_asset(nil, platform) do
-    # Find latest stable release
     case fetch_releases() do
       {:ok, releases} ->
         releases
@@ -309,7 +308,7 @@ defmodule Mix.Tasks.Maude.Install do
   end
 
   defp find_release_asset(version, platform) do
-    # Normalize version format (handle both "3.5.1" and "Maude3.5.1")
+    # GitHub release tags use "Maude3.5.1" while users pass "3.5.1".
     version_tag = normalize_version_tag(version)
 
     case fetch_releases() do
@@ -694,7 +693,6 @@ defmodule Mix.Tasks.Maude.Install do
         files = File.ls!(install_path)
         Mix.shell().info("Extracted #{length(files)} files")
 
-        # Check if maude binary exists and is executable
         maude_path = Path.join(install_path, "maude")
 
         if File.exists?(maude_path) do
@@ -740,10 +738,9 @@ defmodule Mix.Tasks.Maude.Install do
   defp rename_maude_binary(install_path, version) do
     target = Path.join(install_path, "maude")
 
-    # Remove existing target if present
     if File.exists?(target), do: File.rm!(target)
 
-    # Try to find the maude binary with various naming conventions
+    # Maude releases use several binary names across versions and platforms.
     possible_names = [
       # 3.5+ naming
       "maude.darwin64",
@@ -771,7 +768,6 @@ defmodule Mix.Tasks.Maude.Install do
       end)
 
     unless found do
-      # List what we actually extracted
       files =
         install_path
         |> File.ls!()
@@ -789,12 +785,7 @@ defmodule Mix.Tasks.Maude.Install do
   defp verify_installation(maude_binary) do
     Mix.shell().info("Verifying installation...")
 
-    # Try --version first, then --help, then just running it
-    verify_commands = [
-      ["--version"],
-      ["--help"],
-      []
-    ]
+    verify_commands = [["--version"], ["--help"], []]
 
     result =
       Enum.find_value(verify_commands, fn args ->
@@ -803,7 +794,8 @@ defmodule Mix.Tasks.Maude.Install do
             {:ok, output}
 
           {output, _} ->
-            # Some Maude versions exit non-zero for --version/--help but still work
+            # Some Maude versions exit non-zero for --version/--help but
+            # still print a usable banner.
             if String.contains?(output, "Maude") do
               {:ok, output}
             else
@@ -825,7 +817,6 @@ defmodule Mix.Tasks.Maude.Install do
 
         Mix.shell().info("✓ Verified: #{version_line}")
 
-        # Print helpful configuration info
         Mix.shell().info("""
 
         Add to your config/config.exs:

@@ -83,17 +83,15 @@ defmodule ExMaude.Maude do
   @spec rewrite(String.t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def rewrite(module, term, opts \\ []) do
     Telemetry.span([:ex_maude, :command], %{operation: :rewrite, module: module}, fn ->
-      max_rewrites = Keyword.get(opts, :max_rewrites)
-
-      command =
-        if max_rewrites do
-          "rewrite [#{max_rewrites}] in #{module} : #{term}"
-        else
-          "rewrite in #{module} : #{term}"
-        end
-
-      do_execute(command, opts)
+      do_execute(build_rewrite_command(module, term, opts), opts)
     end)
+  end
+
+  defp build_rewrite_command(module, term, opts) do
+    case Keyword.get(opts, :max_rewrites) do
+      nil -> "rewrite in #{module} : #{term}"
+      n -> "rewrite [#{n}] in #{module} : #{term}"
+    end
   end
 
   @doc """
@@ -179,14 +177,13 @@ defmodule ExMaude.Maude do
   # sobelow_skip ["Traversal.FileModule"]
   @spec load_module(String.t()) :: :ok | {:error, term()}
   def load_module(source) do
-    # Create a temporary file for the module in a controlled location.
-    # The path is constructed from System.tmp_dir! and a unique integer,
-    # with no user input in the path - safe from directory traversal.
+    # The path is built from System.tmp_dir! and a unique integer (no user
+    # input), then expanded and bounds-checked as defense in depth before
+    # File.write!.
     tmp_dir = System.tmp_dir!()
     filename = "ex_maude_#{:erlang.unique_integer([:positive])}.maude"
     tmp_path = Path.join(tmp_dir, filename)
 
-    # Verify path stays within tmp_dir (defense in depth)
     expanded_path = Path.expand(tmp_path)
     expanded_tmp = Path.expand(tmp_dir)
 
@@ -199,7 +196,7 @@ defmodule ExMaude.Maude do
       end
     else
       # coveralls-ignore-start
-      # This branch can only be reached if Path.expand behaves unexpectedly
+      # Unreachable under normal Path.expand behavior.
       {:error, Error.invalid_path("Generated path escapes temp directory")}
       # coveralls-ignore-stop
     end
@@ -225,7 +222,7 @@ defmodule ExMaude.Maude do
     end)
   end
 
-  # Internal execute without telemetry (used by instrumented functions)
+  # Bypass the telemetry span so the calling function can wrap it instead.
   defp do_execute(command, opts) do
     timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
 
@@ -247,16 +244,11 @@ defmodule ExMaude.Maude do
   """
   @spec version() :: {:ok, String.t()} | {:error, term()}
   def version do
-    # The version is shown in the banner, but we suppress it
-    # So we need to get it another way
+    # Maude prints its version in the startup banner, which we suppress with
+    # `-no-banner` for a clean prompt. Probe with a no-op command instead.
     case execute("show modules .") do
-      {:ok, _} ->
-        # If we can execute a command, Maude is working
-        # Get version from environment or default
-        {:ok, "Maude (version available at runtime)"}
-
-      error ->
-        error
+      {:ok, _} -> {:ok, "Maude (version available at runtime)"}
+      error -> error
     end
   end
 

@@ -105,7 +105,7 @@ defmodule ExMaude.Binary do
         "darwin-x64"
 
       # coveralls-ignore-start
-      # Platform-specific branches - only the current platform is testable
+      # Only the host platform is reachable from tests.
       {{:unix, :linux}, arch} when arch in ["x86_64", "amd64"] ->
         "linux-x64"
 
@@ -125,9 +125,9 @@ defmodule ExMaude.Binary do
   def priv_dir do
     case :code.priv_dir(:ex_maude) do
       # coveralls-ignore-start
-      # Only reached when app is not loaded (rare edge case)
+      # Reached only when the app is not loaded — fall back to cwd-relative
+      # priv so development scripts still work.
       {:error, :bad_name} ->
-        # Fallback for development
         Path.join([File.cwd!(), "priv"])
 
       # coveralls-ignore-stop
@@ -148,8 +148,7 @@ defmodule ExMaude.Binary do
       path
     else
       # coveralls-ignore-start
-      # Fallback to generic binary - depends on bundled file state
-      # Also check for generic "maude" binary
+      # Fall back to a generic `maude` binary in priv/maude/bin if present.
       generic = Path.join([priv_dir(), "maude", "bin", "maude"])
 
       if File.exists?(generic) and executable?(generic) do
@@ -177,8 +176,6 @@ defmodule ExMaude.Binary do
   def supported_platform? do
     platform() in supported_platforms()
   end
-
-  # Private functions
 
   defp configured_path do
     case Application.get_env(:ex_maude, :maude_path) do

@@ -1,6 +1,4 @@
 defmodule ExMaude.Pool do
-  alias ExMaude.{Backend, Error}
-
   @moduledoc """
   Poolboy-based pool of Maude server processes.
 
@@ -48,6 +46,8 @@ defmodule ExMaude.Pool do
 
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
+
+  alias ExMaude.{Backend, Error}
 
   @pool_name :ex_maude_pool
   @default_pool_size 4
@@ -110,35 +110,21 @@ defmodule ExMaude.Pool do
       %{backend: backend}
     )
 
-    try do
-      result =
-        :poolboy.transaction(
-          @pool_name,
-          fn worker -> fun.(worker) end,
-          timeout
-        )
+    {result_atom, result} =
+      try do
+        value = :poolboy.transaction(@pool_name, fn worker -> fun.(worker) end, timeout)
+        {:ok, value}
+      catch
+        :exit, reason -> {:error, {:error, Error.pool_error(reason)}}
+      end
 
-      duration = System.monotonic_time() - start_time
+    :telemetry.execute(
+      [:ex_maude, :pool, :checkout, :stop],
+      %{duration: System.monotonic_time() - start_time},
+      %{result: result_atom, backend: backend}
+    )
 
-      :telemetry.execute(
-        [:ex_maude, :pool, :checkout, :stop],
-        %{duration: duration},
-        %{result: :ok, backend: backend}
-      )
-
-      result
-    catch
-      :exit, reason ->
-        duration = System.monotonic_time() - start_time
-
-        :telemetry.execute(
-          [:ex_maude, :pool, :checkout, :stop],
-          %{duration: duration},
-          %{result: :error, backend: backend}
-        )
-
-        {:error, Error.pool_error(reason)}
-    end
+    result
   end
 
   @doc """

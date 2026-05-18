@@ -114,27 +114,14 @@ defmodule ExMaude.IoT.ConflictParser do
     end
   end
 
-  # Private functions
-
   defp parse_conflict_list(output) do
-    # Normalize output - remove newlines and extra whitespace
-    normalized =
-      output
-      |> String.replace(~r/\r?\n/, " ")
-      |> String.replace(~r/\s+/, " ")
-
-    # Extract individual conflicts from the output
-    # Conflicts can be joined with | or appear individually
-    normalized
-    |> extract_conflicts()
+    output
+    |> String.replace(~r/\r?\n/, " ")
+    |> String.replace(~r/\s+/, " ")
+    |> find_balanced_conflicts([])
     |> Enum.map(&parse_single_conflict/1)
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
-  end
-
-  defp extract_conflicts(output) do
-    # Find conflict expressions by tracking balanced parentheses
-    find_balanced_conflicts(output, [])
   end
 
   defp find_balanced_conflicts(str, acc) do
@@ -143,7 +130,6 @@ defmodule ExMaude.IoT.ConflictParser do
         Enum.reverse(acc)
 
       {start_pos, _} ->
-        # Extract from "conflict(" to matching ")"
         rest = binary_part(str, start_pos, byte_size(str) - start_pos)
 
         case extract_balanced_parens(rest, 0, 0) do
@@ -196,25 +182,21 @@ defmodule ExMaude.IoT.ConflictParser do
   defp extract_balanced_parens(_, _, _), do: :error
 
   defp parse_single_conflict(conflict_str) do
-    # Extract conflict type (first identifier after "conflict(")
     type_match = Regex.run(~r/conflict\((\w+),/, conflict_str)
 
-    # Extract rule IDs - they're the first quoted string after "rule("
-    # Note: Maude output may have whitespace between "rule(" and the quote
+    # Maude output may have whitespace between `rule(` and the opening quote.
     rule_ids =
-      conflict_str
-      |> then(&Regex.scan(~r/rule\(\s*"([^"]+)"/, &1))
+      ~r/rule\(\s*"([^"]+)"/
+      |> Regex.scan(conflict_str)
       |> Enum.map(fn [_, id] -> id end)
 
-    # Extract the reason - it's the last quoted string before the final ")"
-    # We find all quoted strings and take the last one that looks like a reason
+    # The reason is the last quoted string that looks like a sentence.
     all_quoted =
-      conflict_str
-      |> then(&Regex.scan(~r/"([^"]+)"/, &1))
+      ~r/"([^"]+)"/
+      |> Regex.scan(conflict_str)
       |> Enum.map(fn [_, str] -> str end)
 
-    # The reason is a complete sentence/phrase, usually at the end
-    # Filter to find strings that look like reasons (contain spaces, end without special chars)
+    # The reason is the last quoted string that looks like a sentence.
     reason =
       all_quoted
       |> Enum.reverse()

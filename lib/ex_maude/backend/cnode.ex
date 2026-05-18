@@ -176,7 +176,7 @@ defmodule ExMaude.Backend.CNode do
     output = to_string(data)
     Logger.debug("C-Node output: #{String.trim(output)}")
 
-    # Check if the output contains READY signal (may be mixed with other output)
+    # The READY signal may be mixed with other startup output.
     if String.contains?(output, "READY") and not state.connected do
       Logger.info("C-Node ready, connecting...")
 
@@ -207,12 +207,10 @@ defmodule ExMaude.Backend.CNode do
   def terminate(reason, state) do
     Logger.debug("ExMaude.Backend.CNode terminating: #{inspect(reason)}")
 
-    # Send stop command to C-Node
     if state.connected do
       send_cnode_command(state.cnode_name, :stop)
     end
 
-    # Close the port
     if state.port do
       try do
         Port.close(state.port)
