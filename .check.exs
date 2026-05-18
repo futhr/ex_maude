@@ -95,14 +95,14 @@
 
     # C-Node integration tests (only if binary exists)
     {:test_cnode,
-     command: "mix test --include cnode_integration",
+     command: "mix test --include cnode --include integration",
      enabled: File.exists?("priv/maude_bridge"),
      order: 9,
      deps: [:c_compile, :ex_unit]},
 
     # NIF integration tests (only if NIF is compiled)
     {:test_nif,
-     command: "mix test --include nif_integration",
+     command: "mix test --include nif --include integration",
      enabled: File.exists?("priv/native/libex_maude_nif.so") or
               File.exists?("priv/native/libex_maude_nif.dylib"),
      order: 9,

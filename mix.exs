@@ -208,9 +208,9 @@ defmodule ExMaude.MixProject do
       "cover.html": ["coveralls.html"],
       "test.network": ["test --include network"],
       "test.integration": ["test --include integration"],
-      "test.nif": ["test --include nif_integration"],
+      "test.nif": ["test --include nif --include integration"],
       "test.all": [
-        "test --include network --include integration --include cnode_integration --include nif_integration"
+        "test --include network --include integration --include cnode --include nif"
       ],
       ci: ["setup", "lint", "cover"],
       # Benchmarks

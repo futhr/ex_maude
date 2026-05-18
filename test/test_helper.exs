@@ -7,17 +7,19 @@
 # Run `mix test --include network` to run network-dependent tests.
 #
 # C-Node tests require the maude_bridge binary and distributed node.
-# Run `mix test --include cnode_integration` to run C-Node tests.
+# Run `mix test --include cnode --include integration` to run C-Node tests.
 #
 # NIF tests require the Rustler NIF to be compiled.
-# Run `mix test --include nif_integration` to run NIF tests.
+# Run `mix test --include nif --include integration` to run NIF tests.
 
 # Use ExMaude.Binary for consistent Maude detection
 # (checks config, bundled binaries, and system PATH)
 maude_available = ExMaude.Binary.find() != nil
 
-# Tags that are always excluded (require special setup)
-always_excluded = [:network, :cnode, :cnode_integration, :nif, :nif_integration]
+# Tags that are always excluded (require special setup).
+# Compose with `:integration` for tests that also need a live Maude
+# process — e.g. `mix test --include cnode --include integration`.
+always_excluded = [:network, :cnode, :nif]
 
 exclude_tags =
   if maude_available do
