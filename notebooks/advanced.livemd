@@ -220,5 +220,6 @@ ExMaude.execute(commands)
 ## Next Steps
 
 * [Quick Start](quickstart.livemd) - Basic operations
+* [AI Rules](ai-rules.livemd) - AI agent policy conflict detection
 * [Term Rewriting](rewriting.livemd) - Deep dive into rewriting and search
 * [Benchmarks](benchmarks.livemd) - Performance metrics

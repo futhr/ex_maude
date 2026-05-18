@@ -90,7 +90,7 @@ ExMaude returns `{:ok, result}` or `{:error, reason}` tuples:
 ```elixir
 # Successful operation
 case ExMaude.reduce("NAT", "1 + 1") do
-  {:ok, result} -> "Result: #{result.term}"
+  {:ok, result} -> "Result: #{result}"
   {:error, error} -> "Error: #{inspect(error)}"
 end
 ```

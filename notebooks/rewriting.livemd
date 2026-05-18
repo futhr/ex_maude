@@ -149,26 +149,38 @@ ExMaude.search("PETRI-NET", initial, "M:Marking", max_solutions: 10, max_depth: 
 
 ### Reduce Result
 
-```elixir
-{:ok, result} = ExMaude.reduce("NAT", "10 + 20 + 30")
+`ExMaude.reduce/3` returns `{:ok, term}` where `term` is the normalized term
+as a plain string:
 
-IO.puts("Term: #{result.term}")
-IO.puts("Sort: #{result.sort}")
-IO.puts("Rewrites: #{result.rewrites}")
+```elixir
+{:ok, term} = ExMaude.reduce("NAT", "10 + 20 + 30")
+IO.puts("Term: #{term}")
+```
+
+To parse the term into structured form (with sort), use `ExMaude.Term.parse/1`:
+
+```elixir
+{:ok, output} = ExMaude.execute("reduce in NAT : 10 + 20 + 30 .")
+{:ok, term} = ExMaude.Term.parse(output)
+IO.puts("Value: #{term.value}, Sort: #{term.sort}")
 ```
 
 ### Search Result
 
+`ExMaude.search/4` returns `{:ok, [solution_map]}` where each solution is a map
+with `:solution`, `:state_num`, and `:substitution` keys.
+
 ```elixir
-{:ok, result} = ExMaude.search("TRAFFIC-LIGHT", "red", "L:Light",
-  max_solutions: 5,
-  max_depth: 3
-)
+{:ok, solutions} =
+  ExMaude.search("TRAFFIC-LIGHT", "red", "L:Light",
+    max_solutions: 5,
+    max_depth: 3
+  )
 
-IO.puts("Solutions found: #{result.solutions}")
+IO.puts("Solutions found: #{length(solutions)}")
 
-for {i, solution} <- Enum.with_index(result.states, 1) do
-  IO.puts("  #{i}. #{solution.term} (#{solution.sort})")
+for s <- solutions do
+  IO.puts("  Solution #{s.solution} (state #{s.state_num}): #{inspect(s.substitution)}")
 end
 ```
 

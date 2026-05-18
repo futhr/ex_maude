@@ -43,14 +43,13 @@ defmodule ExMaude.Result.Search do
 
   ## Examples
 
-      {:ok, result} = ExMaude.search_with_stats("MOD", "init", "goal")
+      {:ok, output} = ExMaude.execute("search [3] in MOD : init =>* goal .")
+      {:ok, result} = ExMaude.Result.Search.parse(output)
       length(result.solutions)  #=> 3
       result.states_explored    #=> 42
 
-      # Check if solutions were found
       ExMaude.Result.Search.found?(result)  #=> true
 
-      # Get first solution
       first = ExMaude.Result.Search.first(result)
       first.substitution["X:Nat"]  #=> "42"
 

@@ -29,7 +29,8 @@ defmodule ExMaude.Result.Reduction do
 
   ## Examples
 
-      {:ok, result} = ExMaude.reduce_with_stats("NAT", "1 + 2 + 3")
+      {:ok, output} = ExMaude.execute("reduce in NAT : 1 + 2 + 3 .")
+      {:ok, result} = ExMaude.Result.Reduction.parse(output)
       result.term.value   #=> "6"
       result.rewrites     #=> 3
 
