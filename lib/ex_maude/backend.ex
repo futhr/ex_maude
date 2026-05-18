@@ -8,7 +8,7 @@ defmodule ExMaude.Backend do
 
     * `:port` - Erlang Port with PTY wrapper (default, safe)
     * `:cnode` - C-Node with binary protocol (production)
-    * `:nif` - Native Implemented Function (fastest, Phase 3)
+    * `:nif` - Native Implemented Function via Rustler (lowest latency)
 
   ## Configuration
 
@@ -77,10 +77,13 @@ defmodule ExMaude.Backend do
   @doc """
   Returns the backend implementation module based on configuration.
 
+  Reads `:backend` from the `:ex_maude` application env (defaults to `:port`)
+  and maps it to the implementation module.
+
   ## Examples
 
-      iex> ExMaude.Backend.impl()
-      ExMaude.Backend.Port
+      ExMaude.Backend.impl()
+      #=> ExMaude.Backend.Port
 
   """
   @spec impl() :: backend_module()
@@ -95,14 +98,21 @@ defmodule ExMaude.Backend do
   @doc """
   Checks if a backend is available on this system.
 
+  The Port backend is always available. C-Node requires the `maude_bridge`
+  binary to be compiled. NIF reports available when the Rustler-precompiled
+  native function table has been loaded (probed via a cheap `nif_loaded/0`
+  NIF that raises `:nif_not_loaded` while the stub is in place).
+
   ## Examples
 
-      iex> ExMaude.Backend.available?(:port)
-      true
+      ExMaude.Backend.available?(:port)
+      #=> true
 
-      iex> ExMaude.Backend.available?(:cnode)
-      # Until maude_bridge is compiled
-      false
+      ExMaude.Backend.available?(:cnode)
+      #=> true if priv/maude_bridge has been compiled
+
+      ExMaude.Backend.available?(:nif)
+      #=> true if the precompiled NIF binary loaded for this platform
 
   """
   @spec available?(backend_type()) :: boolean()
@@ -114,10 +124,17 @@ defmodule ExMaude.Backend do
   end
 
   def available?(:nif) do
-    # NIF backend requires the native Rustler module to be compiled
-    # The stub module always exists, but the native implementation doesn't yet
-    Code.ensure_loaded?(ExMaude.Backend.NIF.Native) and
-      function_exported?(ExMaude.Backend.NIF.Native, :initialize, 1)
+    Code.ensure_loaded?(ExMaude.Backend.NIF.Native) and probe_nif_loaded()
+  end
+
+  # Probes Rustler's load state: the Elixir stub `nif_loaded/0` raises
+  # `:nif_not_loaded` until Rustler replaces it with the real function.
+  defp probe_nif_loaded do
+    ExMaude.Backend.NIF.Native.nif_loaded()
+  rescue
+    _ -> false
+  catch
+    _, _ -> false
   end
 
   @doc """

@@ -1,40 +1,79 @@
-//! ExMaude NIF - Rust NIF for managing Maude subprocess
+//! ExMaude NIF — Rust-side management of a Maude subprocess.
 //!
-//! This NIF provides lower-latency communication with Maude by managing
-//! the subprocess directly from Rust instead of going through Elixir ports.
+//! Each `MaudeProcess` owns a child process plus a dedicated reader thread
+//! that streams raw stdout chunks onto a `crossbeam_channel`. NIF entry points
+//! drain the channel with `recv_timeout`, which gives us per-command deadlines
+//! that `std::io` does not offer for child stdout pipes.
+//!
+//! Byte-level (not line-level) reads are necessary because Maude emits its
+//! `Maude>` prompt **without a trailing newline**, so `read_line` would block
+//! forever while waiting for the next byte from the user.
+//!
+//! All blocking entry points (`start`, `execute_with_timeout`, `stop`) run on
+//! the `DirtyIo` scheduler — the work is I/O wait on the Maude pipe, not CPU.
 //!
 //! ## Safety
 //!
-//! NIFs run in the same OS process as the BEAM VM. A crash in the NIF
-//! (segfault, panic, etc.) will crash the entire Erlang VM.
-//!
-//! Use the `:port` backend (default) for production unless profiling shows
-//! the latency improvement from NIF is necessary.
+//! NIFs share the BEAM's OS process. A segfault in this crate crashes the
+//! entire VM. `rustler 0.37` wraps every `#[rustler::nif]` body in
+//! `std::panic::catch_unwind`, so Rust `panic!`s become Elixir exceptions,
+//! but we still avoid `unwrap` and convert poisoned mutexes to returned
+//! errors as a matter of hygiene.
 
-use rustler::{NifResult, ResourceArc};
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, Command, Stdio};
+use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender};
+use rustler::{Error, NifResult, ResourceArc};
+use std::io::{Read, Write};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
-/// Wrapper around the Maude subprocess with synchronized I/O handles.
+mod atoms {
+    rustler::atoms! {
+        timeout,
+        eof,
+        io_error,
+        lock_poisoned,
+    }
+}
+
+const PROMPT: &[u8] = b"Maude>";
+const READER_BUF_SIZE: usize = 4096;
+const READER_JOIN_TIMEOUT: Duration = Duration::from_millis(200);
+const GRACEFUL_QUIT_WAIT: Duration = Duration::from_millis(50);
+const STARTUP_TIMEOUT_MS: u64 = 10_000;
+
+enum ReaderMsg {
+    Data(Vec<u8>),
+    Io(String),
+    Eof,
+}
+
+/// Wrapper around the Maude subprocess and its two reader threads.
+///
+/// We capture stdout and stderr separately on the Rust side but merge them
+/// into a single channel — Maude emits error/warning text on stderr (e.g.
+/// `Warning: no module FOO.`) which we need to surface alongside stdout
+/// to match the Port backend's `stderr_to_stdout: true` semantics.
 pub struct MaudeProcess {
     child: Mutex<Child>,
-    stdin: Mutex<std::process::ChildStdin>,
-    stdout: Mutex<BufReader<std::process::ChildStdout>>,
+    stdin: Mutex<ChildStdin>,
+    rx: Receiver<ReaderMsg>,
+    readers: Mutex<Vec<JoinHandle<()>>>,
 }
 
 #[rustler::resource_impl]
 impl rustler::Resource for MaudeProcess {}
 
-/// Start a new Maude subprocess.
-///
-/// # Arguments
-/// * `maude_path` - Path to the Maude executable
-///
-/// # Returns
-/// * `Ok(ResourceArc<MaudeProcess>)` - Handle to the running process
-/// * `Err` - If spawning fails
+/// Probe used by `ExMaude.Backend.available?(:nif)` to detect whether
+/// Rustler has populated the native function table.
 #[rustler::nif]
+fn nif_loaded() -> bool {
+    true
+}
+
+/// Start a new Maude subprocess.
+#[rustler::nif(schedule = "DirtyIo")]
 fn start(maude_path: String) -> NifResult<ResourceArc<MaudeProcess>> {
     let mut child = Command::new(&maude_path)
         .args(["-no-banner", "-no-wrap", "-no-advise", "-interactive"])
@@ -42,150 +81,224 @@ fn start(maude_path: String) -> NifResult<ResourceArc<MaudeProcess>> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| rustler::Error::Term(Box::new(format!("spawn failed: {}", e))))?;
+        .map_err(|e| io_error(format!("spawn failed: {e}")))?;
 
     let stdin = child
         .stdin
         .take()
-        .ok_or_else(|| rustler::Error::Term(Box::new("failed to get stdin".to_string())))?;
+        .ok_or_else(|| io_error("failed to capture stdin"))?;
 
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| rustler::Error::Term(Box::new("failed to get stdout".to_string())))?;
+        .ok_or_else(|| io_error("failed to capture stdout"))?;
+
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| io_error("failed to capture stderr"))?;
+
+    let (tx, rx) = unbounded::<ReaderMsg>();
+    let stdout_handle = spawn_reader(Box::new(stdout), tx.clone(), "stdout");
+    let stderr_handle = spawn_reader(Box::new(stderr), tx, "stderr");
 
     let process = MaudeProcess {
         child: Mutex::new(child),
         stdin: Mutex::new(stdin),
-        stdout: Mutex::new(BufReader::new(stdout)),
+        rx,
+        readers: Mutex::new(vec![stdout_handle, stderr_handle]),
     };
 
-    // Read until first prompt to ensure Maude is ready
-    read_until_prompt(&process)?;
+    // Drain the startup banner up to the first prompt with a generous deadline.
+    read_until_prompt(&process, STARTUP_TIMEOUT_MS)?;
 
     Ok(ResourceArc::new(process))
 }
 
-/// Execute a Maude command and return the output.
+/// Execute a Maude command, returning everything before the next prompt.
 ///
-/// This function uses a dirty CPU scheduler to avoid blocking the
-/// main BEAM schedulers during I/O operations.
-///
-/// # Arguments
-/// * `process` - Handle to the Maude process
-/// * `command` - Maude command to execute
-///
-/// # Returns
-/// * `Ok(String)` - Command output (without the prompt)
-/// * `Err` - If I/O fails
-#[rustler::nif(schedule = "DirtyCpu")]
-fn execute(process: ResourceArc<MaudeProcess>, command: String) -> NifResult<String> {
-    // Write command to Maude stdin
+/// `timeout_ms` is the per-command deadline. On timeout, the subprocess is
+/// left running but in an indeterminate state — callers should treat the
+/// worker as dead and restart it via the pool.
+#[rustler::nif(schedule = "DirtyIo")]
+fn execute_with_timeout(
+    process: ResourceArc<MaudeProcess>,
+    command: String,
+    timeout_ms: u64,
+) -> NifResult<String> {
     {
-        let mut stdin = process
-            .stdin
-            .lock()
-            .map_err(|e| rustler::Error::Term(Box::new(format!("stdin lock failed: {}", e))))?;
-
-        writeln!(stdin, "{}", command)
-            .map_err(|e| rustler::Error::Term(Box::new(format!("write failed: {}", e))))?;
-
+        let mut stdin = process.stdin.lock().map_err(|_| poison_error("stdin"))?;
+        writeln!(stdin, "{command}").map_err(|e| io_error(format!("write failed: {e}")))?;
         stdin
             .flush()
-            .map_err(|e| rustler::Error::Term(Box::new(format!("flush failed: {}", e))))?;
+            .map_err(|e| io_error(format!("flush failed: {e}")))?;
     }
 
-    // Read response until we see the prompt
-    read_until_prompt(&process)
+    read_until_prompt(&process, timeout_ms)
 }
 
-/// Stop the Maude subprocess.
-///
-/// # Arguments
-/// * `process` - Handle to the Maude process
-#[rustler::nif]
+/// Stop the subprocess.
+#[rustler::nif(schedule = "DirtyIo")]
 fn stop(process: ResourceArc<MaudeProcess>) -> NifResult<()> {
-    let mut child = process
-        .child
-        .lock()
-        .map_err(|e| rustler::Error::Term(Box::new(format!("child lock failed: {}", e))))?;
+    // Best-effort graceful quit. The order matters:
+    //   1. Send `quit .` so Maude exits cleanly when its input parser settles.
+    //   2. Sleep briefly to let it finish.
+    //   3. Force-kill (idempotent if already exited).
+    //   4. Poll-wait with `try_wait` so we don't block forever if waitpid
+    //      hangs on a wedged child.
+    //   5. Join the reader threads (bounded).
 
-    // Send quit command first for graceful shutdown
     if let Ok(mut stdin) = process.stdin.lock() {
-        let _ = writeln!(stdin, "quit");
+        let _ = writeln!(stdin, "quit .");
         let _ = stdin.flush();
     }
 
-    // Give it a moment to exit gracefully
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    thread::sleep(GRACEFUL_QUIT_WAIT);
 
-    // Force kill if still running
-    let _ = child.kill();
-    let _ = child.wait();
+    {
+        let mut child = process.child.lock().map_err(|_| poison_error("child"))?;
+        let _ = child.kill();
+        wait_with_timeout(&mut child, READER_JOIN_TIMEOUT);
+    }
+
+    if let Ok(mut readers) = process.readers.lock() {
+        for handle in readers.drain(..) {
+            join_with_timeout(handle, READER_JOIN_TIMEOUT);
+        }
+    }
 
     Ok(())
 }
 
-/// Check if the Maude subprocess is still running.
-///
-/// # Arguments
-/// * `process` - Handle to the Maude process
-///
-/// # Returns
-/// * `true` if the process is still running
-/// * `false` if the process has exited
-#[rustler::nif]
-fn alive(process: ResourceArc<MaudeProcess>) -> bool {
-    match process.child.lock() {
-        Ok(mut child) => match child.try_wait() {
-            Ok(None) => true,     // Still running
-            Ok(Some(_)) => false, // Exited
-            Err(_) => false,      // Error checking status
-        },
-        Err(_) => false, // Lock failed
+fn wait_with_timeout(child: &mut Child, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) => thread::sleep(Duration::from_millis(5)),
+            Err(_) => return,
+        }
     }
 }
 
-/// Read from Maude stdout until we see the "Maude>" prompt.
-fn read_until_prompt(process: &MaudeProcess) -> NifResult<String> {
-    let mut stdout = process
-        .stdout
-        .lock()
-        .map_err(|e| rustler::Error::Term(Box::new(format!("stdout lock failed: {}", e))))?;
+/// Check whether the subprocess is still running.
+#[rustler::nif]
+fn alive(process: ResourceArc<MaudeProcess>) -> bool {
+    let Ok(mut child) = process.child.lock() else {
+        return false;
+    };
 
-    let mut output = String::new();
-    let mut line = String::new();
+    matches!(child.try_wait(), Ok(None))
+}
 
-    loop {
-        line.clear();
-        match stdout.read_line(&mut line) {
-            Ok(0) => {
-                // EOF - process likely exited
-                break;
-            }
-            Ok(_) => {
-                // Check if this line contains the prompt
-                if line.contains("Maude>") {
-                    // Don't include the prompt in output
-                    if let Some(before_prompt) = line.split("Maude>").next() {
-                        if !before_prompt.is_empty() {
-                            output.push_str(before_prompt);
-                        }
+fn spawn_reader(
+    mut reader: Box<dyn Read + Send>,
+    tx: Sender<ReaderMsg>,
+    source: &'static str,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let mut buf = [0u8; READER_BUF_SIZE];
+
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => {
+                    // Only the stdout reader announces EOF — stderr can EOF
+                    // long before stdout (Maude doesn't always write to it),
+                    // and a spurious EOF would short-circuit recv_timeout.
+                    if source == "stdout" {
+                        let _ = tx.send(ReaderMsg::Eof);
                     }
-                    break;
+                    return;
                 }
-                output.push_str(&line);
-            }
-            Err(e) => {
-                return Err(rustler::Error::Term(Box::new(format!(
-                    "read failed: {}",
-                    e
-                ))))
+                Ok(n) => {
+                    if tx.send(ReaderMsg::Data(buf[..n].to_vec())).is_err() {
+                        return;
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(ReaderMsg::Io(format!("{source} read failed: {e}")));
+                    return;
+                }
             }
         }
-    }
+    })
+}
 
-    Ok(output.trim().to_string())
+/// Drain stdout chunks into a rolling buffer until `"Maude>"` is found.
+fn read_until_prompt(process: &MaudeProcess, timeout_ms: u64) -> NifResult<String> {
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    let mut buf: Vec<u8> = Vec::with_capacity(READER_BUF_SIZE);
+
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(timeout_error(timeout_ms));
+        }
+
+        match process.rx.recv_timeout(remaining) {
+            Ok(ReaderMsg::Data(chunk)) => {
+                buf.extend_from_slice(&chunk);
+
+                if let Some(idx) = find_subslice(&buf, PROMPT) {
+                    let prefix = &buf[..idx];
+                    let text = String::from_utf8_lossy(prefix).trim().to_string();
+                    return Ok(text);
+                }
+            }
+            Ok(ReaderMsg::Eof) => return Err(eof_error()),
+            Ok(ReaderMsg::Io(msg)) => return Err(io_error(msg)),
+            Err(RecvTimeoutError::Timeout) => return Err(timeout_error(timeout_ms)),
+            Err(RecvTimeoutError::Disconnected) => return Err(eof_error()),
+        }
+    }
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn join_with_timeout(handle: JoinHandle<()>, timeout: Duration) {
+    // std::thread::JoinHandle has no timed join — poll cheaply for `is_finished`
+    // and bail out after `timeout`. The reader is bounded by `read` on a piped
+    // stdout that has already been closed by `child.kill()`, so this normally
+    // returns instantly.
+    let deadline = Instant::now() + timeout;
+
+    while Instant::now() < deadline {
+        if handle.is_finished() {
+            let _ = handle.join();
+            return;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+// Errors are returned to Elixir as `{:error, term}` (Rustler's standard
+// `Error::Term` wrapping), where `term` is one of:
+//
+//   * `{:timeout, ms}`
+//   * `:eof`
+//   * `{:io_error, msg}`
+//   * `{:lock_poisoned, what}`
+//
+// The wrapper module in `lib/ex_maude/backend/nif.ex` pattern-matches on these.
+
+fn timeout_error(ms: u64) -> Error {
+    Error::Term(Box::new((atoms::timeout(), ms)))
+}
+
+fn eof_error() -> Error {
+    Error::Term(Box::new(atoms::eof()))
+}
+
+fn io_error(msg: impl Into<String>) -> Error {
+    Error::Term(Box::new((atoms::io_error(), msg.into())))
+}
+
+fn poison_error(what: &'static str) -> Error {
+    Error::Term(Box::new((atoms::lock_poisoned(), what.to_string())))
 }
 
 rustler::init!("Elixir.ExMaude.Backend.NIF.Native");

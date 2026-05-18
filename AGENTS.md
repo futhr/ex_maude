@@ -30,8 +30,8 @@ ExMaude.Backend.Port   ExMaude.Backend.CNode   ExMaude.Backend.NIF
 | Backend | Isolation | Latency | Status | Use Case |
 |---------|-----------|---------|--------|----------|
 | **Port** | Full | Higher | Stable | Default, safe, works everywhere |
-| **C-Node** | Full | Medium | Beta | Production, structured data |
-| **NIF** | None | Lowest | Stub | Phase 3, hot paths after profiling |
+| **C-Node** | Full | Medium | Stable | Production, structured data |
+| **NIF** | None | Lowest | Stable | Hot paths, latency-critical workloads |
 
 ### Module Overview
 
@@ -41,7 +41,7 @@ ExMaude (Main API)
     ├── ExMaude.Backend         Backend behaviour and selection
     │   ├── Backend.Port        PTY-based Port communication
     │   ├── Backend.CNode       Erlang C-Node bridge
-    │   └── Backend.NIF         Native integration (stub)
+    │   └── Backend.NIF         Rustler NIF (lowest latency)
     │
     ├── ExMaude.Binary          Maude binary management & platform detection
     ├── ExMaude.Maude           High-level operations (reduce, rewrite, search)
@@ -68,7 +68,7 @@ ExMaude (Main API)
 | `lib/ex_maude/backend.ex` | Backend behaviour definition and selection |
 | `lib/ex_maude/backend/port.ex` | Port-based backend implementation |
 | `lib/ex_maude/backend/cnode.ex` | C-Node backend implementation |
-| `lib/ex_maude/backend/nif.ex` | NIF backend stub (Phase 3) |
+| `lib/ex_maude/backend/nif.ex` | Rustler NIF backend |
 | `lib/ex_maude/binary.ex` | Maude binary management and platform detection |
 | `lib/ex_maude/maude.ex` | High-level Maude operations |
 | `lib/ex_maude/server.ex` | Server delegating to configured backend |

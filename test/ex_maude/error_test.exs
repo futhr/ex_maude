@@ -1,7 +1,5 @@
 defmodule ExMaude.ErrorTest do
-  @moduledoc """
-  Tests for `ExMaude.Error` - structured error types.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 
@@ -266,7 +264,7 @@ defmodule ExMaude.ErrorTest do
     end
 
     test "works for all new error types" do
-      new_types = [:not_connected, :cnode_error, :not_implemented, :validation]
+      new_types = [:not_connected, :cnode_error, :nif_not_loaded, :nif_error, :validation]
 
       for type <- new_types do
         error = Error.exception(type, "test message for #{type}")
@@ -300,7 +298,8 @@ defmodule ExMaude.ErrorTest do
         :sort_error,
         :not_connected,
         :cnode_error,
-        :not_implemented,
+        :nif_not_loaded,
+        :nif_error,
         :validation,
         :unknown
       ]
@@ -485,7 +484,8 @@ defmodule ExMaude.ErrorTest do
         :sort_error,
         :not_connected,
         :cnode_error,
-        :not_implemented,
+        :nif_not_loaded,
+        :nif_error,
         :validation,
         :unknown
       ]

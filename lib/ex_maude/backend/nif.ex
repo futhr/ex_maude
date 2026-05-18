@@ -2,51 +2,37 @@ defmodule ExMaude.Backend.NIF do
   @moduledoc """
   NIF-based backend for ExMaude using Rustler.
 
-  > #### Work in Progress {: .warning}
-  >
-  > This backend is under active development (Phase 3). For production use,
-  > configure the `:port` backend instead:
-  >
-  >     config :ex_maude, backend: :port
-
-  This backend manages a Maude subprocess from Rust, providing lower latency
-  than the Port backend by avoiding Elixir process overhead.
+  Manages a Maude subprocess from Rust, communicating via stdin/stdout pipes
+  through a dedicated reader thread. Offers the lowest latency of the three
+  backends because there's no Elixir port overhead and no distribution
+  round-trip — but, like any NIF, it shares the BEAM's OS process.
 
   ## Features
 
-    * Lower latency than Port backend
-    * Uses Rust dirty CPU schedulers for I/O operations
-    * Managed subprocess with synchronized I/O
+    * Per-command timeouts enforced inside the NIF
+    * Runs all blocking operations on the `DirtyIo` scheduler
+    * Structured error returns (`:timeout`, `:eof`, `:io_error`, `:lock_poisoned`)
 
   ## Trade-offs
 
-    * **No process isolation** - NIF crash takes down the BEAM
-    * More complex deployment than Port backend
+    * **No process isolation** — a segfault in the NIF crashes the BEAM.
+      Rustler wraps NIF entry points in `std::panic::catch_unwind`, so a
+      Rust `panic!` becomes an Elixir exception; segfaults from `unsafe`
+      code are still fatal.
+    * More complex deployment than the Port backend.
 
   ## Configuration
 
       config :ex_maude,
         backend: :nif
 
-  ## Safety Considerations
-
-  NIFs run in the same OS process as the BEAM. A crash in the NIF (segfault,
-  panic, etc.) will crash the entire Erlang VM. This backend should only be
-  used after profiling proves the latency improvement is necessary.
-
-  Recommended usage:
-  1. Start with `:port` backend (default, safest)
-  2. Profile your application
-  3. Switch to `:cnode` for binary protocol benefits
-  4. Only use `:nif` if latency is critical
-
   ## Precompiled Binaries
 
   Precompiled NIF binaries are downloaded automatically for supported
-  platforms. To force a build from source (requires Rust toolchain):
+  platforms (macOS aarch64/x86_64, Linux gnu/musl × aarch64/x86_64,
+  Windows gnu/msvc). To force a build from source (requires Rust toolchain):
 
       EX_MAUDE_BUILD=1 mix deps.compile ex_maude
-
   """
 
   @behaviour ExMaude.Backend
@@ -54,7 +40,7 @@ defmodule ExMaude.Backend.NIF do
   use GenServer
   require Logger
 
-  alias ExMaude.{Binary, Error}
+  alias ExMaude.{Binary, Error, Parser}
 
   @default_timeout 30_000
 
@@ -63,17 +49,11 @@ defmodule ExMaude.Backend.NIF do
   """
   @type t :: %__MODULE__{
           handle: reference() | nil,
-          maude_path: String.t() | nil,
-          initialized: boolean()
+          maude_path: String.t() | nil
         }
 
-  defstruct [
-    :handle,
-    :maude_path,
-    initialized: false
-  ]
+  defstruct [:handle, :maude_path]
 
-  # Native module — loads precompiled NIF or builds from source
   defmodule Native do
     @moduledoc false
 
@@ -111,15 +91,24 @@ defmodule ExMaude.Backend.NIF do
         force_build: @force_build
     end
 
-    # NIF stubs — replaced at load time by Rust implementations
+    # NIF stubs — replaced at load time by Rust implementations.
+    #
+    # The specs include `{:error, term()}` because Rustler returns
+    # `Err(rustler::Error::Term(t))` as the wrapped tuple `{:error, t}`
+    # rather than raising. The Elixir wrapper pattern-matches on these.
 
     @doc false
-    @spec start(String.t()) :: {:ok, reference()} | {:error, term()} | reference()
+    @spec nif_loaded() :: boolean()
+    def nif_loaded, do: :erlang.nif_error(:nif_not_loaded)
+
+    @doc false
+    @spec start(String.t()) :: reference() | {:error, term()}
     def start(_), do: :erlang.nif_error(:nif_not_loaded)
 
     @doc false
-    @spec execute(reference(), String.t()) :: binary() | {:ok, String.t()} | {:error, term()}
-    def execute(_, _), do: :erlang.nif_error(:nif_not_loaded)
+    @spec execute_with_timeout(reference(), String.t(), non_neg_integer()) ::
+            binary() | {:error, term()}
+    def execute_with_timeout(_, _, _), do: :erlang.nif_error(:nif_not_loaded)
 
     @doc false
     @spec stop(reference()) :: :ok | {:error, term()}
@@ -153,7 +142,6 @@ defmodule ExMaude.Backend.NIF do
   ## Options
 
     * `:timeout` - Maximum time to wait in milliseconds (default: 30000)
-
   """
   @spec execute(GenServer.server(), String.t(), keyword()) ::
           {:ok, String.t()} | {:error, term()}
@@ -161,7 +149,7 @@ defmodule ExMaude.Backend.NIF do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
 
     try do
-      GenServer.call(server, {:execute, command}, timeout + 1_000)
+      GenServer.call(server, {:execute, command, timeout}, timeout + 1_000)
     catch
       :exit, {:timeout, _} -> {:error, Error.timeout(timeout)}
     end
@@ -170,15 +158,19 @@ defmodule ExMaude.Backend.NIF do
   @impl ExMaude.Backend
   @doc """
   Loads a Maude file via NIF.
+
+  ## Options
+
+    * `:timeout` - Maximum time to wait in milliseconds (default: 30000)
   """
   @spec load_file(GenServer.server(), Path.t()) :: :ok | {:error, term()}
   def load_file(server, path) do
-    GenServer.call(server, {:load_file, path}, @default_timeout)
+    GenServer.call(server, {:load_file, path, @default_timeout}, @default_timeout + 1_000)
   end
 
   @impl ExMaude.Backend
   @doc """
-  Checks if the NIF backend is alive and initialized.
+  Checks if the NIF backend is alive.
   """
   @spec alive?(GenServer.server()) :: boolean()
   def alive?(server) do
@@ -198,7 +190,7 @@ defmodule ExMaude.Backend.NIF do
 
   # Server Callbacks
   # coveralls-ignore-start
-  # GenServer callbacks require NIF to be loaded - tested via integration tests
+  # GenServer callbacks require the NIF to be loaded — tested via integration tests.
 
   @impl GenServer
   def init(opts) do
@@ -207,94 +199,42 @@ defmodule ExMaude.Backend.NIF do
     case start_native(maude_path) do
       {:ok, handle} ->
         emit_telemetry(:start, %{maude_path: maude_path})
-
-        {:ok,
-         %__MODULE__{
-           handle: handle,
-           maude_path: maude_path,
-           initialized: true
-         }}
-
-      {:error, %Error{type: :nif_not_loaded} = _} ->
-        # Start in stub mode when NIF is not available
-        Logger.debug("ExMaude.Backend.NIF starting in stub mode (NIF not loaded)")
-
-        {:ok,
-         %__MODULE__{
-           handle: nil,
-           maude_path: maude_path,
-           initialized: false
-         }}
+        {:ok, %__MODULE__{handle: handle, maude_path: maude_path}}
 
       {:error, reason} ->
-        {:stop, {:nif_start_failed, reason}}
+        {:stop, reason}
     end
   end
 
   @impl GenServer
-  def handle_call({:execute, command}, _, %{initialized: true, handle: handle} = state) do
+  def handle_call({:execute, command, timeout}, _, %{handle: handle} = state) do
     result =
-      try do
-        case Native.execute(handle, command) do
-          result when is_binary(result) -> {:ok, result}
-          {:ok, result} -> {:ok, result}
-          {:error, _} = err -> err
-        end
-      rescue
-        e ->
-          {:error, Error.exception(:nif_error, Exception.message(e))}
+      case run_native_execute(handle, normalize_command(command), timeout) do
+        {:ok, raw} -> Parser.parse_backend_response(raw)
+        {:error, _} = err -> err
       end
 
     emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
     {:reply, result, state}
   end
 
-  def handle_call({:execute, _}, _, state) do
-    {:reply,
-     {:error,
-      Error.exception(
-        :not_implemented,
-        "NIF backend not yet implemented. Compile the Rustler NIF to enable."
-      )}, state}
-  end
-
-  def handle_call({:load_file, path}, _, %{initialized: true, handle: handle} = state) do
-    command = "load #{path}"
-
+  def handle_call({:load_file, path, timeout}, _, %{handle: handle} = state) do
     result =
-      try do
-        case Native.execute(handle, command) do
-          result when is_binary(result) ->
-            if String.contains?(result, "Error") do
-              {:error, Error.exception(:load_error, result)}
-            else
-              :ok
-            end
+      case run_native_execute(handle, normalize_command("load #{path}"), timeout) do
+        {:ok, raw} ->
+          case Parser.parse_backend_response(raw) do
+            {:ok, _} -> :ok
+            {:error, _} = err -> err
+          end
 
-          {:ok, _} ->
-            :ok
-
-          {:error, _} = err ->
-            err
-        end
-      rescue
-        e ->
-          {:error, Error.exception(:nif_error, Exception.message(e))}
+        {:error, _} = err ->
+          err
       end
 
     {:reply, result, state}
   end
 
-  def handle_call({:load_file, _}, _, state) do
-    {:reply,
-     {:error,
-      Error.exception(
-        :not_implemented,
-        "NIF backend not yet implemented. Compile the Rustler NIF to enable."
-      )}, state}
-  end
-
-  def handle_call(:alive?, _, %{initialized: true, handle: handle} = state) do
+  def handle_call(:alive?, _, %{handle: handle} = state) do
     alive =
       try do
         Native.alive(handle)
@@ -305,21 +245,15 @@ defmodule ExMaude.Backend.NIF do
     {:reply, alive, state}
   end
 
-  def handle_call(:alive?, _, state) do
-    {:reply, false, state}
-  end
+  @impl GenServer
+  def handle_info(_, state), do: {:noreply, state}
 
   @impl GenServer
-  def handle_info(_, state) do
-    {:noreply, state}
-  end
-
-  @impl GenServer
-  def terminate(reason, %{handle: handle, initialized: true}) do
+  def terminate(reason, %{handle: handle}) do
     Logger.debug("ExMaude.Backend.NIF terminating: #{inspect(reason)}")
 
     try do
-      Native.stop(handle)
+      if handle, do: Native.stop(handle)
     rescue
       _ -> :ok
     end
@@ -327,45 +261,84 @@ defmodule ExMaude.Backend.NIF do
     :ok
   end
 
-  def terminate(reason, _) do
-    Logger.debug("ExMaude.Backend.NIF terminating: #{inspect(reason)}")
-    :ok
-  end
-
   # coveralls-ignore-stop
 
-  # Private Functions
-
   defp start_native(maude_path) do
-    try do
-      case Native.start(maude_path) do
-        {:ok, _} = result -> result
-        {:error, _} = err -> err
-        handle when is_reference(handle) -> {:ok, handle}
+    case safe_call(fn -> Native.start(maude_path) end) do
+      {:ok, handle} when is_reference(handle) ->
+        {:ok, handle}
+
+      {:ok, other} ->
+        {:error, {:nif_start_failed, Error.exception(:nif_error, inspect(other))}}
+
+      {:error, %Error{type: :nif_not_loaded} = err} ->
+        {:error, {:nif_not_loaded, err.message}}
+
+      {:error, %Error{} = err} ->
+        {:error, {:nif_start_failed, err}}
+    end
+  end
+
+  defp run_native_execute(handle, command, timeout) do
+    safe_call(fn -> Native.execute_with_timeout(handle, command, timeout) end)
+  end
+
+  # Wraps a NIF call and maps both raised errors and returned `{:error, t}`
+  # tuples into a uniform `{:ok, value} | {:error, %Error{}}` shape. The
+  # NIFs we wrap return either a successful payload (`reference()` for
+  # `start/1`, `binary()` for `execute_with_timeout/3`) or `{:error, t}`.
+  defp safe_call(fun) do
+    case fun.() do
+      output when is_binary(output) -> {:ok, output}
+      handle when is_reference(handle) -> {:ok, handle}
+      {:error, term} -> {:error, decode_nif_error(term)}
+    end
+  rescue
+    e in [UndefinedFunctionError] ->
+      {:error, nif_not_loaded(Exception.message(e))}
+
+    e in [ErlangError] ->
+      case Map.get(e, :original) do
+        :nif_not_loaded ->
+          {:error, nif_not_loaded("Rustler did not populate the NIF function table.")}
+
+        term ->
+          {:error, decode_nif_error(term)}
       end
-    rescue
-      _ in UndefinedFunctionError ->
-        {:error,
-         Error.exception(
-           :nif_not_loaded,
-           "NIF not loaded. Ensure Rustler is installed and the NIF is compiled."
-         )}
 
-      e in ErlangError ->
-        case Map.get(e, :original) do
-          :nif_not_loaded ->
-            {:error,
-             Error.exception(
-               :nif_not_loaded,
-               "NIF not loaded. Ensure Rustler is installed and the NIF is compiled."
-             )}
+    e ->
+      {:error, Error.exception(:nif_error, Exception.message(e))}
+  end
 
-          other ->
-            {:error, Error.exception(:nif_error, inspect(other))}
-        end
+  defp decode_nif_error({:timeout, ms}) when is_integer(ms), do: Error.timeout(ms)
+  defp decode_nif_error(:eof), do: Error.crash(0)
+  defp decode_nif_error({:io_error, msg}), do: Error.exception(:nif_error, msg)
 
-      e ->
-        {:error, Error.exception(:nif_error, Exception.message(e))}
+  defp decode_nif_error({:lock_poisoned, what}),
+    do: Error.exception(:nif_error, "lock poisoned: #{what}")
+
+  defp decode_nif_error(other), do: Error.exception(:nif_error, inspect(other))
+
+  defp nif_not_loaded(detail) do
+    Error.exception(
+      :nif_not_loaded,
+      "NIF binary failed to load — set EX_MAUDE_BUILD=1 to build from source, " <>
+        "or check that your platform is in the supported targets list. " <>
+        "Underlying: #{detail}"
+    )
+  end
+
+  # Maude needs a trailing period to know the command is complete. Some
+  # callers (notably `ExMaude.Maude.reduce/3`) build commands without one;
+  # the `load` command does include one. Normalize here so the NIF doesn't
+  # block waiting for missing punctuation.
+  defp normalize_command(command) do
+    command = String.trim_trailing(command)
+
+    if String.ends_with?(command, ".") do
+      command
+    else
+      command <> " ."
     end
   end
 

@@ -1,14 +1,11 @@
 defmodule ExMaude.TelemetryTest do
-  @moduledoc """
-  Tests for `ExMaude.Telemetry` - telemetry events and helpers.
-
-  These tests verify that telemetry events are emitted correctly with
-  standard measurements and metadata compatible with Prometheus/OpenTelemetry.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: false
 
   alias ExMaude.Telemetry
+
+  doctest ExMaude.Telemetry
 
   describe "events/0" do
     test "returns list of all event names" do
@@ -305,9 +302,12 @@ defmodule ExMaude.TelemetryTest do
   end
 
   describe "events/0 additional tests" do
-    test "returns exactly 7 events" do
+    test "returns the full list of public events" do
       events = Telemetry.events()
-      assert length(events) == 7
+      assert length(events) == 9
+
+      assert [:ex_maude, :ai, :detect_conflicts, :start] in events
+      assert [:ex_maude, :ai, :detect_conflicts, :stop] in events
     end
 
     test "all events are unique" do

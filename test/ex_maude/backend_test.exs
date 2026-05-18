@@ -1,11 +1,11 @@
 defmodule ExMaude.BackendTest do
-  @moduledoc """
-  Tests for `ExMaude.Backend` behaviour and backend selection.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 
   alias ExMaude.Backend
+
+  doctest ExMaude.Backend
 
   describe "impl/0" do
     test "returns Port backend by default" do
@@ -159,10 +159,9 @@ defmodule ExMaude.BackendTest do
       end
     end
 
-    test "nif checks for Native module" do
-      # NIF.Native doesn't exist yet
+    test "nif returns a boolean reflecting NIF load state" do
       result = Backend.available?(:nif)
-      assert result == false
+      assert is_boolean(result)
     end
   end
 end

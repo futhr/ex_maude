@@ -20,7 +20,10 @@ defmodule ExMaude.Error do
     * `:sort_error` - Sort/type mismatch
     * `:not_connected` - Backend not connected (C-Node)
     * `:cnode_error` - C-Node communication error
-    * `:not_implemented` - Feature not yet implemented (NIF)
+    * `:nif_not_loaded` - NIF binary failed to load (precompiled binary
+      missing for the host platform; set `EX_MAUDE_BUILD=1` to build from
+      source, or check that your platform is in the supported targets list)
+    * `:nif_error` - Runtime error from the NIF backend
     * `:validation` - Input validation failed
     * `:unknown` - Unrecognized error
 
@@ -57,7 +60,8 @@ defmodule ExMaude.Error do
           | :sort_error
           | :not_connected
           | :cnode_error
-          | :not_implemented
+          | :nif_not_loaded
+          | :nif_error
           | :validation
           | :unknown
 
@@ -157,8 +161,6 @@ defmodule ExMaude.Error do
         %__MODULE__{type: :unknown, message: String.slice(output, 0, 200), raw_output: output}
     end
   end
-
-  # Error detection predicates for improved readability
 
   defp parse_error?(output), do: String.contains?(output, "No parse for term")
 
@@ -312,8 +314,6 @@ defmodule ExMaude.Error do
   def to_tuple(%__MODULE__{type: type, message: message}) do
     {type, message}
   end
-
-  # Private extraction functions
 
   defp extract_parse_error(output) do
     case Regex.run(~r/No parse for term[:\s]*(.+)/s, output) do

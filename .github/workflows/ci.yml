@@ -174,3 +174,57 @@ jobs:
 
       - name: Check doc coverage
         run: mix doctor
+
+  nif:
+    name: NIF Test (${{ matrix.job.os }})
+    runs-on: ${{ matrix.job.os }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - { os: macos-15 }
+          - { os: ubuntu-22.04 }
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Elixir
+        id: setup-beam
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19"
+          otp-version: "28"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore deps cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            deps
+            _build
+            native/ex_maude_nif/target
+          key: nif-${{ runner.os }}-${{ steps.setup-beam.outputs.otp-version }}-${{ steps.setup-beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock', 'native/ex_maude_nif/Cargo.lock') }}
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Install Maude (Linux only)
+        if: matrix.job.os == 'ubuntu-22.04'
+        run: |
+          # macOS uses the bundled darwin binary in priv/maude/bin/.
+          # Linux runners need the linux binary either bundled or installed.
+          test -x priv/maude/bin/maude-linux-x64 || mix maude.install
+
+      - name: Compile (force NIF build from source)
+        env:
+          EX_MAUDE_BUILD: "1"
+        run: mix compile --warnings-as-errors
+
+      - name: Run NIF + integration tests
+        env:
+          EX_MAUDE_BUILD: "1"
+        run: mix test --include nif --include integration
