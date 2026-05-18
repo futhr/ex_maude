@@ -17,3 +17,4 @@ priv/native/
 c_src/*.o
 c_src/maude_bridge
 priv/maude_bridge
+.DS_Store

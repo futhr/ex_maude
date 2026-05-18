@@ -63,7 +63,7 @@ defmodule ExMaude do
   |---------|-----------|---------|----------|
   | `:port` | Full | Higher | Default, safe, works everywhere |
   | `:cnode` | Full | Medium | Production, structured data |
-  | `:nif` | None | Lowest | Hot paths (Phase 3, not yet implemented) |
+  | `:nif` | None | Lowest | Hot paths, latency-critical workloads |
 
   """
 

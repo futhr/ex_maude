@@ -126,18 +126,21 @@ defmodule ExMaude.Parser do
     end
   end
 
-  @error_patterns [
-    ~r/Error:/,
-    ~r/Warning:/,
-    ~r/No parse for term/,
-    ~r/no module\s+\S+/i,
-    ~r/module\s+\S+\s+not found/i,
-    ~r/syntax error/i,
-    ~r/Advisory:/
-  ]
-
+  # Compiled regex structs can't live in a module attribute on Elixir < 1.19
+  # because they wrap an opaque reference. Build the list once per call —
+  # the regex constructions are constant-folded at compile time.
   defp maude_error?(output) do
-    Enum.any?(@error_patterns, &Regex.match?(&1, output))
+    patterns = [
+      ~r/Error:/,
+      ~r/Warning:/,
+      ~r/No parse for term/,
+      ~r/no module\s+\S+/i,
+      ~r/module\s+\S+\s+not found/i,
+      ~r/syntax error/i,
+      ~r/Advisory:/
+    ]
+
+    Enum.any?(patterns, &Regex.match?(&1, output))
   end
 
   @doc """

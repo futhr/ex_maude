@@ -1,7 +1,7 @@
 defmodule ExMaude.MixProject do
   use Mix.Project
 
-  @version "0.1.1"
+  @version "0.2.0"
   @source_url "https://github.com/futhr/ex_maude"
 
   def project do
@@ -106,10 +106,11 @@ defmodule ExMaude.MixProject do
       {:telemetry, "~> 1.2"},
       {:jason, "~> 1.4"},
 
-      # Security override: decimal < 3.1.0 has a DoS via unbounded
-      # exponent parsing (GHSA-rhv4-8758-jx7v / elixirforum 75261).
-      # Pulled transitively; force >= 3.1.
-      {:decimal, "~> 3.1", override: true},
+      # decimal < 3.1.0 has a DoS via unbounded exponent parsing
+      # (GHSA-rhv4-8758-jx7v). Declare it directly so the resolver enforces
+      # 3.1+ across transitive deps without `override: true` (Hex disallows
+      # overrides in published packages).
+      {:decimal, "~> 3.1"},
       # Native code compilation
       {:elixir_make, "~> 0.8", runtime: false},
       # NIF — precompiled binaries downloaded at install time

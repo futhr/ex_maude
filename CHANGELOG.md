@@ -5,10 +5,66 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.2.0](https://github.com/futhr/ex_maude/compare/v0.1.1...v0.2.0) (2026-05-18)
+
+### Features:
+
+* add `ai-rules.maude` template (`priv/maude/ai-rules.maude`) — second
+  bundled Maude module alongside `iot-rules.maude`. Targets AI-generated
+  automation rules over Agents, Capabilities, ToolInvocations, and richer
+  predicates (capability, budget, jurisdiction, authority). Detects ten
+  conflict types including tool-call conflict, capability shadowing,
+  pack-tool composition mismatch, sovereignty violation, authority
+  escalation, approval-gate bypass, and agent-loop cascade. ~570 lines
+  of algebraic specification.
+
+* add `ExMaude.AI` Elixir API parallel to `ExMaude.IoT`. Submodules:
+
+    - `ExMaude.AI.Encoder` — Elixir term → Maude syntax for ai-rules
+    - `ExMaude.AI.Validator` — pre-encode rule validation, including
+      explicit `:unverifiable` returns for `:contains` / `:matches`
+      regex operators
+    - `ExMaude.AI.ConflictParser` — Maude output → typed conflict maps,
+      handling both pairwise (`aiConflict`) and single-rule
+      (`aiConflictSingle`) constructors
+
+* add `ExMaude.ai_rules_path/0` helper returning the bundled
+  `ai-rules.maude` path under `priv/`.
+
+* add `[:ex_maude, :ai, :detect_conflicts, :start | :stop]` telemetry
+  events with `template: :ai_rules` metadata for observability parity
+  with the IoT path.
+
+* promote `:nif` backend to production grade. The Rust crate now uses a
+  dedicated reader thread feeding a `crossbeam-channel`, enforces per-command
+  timeouts via `recv_timeout`, captures both stdout and stderr (matching the
+  Port backend's `stderr_to_stdout` semantics), and returns structured
+  errors (`{:timeout, ms}`, `:eof`, `{:io_error, msg}`, `{:lock_poisoned, what}`).
+  All blocking entry points run on the `DirtyIo` scheduler.
+
+* add `ExMaude.Parser.parse_backend_response/1` as the single source of truth
+  for turning a Maude command's raw output into `{:ok, value} | {:error, %Error{}}`.
+  Both the Port and NIF backends now share this parser.
+
+* expose a `nif_loaded/0` probe in the NIF native module — a cheap call used
+  by `ExMaude.Backend.available?/1` to detect whether Rustler has populated
+  the native function table.
+
+### Bug Fixes:
+
+* fix `ExMaude.Backend.available?(:nif)` checking the wrong function name
+  (`:initialize/1` instead of the actual `:start/1`), which made the backend
+  appear unavailable even when the precompiled binary loaded correctly.
+
+* fix `ExMaude.Backend.NIF` no longer falling back into a "stub mode" when
+  the NIF fails to load — the GenServer now refuses to start and surfaces
+  a clear `:nif_not_loaded` error pointing at the `EX_MAUDE_BUILD=1`
+  escape hatch.
+
+* fix `:not_implemented` error type removed; replaced by `:nif_not_loaded`
+  and `:nif_error` for genuine NIF failure modes.
+
 ## [v0.1.1](https://github.com/futhr/ex_maude/compare/v0.1.0...v0.1.1) (2026-04-07)
-
-
-
 
 ### Bug Fixes:
 
@@ -17,9 +73,6 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 * switch NIF to RustlerPrecompiled for proper Hex packaging by Tobias Bohwalli
 
 ## [v0.1.0](https://github.com/futhr/ex_maude/compare/v0.1.0...v0.1.0) (2026-04-03)
-
-
-
 
 ### Features:
 
