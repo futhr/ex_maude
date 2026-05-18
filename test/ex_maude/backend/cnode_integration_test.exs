@@ -1,19 +1,11 @@
 defmodule ExMaude.Backend.CNodeIntegrationTest do
-  @moduledoc """
-  Integration tests for C-Node backend.
-
-  These tests require:
-  1. The maude_bridge binary to be compiled (priv/maude_bridge)
-  2. Maude to be installed and in PATH
-  3. Erlang distribution to be enabled
-
-  Run with: elixir --sname test -S mix test --include cnode_integration
-  """
+  @moduledoc false
   use ExUnit.Case, async: false
 
   alias ExMaude.Backend
 
-  @moduletag :cnode_integration
+  @moduletag :cnode
+  @moduletag :integration
   @moduletag timeout: 60_000
 
   # Check prerequisites at module load time

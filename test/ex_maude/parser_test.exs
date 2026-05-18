@@ -1,43 +1,5 @@
 defmodule ExMaude.ParserTest do
-  @moduledoc """
-  Tests for `ExMaude.Parser` - the Maude output parsing module.
-
-  This test module provides comprehensive coverage of all parser functions,
-  testing various Maude output formats and edge cases. All tests run in
-  async mode since they perform pure parsing without external dependencies.
-
-  ## Test Categories
-
-    * `parse_result/1` - Tests parsing of `reduce` and `rewrite` command output
-    * `parse_search_results/1` - Tests parsing of `search` command solutions
-    * `parse_errors/1` - Tests detection of warnings and errors in output
-    * `parse_module_list/1` - Tests parsing of `show modules` output
-    * `parse_term/1` - Tests basic Maude term to Elixir AST conversion
-
-  ## Example Maude Outputs
-
-  The parser handles outputs like:
-
-      # Reduction result
-      result Nat: 42
-
-      # Search solution
-      Solution 1 (state 5)
-      S:State --> active
-      X:Nat --> 42
-
-      # Error output
-      Warning: something suspicious
-      Error: undefined variable X
-
-  ## Running Tests
-
-      # Run parser tests only
-      mix test test/ex_maude/parser_test.exs
-
-      # Run with coverage
-      mix test test/ex_maude/parser_test.exs --cover
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 

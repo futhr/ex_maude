@@ -1,33 +1,5 @@
 defmodule ExMaude.IntegrationTest do
-  @moduledoc """
-  Integration tests for ExMaude requiring a real Maude installation.
-
-  These tests verify the core functionality of ExMaude against a real Maude
-  process. They test the full pipeline from Elixir API calls through Port
-  communication to Maude and back.
-
-  ## Running These Tests
-
-  These tests require Maude to be installed and available in PATH.
-
-      # Run all tests including integration
-      mix test --include integration
-
-      # Run only integration tests
-      mix test --only integration
-
-  ## Test Categories
-
-    * `reduce/3` - Term reduction to normal form
-    * `rewrite/3` - Term rewriting with rules
-    * `search/4` - State space exploration
-    * `load_file/1` - Module loading
-    * `pool behavior` - Concurrent operations
-
-  ## Prerequisites
-
-  Install Maude from https://maude.cs.illinois.edu/
-  """
+  @moduledoc false
 
   use ExMaude.MaudeCase
 

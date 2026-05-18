@@ -1,12 +1,5 @@
 defmodule ExMaude.Backend.CNodeTest do
-  @moduledoc """
-  Tests for `ExMaude.Backend.CNode` - the C-Node backend.
-
-  Note: Most integration tests require:
-  1. The maude_bridge binary to be compiled (cd c_src && make)
-  2. The node to be running in distributed mode
-  3. Maude to be installed
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 

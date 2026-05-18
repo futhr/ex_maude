@@ -1,7 +1,5 @@
 defmodule ExMaude.ServerTest do
-  @moduledoc """
-  Tests for `ExMaude.Server` - the GenServer managing individual Maude processes.
-  """
+  @moduledoc false
 
   use ExMaude.MaudeCase
 

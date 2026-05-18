@@ -1,7 +1,5 @@
 defmodule ExMaude.MaudeCaseTest do
-  @moduledoc """
-  Tests for `ExMaude.MaudeCase` - the shared test case module.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 

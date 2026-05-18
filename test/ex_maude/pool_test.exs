@@ -1,7 +1,5 @@
 defmodule ExMaude.PoolTest do
-  @moduledoc """
-  Tests for `ExMaude.Pool` - the Poolboy-based worker pool.
-  """
+  @moduledoc false
 
   use ExMaude.MaudeCase
 

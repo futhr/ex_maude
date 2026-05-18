@@ -1,11 +1,11 @@
 defmodule ExMaude.Result.SearchTest do
-  @moduledoc """
-  Tests for `ExMaude.Result.Search` - search result representation.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 
   alias ExMaude.Result.{Search, Solution}
+
+  doctest ExMaude.Result.Search
 
   describe "new/2" do
     test "creates search with empty solutions" do

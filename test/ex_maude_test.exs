@@ -1,30 +1,5 @@
 defmodule ExMaudeTest do
-  @moduledoc """
-  Tests for the main `ExMaude` module.
-
-  This test module verifies:
-
-    * All core modules are properly loaded and accessible
-    * The `iot_rules_path/0` helper returns valid paths
-    * All delegated functions are correctly exported with proper arities
-
-  These tests run without requiring Maude to be installed, making them
-  suitable for CI environments and quick validation of the module structure.
-
-  ## Test Categories
-
-    * `module loading` - Ensures all ExMaude modules compile and load
-    * `iot_rules_path/0` - Validates the bundled Maude module path helper
-    * `delegated functions` - Confirms the public API is properly delegated
-
-  ## Running Tests
-
-      # Run all tests in this file
-      mix test test/ex_maude_test.exs
-
-      # Run with verbose output
-      mix test test/ex_maude_test.exs --trace
-  """
+  @moduledoc false
 
   use ExUnit.Case
 

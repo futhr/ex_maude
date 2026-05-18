@@ -1,10 +1,5 @@
 defmodule ExMaude.TelemetryIntegrationTest do
-  @moduledoc """
-  Integration tests for ExMaude telemetry with actual Maude operations.
-
-  These tests verify that telemetry events are emitted correctly when
-  performing real Maude commands through the pool.
-  """
+  @moduledoc false
 
   use ExMaude.MaudeCase
 

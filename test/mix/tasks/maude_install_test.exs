@@ -1,7 +1,5 @@
 defmodule Mix.Tasks.Maude.InstallTest do
-  @moduledoc """
-  Tests for `Mix.Tasks.Maude.Install` - the Maude binary installation task.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: false
 

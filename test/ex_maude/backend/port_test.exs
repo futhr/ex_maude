@@ -1,7 +1,5 @@
 defmodule ExMaude.Backend.PortTest do
-  @moduledoc """
-  Tests for `ExMaude.Backend.Port` - the Port-based backend.
-  """
+  @moduledoc false
 
   use ExMaude.MaudeCase
 

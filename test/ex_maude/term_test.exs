@@ -1,7 +1,5 @@
 defmodule ExMaude.TermTest do
-  @moduledoc """
-  Tests for `ExMaude.Term` - structured Maude term representation.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 

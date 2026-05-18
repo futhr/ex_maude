@@ -1,7 +1,5 @@
 defmodule ExMaude.MaudeTest do
-  @moduledoc """
-  Tests for `ExMaude.Maude` - the high-level Maude API.
-  """
+  @moduledoc false
 
   use ExMaude.MaudeCase
 

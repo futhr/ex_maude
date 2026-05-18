@@ -1,11 +1,11 @@
 defmodule ExMaude.BinaryTest do
-  @moduledoc """
-  Tests for `ExMaude.Binary` - Maude binary management and platform detection.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 
   alias ExMaude.Binary
+
+  doctest ExMaude.Binary
 
   describe "version/0" do
     test "returns a version string" do

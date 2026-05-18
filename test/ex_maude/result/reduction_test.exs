@@ -1,12 +1,12 @@
 defmodule ExMaude.Result.ReductionTest do
-  @moduledoc """
-  Tests for `ExMaude.Result.Reduction` - reduction result representation.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 
   alias ExMaude.Result.Reduction
   alias ExMaude.Term
+
+  doctest ExMaude.Result.Reduction
 
   describe "new/2" do
     test "creates reduction with term" do

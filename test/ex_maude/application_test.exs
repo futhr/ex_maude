@@ -1,7 +1,5 @@
 defmodule ExMaude.ApplicationTest do
-  @moduledoc """
-  Tests for `ExMaude.Application` - the OTP application callback module.
-  """
+  @moduledoc false
 
   use ExUnit.Case
 

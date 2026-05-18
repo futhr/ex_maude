@@ -1,12 +1,12 @@
 defmodule ExMaude.Result.SolutionTest do
-  @moduledoc """
-  Tests for `ExMaude.Result.Solution` - search solution representation.
-  """
+  @moduledoc false
 
   use ExUnit.Case, async: true
 
   alias ExMaude.Result.Solution
   alias ExMaude.Term
+
+  doctest ExMaude.Result.Solution
 
   describe "new/2" do
     test "creates solution with number" do
