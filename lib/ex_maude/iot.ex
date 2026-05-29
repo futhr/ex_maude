@@ -250,6 +250,167 @@ defmodule ExMaude.IoT do
   @spec validate_rules([rule()]) :: :ok | {:error, %{String.t() => [String.t()]}}
   defdelegate validate_rules(rules), to: Validator
 
+  @typedoc """
+  A predicate over a world state: a device property holding a value, or an
+  environment key holding a value.
+  """
+  @type state_pred ::
+          {:thing_state, thing_id(), String.t(), term()}
+          | {:env_state, String.t(), term()}
+
+  @typedoc """
+  Options for the state-space verification functions.
+
+    * `:initial_state` - bindings present before any rule fires (default `[]`)
+    * `:max_depth` - bound on search depth (default `50`); unbounded searches
+      that hit the bound return `{:ok, :unverified}` rather than blocking
+    * `:timeout` - per-search timeout in ms (default `30_000`)
+  """
+  @type world_opts :: [
+          initial_state: [state_pred()],
+          max_depth: pos_integer(),
+          timeout: timeout()
+        ]
+
+  @doc """
+  Bounded safety check: proves no execution of `rules` reaches a world matching
+  `bad_state`.
+
+  Explores the rule-firing transition system (the `IOT-EXEC` Maude module) from
+  the initial state with `=>*` reachability search, looking for a reachable
+  world whose state contains `bad_state`.
+
+  Returns:
+
+    * `{:ok, :safe}` - no bad world reachable within `max_depth`
+    * `{:error, {:counterexample, solutions}}` - a reachable bad world (the
+      `solutions` carry the matching state/substitution)
+    * `{:ok, :unverified}` - Maude unavailable, timed out, or otherwise unable
+      to decide (absence of proof, not evidence of safety)
+
+  `bad_state` is a `state_pred` or a list of them (a list means "all present in
+  the same reachable world").
+
+  ## Examples
+
+      # Rule drives a door into an error state when motion is detected.
+      rules = [%{id: "r1", thing_id: "door", trigger: {:prop_eq, "motion", true},
+                 actions: [{:set_prop, "door", "state", "error"}], priority: 1}]
+
+      ExMaude.IoT.verify_safety(rules, {:thing_state, "door", "state", "error"},
+        initial_state: [{:thing_state, "door", "motion", true}])
+      #=> {:error, {:counterexample, [_ | _]}}
+  """
+  @spec verify_safety([rule()], state_pred() | [state_pred()], world_opts()) ::
+          {:ok, :safe} | {:error, {:counterexample, [map()]}} | {:ok, :unverified}
+  def verify_safety(rules, bad_state, opts \\ []) when is_list(rules) do
+    max_depth = Keyword.get(opts, :max_depth, 50)
+    timeout = Keyword.get(opts, :timeout, 30_000)
+
+    with :ok <- ensure_iot_module_loaded(),
+         {:ok, init} <- build_world(rules, opts),
+         pattern = bad_state_pattern(bad_state),
+         {:ok, solutions} <-
+           Maude.search("IOT-EXEC", init, pattern,
+             arrow: "=>*",
+             max_solutions: 1,
+             max_depth: max_depth,
+             timeout: timeout
+           ) do
+      case solutions do
+        [] -> {:ok, :safe}
+        [_ | _] -> {:error, {:counterexample, solutions}}
+      end
+    else
+      {:error, _} -> {:ok, :unverified}
+    end
+  end
+
+  @doc """
+  Bounded liveness check: looks for a deadlock that prevents `rules` from
+  reaching `goal_state`.
+
+  Searches for a terminal world (`=>!`, no rule can fire) in which `goal_state`
+  does not hold. Because the search only inspects terminal states, this detects
+  deadlocks (the system stops short of the goal); it does not detect livelocks
+  (infinite progress that never reaches the goal), which need full LTL model
+  checking.
+
+  Returns:
+
+    * `{:ok, :live}` - every reachable terminal world satisfies `goal_state`
+    * `{:error, :deadlock_possible}` - a reachable terminal world misses the goal
+    * `{:ok, :unverified}` - Maude unavailable, timed out, or undecided
+
+  ## Examples
+
+      ExMaude.IoT.verify_liveness(rules, {:thing_state, "door", "state", "notified"})
+      #=> {:ok, :live}
+  """
+  @spec verify_liveness([rule()], state_pred(), world_opts()) ::
+          {:ok, :live} | {:error, :deadlock_possible} | {:ok, :unverified}
+  def verify_liveness(rules, goal_state, opts \\ []) when is_list(rules) do
+    max_depth = Keyword.get(opts, :max_depth, 50)
+    timeout = Keyword.get(opts, :timeout, 30_000)
+
+    with :ok <- ensure_iot_module_loaded(),
+         {:ok, init} <- build_world(rules, opts),
+         condition = goal_violation_condition(goal_state),
+         {:ok, solutions} <-
+           Maude.search("IOT-EXEC", init, "world(S:WState, RS:RuleSet)",
+             arrow: "=>!",
+             condition: condition,
+             max_solutions: 1,
+             max_depth: max_depth,
+             timeout: timeout
+           ) do
+      case solutions do
+        [] -> {:ok, :live}
+        [_ | _] -> {:error, :deadlock_possible}
+      end
+    else
+      {:error, _} -> {:ok, :unverified}
+    end
+  end
+
+  defp build_world(rules, opts) do
+    case Encoder.encode_rules(rules) do
+      {:ok, rule_set} ->
+        state = build_state(Keyword.get(opts, :initial_state, []))
+        {:ok, "world(#{state}, #{rule_set})"}
+
+      error ->
+        error
+    end
+  end
+
+  defp build_state([]), do: "emptyS"
+  defp build_state(preds), do: Enum.map_join(preds, " ", &encode_binding/1)
+
+  defp encode_binding({:thing_state, thing_id, property, value}) do
+    "pb(#{Encoder.encode_thing_id(thing_id)}, #{Encoder.encode_string(property)}, #{Encoder.encode_value(value)})"
+  end
+
+  defp encode_binding({:env_state, key, value}) do
+    "eb(#{Encoder.encode_string(key)}, #{Encoder.encode_value(value)})"
+  end
+
+  defp bad_state_pattern(preds) when is_list(preds) do
+    "world(#{Enum.map_join(preds, " ", &encode_binding/1)} S:WState, RS:RuleSet)"
+  end
+
+  defp bad_state_pattern(pred), do: bad_state_pattern([pred])
+
+  defp goal_violation_condition({:thing_state, thing_id, property, value}) do
+    term = "propEq(#{Encoder.encode_string(property)}, #{Encoder.encode_value(value)})"
+    "holdsFor(#{term}, #{Encoder.encode_thing_id(thing_id)}, S:WState) =/= true"
+  end
+
+  defp goal_violation_condition({:env_state, key, value}) do
+    term = "envEq(#{Encoder.encode_string(key)}, #{Encoder.encode_value(value)})"
+    ~s|holdsFor(#{term}, thing(""), S:WState) =/= true|
+  end
+
   defp ensure_iot_module_loaded do
     path = ExMaude.iot_rules_path()
 

@@ -391,3 +391,88 @@ fmod CONFLICT-DETECTOR is
     detectAllConflicts(R2:Rule, RS:RuleSet) .
 
 endfm
+
+*** ============================================================
+*** IOT-EXEC: operational semantics for rule execution
+***
+*** Adds a rewrite theory on top of the (equational) CONFLICT-DETECTOR
+*** so Maude's `search` command can explore the reachable states of a
+*** rule set. Used by ExMaude.IoT.verify_safety / verify_liveness for
+*** bounded, LTL-style verification:
+***   * safety   -> search [=>*] for a reachable "bad" world
+***   * liveness -> search [=>!] for a terminal world missing a goal
+*** ============================================================
+mod IOT-EXEC is
+  protecting RULE .
+  protecting CONVERSION .
+
+  *** A World is a soup of property/env bindings paired with the rule
+  *** set that drives it. Each binding is single-valued per key.
+  sorts Binding WState World .
+  op pb : ThingId String PropertyValue -> Binding [ctor] .   *** device property binding
+  op eb : String PropertyValue -> Binding [ctor] .            *** environment binding
+  subsort Binding < WState .
+  op emptyS : -> WState [ctor] .
+  op __ : WState WState -> WState [ctor assoc comm id: emptyS] .
+  op world : WState RuleSet -> World [ctor] .
+
+  vars P : String . vars V VC : PropertyValue . var T : ThingId .
+  vars C C1 C2 : Condition . var S : WState . var RS : RuleSet . var R : Rule .
+  var AL : ActionList . var A : Action . var AN : String .
+
+  *** Parse a numeric value string. The encoder wraps both integers and
+  *** floats as intVal(String); `float` rejects strings without a decimal
+  *** point, so integers route through `rat` first.
+  op asFloat : String -> Float .
+  ceq asFloat(SF:String) = float(SF:String) if find(SF:String, ".", 0) =/= notFound .
+  eq asFloat(SF:String) = float(rat(SF:String, 10)) [owise] .
+
+  ops numGt numLt numGte numLte : PropertyValue PropertyValue -> Bool .
+  eq numGt(intVal(A1:String), intVal(B1:String)) = asFloat(A1:String) > asFloat(B1:String) .
+  eq numLt(intVal(A1:String), intVal(B1:String)) = asFloat(A1:String) < asFloat(B1:String) .
+  eq numGte(intVal(A1:String), intVal(B1:String)) = asFloat(A1:String) >= asFloat(B1:String) .
+  eq numLte(intVal(A1:String), intVal(B1:String)) = asFloat(A1:String) <= asFloat(B1:String) .
+  eq numGt(V, VC) = false [owise] .
+  eq numLt(V, VC) = false [owise] .
+  eq numGte(V, VC) = false [owise] .
+  eq numLte(V, VC) = false [owise] .
+
+  *** holdsFor(Cond, Thing, State): does Cond hold for Thing in State?
+  *** Property conditions are evaluated against the rule's target thing;
+  *** environment conditions are global.
+  op holdsFor : Condition ThingId WState -> Bool .
+  eq holdsFor(always, T, S) = true .
+  eq holdsFor(propEq(P, V), T, pb(T, P, V) S) = true .
+  eq holdsFor(propGt(P, V), T, pb(T, P, VC) S) = numGt(VC, V) .
+  eq holdsFor(propLt(P, V), T, pb(T, P, VC) S) = numLt(VC, V) .
+  eq holdsFor(propGte(P, V), T, pb(T, P, VC) S) = numGte(VC, V) .
+  eq holdsFor(propLte(P, V), T, pb(T, P, VC) S) = numLte(VC, V) .
+  eq holdsFor(envEq(P, V), T, eb(P, V) S) = true .
+  eq holdsFor(envGt(P, V), T, eb(P, VC) S) = numGt(VC, V) .
+  eq holdsFor(envLt(P, V), T, eb(P, VC) S) = numLt(VC, V) .
+  eq holdsFor(and(C1, C2), T, S) = holdsFor(C1, T, S) and holdsFor(C2, T, S) .
+  eq holdsFor(or(C1, C2), T, S) = holdsFor(C1, T, S) or holdsFor(C2, T, S) .
+  eq holdsFor(not(C), T, S) = not holdsFor(C, T, S) .
+  eq holdsFor(C, T, S) = false [owise] .
+
+  *** Apply a rule's actions, replacing any existing binding for the same
+  *** thing-property or env key so each key stays single-valued.
+  op applyOne : Action WState -> WState .
+  eq applyOne(setProp(T, P, V), pb(T, P, VC) S) = pb(T, P, V) S .
+  eq applyOne(setProp(T, P, V), S) = pb(T, P, V) S [owise] .
+  eq applyOne(setEnv(P, V), eb(P, VC) S) = eb(P, V) S .
+  eq applyOne(setEnv(P, V), S) = eb(P, V) S [owise] .
+  eq applyOne(invoke(T, AN), S) = S .
+
+  op applyAll : ActionList WState -> WState .
+  eq applyAll(nil, S) = S .
+  eq applyAll((A ; AL), S) = applyAll(AL, applyOne(A, S)) .
+
+  *** Fire a rule only when its trigger holds AND firing changes the
+  *** state — the change guard stops idempotent rules from looping.
+  op changes : ActionList WState -> Bool .
+  eq changes(AL, S) = applyAll(AL, S) =/= S .
+
+  crl [fire] : world(S, (R, RS)) => world(applyAll(actions(R), S), (R, RS))
+    if holdsFor(trigger(R), target(R), S) and changes(actions(R), S) .
+endm

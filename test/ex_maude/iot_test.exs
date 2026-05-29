@@ -478,4 +478,122 @@ defmodule ExMaude.IoTTest do
       end
     end
   end
+
+  describe "verify_safety/3 integration" do
+    test "reports a counterexample when a bad state is reachable", %{maude_available: true} do
+      rules = [
+        %{
+          id: "r1",
+          thing_id: "door",
+          trigger: {:prop_eq, "motion", true},
+          actions: [{:set_prop, "door", "state", "error"}],
+          priority: 1
+        }
+      ]
+
+      assert {:error, {:counterexample, [_ | _]}} =
+               IoT.verify_safety(rules, {:thing_state, "door", "state", "error"},
+                 initial_state: [{:thing_state, "door", "motion", true}]
+               )
+    end
+
+    test "reports safe when the bad state is unreachable (oscillation)", %{
+      maude_available: true
+    } do
+      rules = [
+        %{
+          id: "r1",
+          thing_id: "light",
+          trigger: {:prop_eq, "state", "off"},
+          actions: [{:set_prop, "light", "state", "on"}],
+          priority: 1
+        },
+        %{
+          id: "r2",
+          thing_id: "light",
+          trigger: {:prop_eq, "state", "on"},
+          actions: [{:set_prop, "light", "state", "off"}],
+          priority: 1
+        }
+      ]
+
+      assert {:ok, :safe} =
+               IoT.verify_safety(rules, {:thing_state, "light", "state", "error"},
+                 initial_state: [{:thing_state, "light", "state", "off"}],
+                 max_depth: 20
+               )
+    end
+
+    test "numeric trigger fires when guard holds (battery 15 < 20)", %{maude_available: true} do
+      rules = [
+        %{
+          id: "r1",
+          thing_id: "agv",
+          trigger: {:prop_lt, "battery", 20},
+          actions: [{:set_prop, "agv", "alarm", "on"}],
+          priority: 1
+        }
+      ]
+
+      assert {:error, {:counterexample, _}} =
+               IoT.verify_safety(rules, {:thing_state, "agv", "alarm", "on"},
+                 initial_state: [{:thing_state, "agv", "battery", 15}]
+               )
+    end
+
+    test "numeric trigger stays blocked when guard fails (battery 50 < 20)", %{
+      maude_available: true
+    } do
+      rules = [
+        %{
+          id: "r1",
+          thing_id: "agv",
+          trigger: {:prop_lt, "battery", 20},
+          actions: [{:set_prop, "agv", "alarm", "on"}],
+          priority: 1
+        }
+      ]
+
+      assert {:ok, :safe} =
+               IoT.verify_safety(rules, {:thing_state, "agv", "alarm", "on"},
+                 initial_state: [{:thing_state, "agv", "battery", 50}]
+               )
+    end
+  end
+
+  describe "verify_liveness/3 integration" do
+    test "reports live when every terminal state reaches the goal", %{maude_available: true} do
+      rules = [
+        %{
+          id: "r1",
+          thing_id: "d",
+          trigger: {:prop_eq, "state", "off"},
+          actions: [{:set_prop, "d", "state", "notified"}],
+          priority: 1
+        }
+      ]
+
+      assert {:ok, :live} =
+               IoT.verify_liveness(rules, {:thing_state, "d", "state", "notified"},
+                 initial_state: [{:thing_state, "d", "state", "off"}]
+               )
+    end
+
+    test "reports deadlock when a terminal state misses the goal", %{maude_available: true} do
+      rules = [
+        %{
+          id: "r1",
+          thing_id: "d",
+          trigger: {:prop_eq, "state", "off"},
+          actions: [{:set_prop, "d", "state", "stuck"}],
+          priority: 1
+        }
+      ]
+
+      assert {:error, :deadlock_possible} =
+               IoT.verify_liveness(rules, {:thing_state, "d", "state", "notified"},
+                 initial_state: [{:thing_state, "d", "state", "off"}]
+               )
+    end
+  end
 end
