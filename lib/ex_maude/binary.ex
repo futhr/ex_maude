@@ -3,25 +3,19 @@ defmodule ExMaude.Binary do
   Maude binary management and platform detection.
 
   This module handles locating and managing Maude executables, with support for:
-  - Bundled platform-specific binaries
+  - Binaries in ExMaude's `priv/maude/bin/` (installed via `mix maude.install`;
+    the git checkout also carries platform binaries there for development —
+    the hex package does not, since Maude is GPL-licensed)
   - System PATH detection
   - Custom path configuration
-
-  ## Bundled Binaries
-
-  ExMaude bundles Maude binaries for common platforms in `priv/maude/bin/`:
-
-      priv/maude/bin/
-      ├── maude-darwin-arm64    # macOS Apple Silicon
-      ├── maude-darwin-x64      # macOS Intel
-      └── maude-linux-x64       # Linux x86_64
 
   ## Fallback Chain
 
   Binary resolution follows this priority:
 
   1. `Application.get_env(:ex_maude, :maude_path)` - Explicit config
-  2. `priv/maude/bin/maude-{platform}` - Bundled binary
+  2. `priv/maude/bin/maude-{platform}` or `priv/maude/bin/maude` - Local
+     binary (development checkout or `mix maude.install`)
   3. `System.find_executable("maude")` - System PATH
   4. Raises error with install instructions
 

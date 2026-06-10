@@ -55,11 +55,19 @@ def deps do
 end
 ```
 
-Then install the Maude binary:
+Then install the Maude binary (the hex package ships only MIT-licensed
+Elixir/Rust/C sources — Maude itself is GPL-licensed and installed separately):
 
 ```bash
 mix deps.get
 mix maude.install
+```
+
+Already have Maude on your system? Skip the install task and either keep it on
+your `PATH` or point the library at it:
+
+```elixir
+config :ex_maude, maude_path: "/usr/local/bin/maude"
 ```
 
 ---

@@ -151,7 +151,9 @@ defmodule ExMaude.MixProject do
         native/ex_maude_nif/Cargo.lock
         native/ex_maude_nif/.cargo
         checksum-Elixir.ExMaude.Backend.NIF.Native.exs
-        priv/maude
+        priv/maude/iot-rules.maude
+        priv/maude/ai-rules.maude
+        priv/maude/VERSION
         .formatter.exs
         mix.exs
         README.md

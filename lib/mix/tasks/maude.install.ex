@@ -1,13 +1,13 @@
 defmodule Mix.Tasks.Maude.Install do
   @moduledoc """
-  Installs or updates Maude system binary.
+  Installs or updates the Maude interpreter binary.
 
-  ExMaude bundles Maude binaries for common platforms, so this task is typically
-  only needed when:
+  The hex package does not ship Maude itself (Maude is GPL-licensed and
+  ~5 MB per platform) — run this task once after adding the dependency,
+  or point `config :ex_maude, :maude_path` at an existing installation.
 
-    * The bundled binary doesn't exist for your platform
-    * You want to install a different Maude version
-    * You want to install to a custom location
+  The binary installs into ExMaude's `priv/maude/bin/` by default, where
+  `ExMaude.Binary.find/0` discovers it without any configuration.
 
   ## Usage
 
@@ -16,7 +16,8 @@ defmodule Mix.Tasks.Maude.Install do
   ## Options
 
     * `--version` - Maude version to install (default: latest)
-    * `--path` - Installation path (default: ./priv/maude/bin)
+    * `--path` - Installation path (default: ExMaude's `priv/maude/bin`);
+      custom paths need `config :ex_maude, :maude_path` afterwards
     * `--force` - Force reinstall even if already installed
     * `--list` - List available versions and exit
     * `--check` - Check current Maude availability and exit
@@ -48,20 +49,13 @@ defmodule Mix.Tasks.Maude.Install do
       # Force reinstall
       mix maude.install --force
 
-  ## Bundled Binaries
+  ## Binary Resolution
 
-  ExMaude includes platform-specific Maude binaries in `priv/maude/bin/`:
-
-      priv/maude/bin/
-      ├── maude-darwin-arm64    # macOS Apple Silicon
-      ├── maude-darwin-x64      # macOS Intel
-      ├── maude-linux-x64       # Linux x86_64
-      └── maude-linux-arm64     # Linux ARM64
-
-  The binary resolution follows this priority:
+  At runtime the binary resolution follows this priority:
 
     1. `config :ex_maude, :maude_path` - Explicit configuration
-    2. Bundled binary for current platform
+    2. Binary in ExMaude's `priv/maude/bin/` (installed by this task; the
+       git checkout also carries platform binaries there for development)
     3. System PATH (`maude` command)
 
   ## Troubleshooting
@@ -211,8 +205,22 @@ defmodule Mix.Tasks.Maude.Install do
     end
   end
 
+  # Install into ExMaude's own priv directory: that's where
+  # ExMaude.Binary.find/0 discovers the generic `maude` binary with zero
+  # configuration, whether ExMaude is the project itself (priv/ is symlinked
+  # into _build) or a dependency (deps/ex_maude/priv).
   defp default_install_path do
-    Path.expand(Path.join([Mix.Project.build_path(), "..", "..", "priv", "maude", "bin"]))
+    Path.join([ExMaude.Binary.priv_dir(), "maude", "bin"])
+  end
+
+  # A custom --path lands outside Binary.find/0's discovery chain and needs
+  # a :maude_path config hint after install.
+  defp opts_for_path_hint(install_path) do
+    if Path.expand(install_path) == Path.expand(default_install_path()) do
+      []
+    else
+      [custom: true]
+    end
   end
 
   defp install_maude(version, install_path) do
@@ -240,6 +248,16 @@ defmodule Mix.Tasks.Maude.Install do
         File.chmod!(maude_binary, 0o755)
 
         Mix.shell().info("\n✓ Maude installed successfully at #{maude_binary}")
+
+        if Keyword.has_key?(opts_for_path_hint(install_path), :custom) do
+          Mix.shell().info("""
+
+          Installed outside ExMaude's priv directory — point the library at it:
+
+              config :ex_maude, maude_path: #{inspect(maude_binary)}
+          """)
+        end
+
         verify_installation(maude_binary)
 
       {:error, :no_releases} ->
