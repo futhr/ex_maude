@@ -12,10 +12,14 @@
  * Usage:
  *   ./maude_bridge <node_name> <cookie> <maude_path> <erlang_node>
  *
- * Protocol:
- *   {execute, Command :: binary()} -> {:ok, Output :: binary()} | {:error, Reason}
- *   ping -> pong
- *   stop -> ok
+ * Protocol (v2 — every request carries a ref that is echoed back, so the
+ * Elixir side can selectively receive its own reply and ignore stale ones):
+ *   {execute, Ref, Command :: binary(), TimeoutMs :: integer()}
+ *       -> {Ref, {:ok, Output :: binary()} | {:error, Reason}}
+ *   {load_file, Ref, Path :: binary(), TimeoutMs :: integer()}
+ *       -> {Ref, :ok | {:error, Reason | Output :: binary()}}
+ *   {ping, Ref} -> {Ref, :pong}
+ *   stop -> ok   (bare atom, fire-and-forget from terminate)
  */
 
 #include <stdio.h>
@@ -307,6 +311,13 @@ static void encode_error(ei_x_buff *response, const char *reason) {
     ei_x_encode_atom(response, reason);
 }
 
+/* Clamp a requested per-command timeout to a sane range */
+static int clamp_timeout(long timeout_ms) {
+    if (timeout_ms < 100) return 100;
+    if (timeout_ms > 600000) return 600000;
+    return (int)timeout_ms;
+}
+
 /* Handle incoming Erlang message */
 static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
     int index = 0;
@@ -325,7 +336,7 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
 
     /* Decode tuple header */
     if (ei_decode_tuple_header(buf->buff, &index, &arity) < 0) {
-        /* Not a tuple, check if it's just an atom (like :ping) */
+        /* Not a tuple, check if it's just an atom (like :stop) */
         index = 0;
         ei_decode_version(buf->buff, &index, &version);
 
@@ -350,6 +361,20 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
         goto send_response;
     }
 
+    /* Decode the request ref. Replies before this point go out unwrapped;
+     * the Elixir side's selective receive simply never matches them and the
+     * caller times out — acceptable for protocol bugs. */
+    erlang_ref ref;
+    if (ei_decode_ref(buf->buff, &index, &ref) < 0) {
+        encode_error(&response, "decode_ref_failed");
+        goto send_response;
+    }
+
+    /* Every reply from here on is {Ref, Payload}; each branch below must
+     * encode exactly one payload term. */
+    ei_x_encode_tuple_header(&response, 2);
+    ei_x_encode_ref(&response, &ref);
+
     if (strcmp(cmd, "execute") == 0) {
         /* Decode command binary */
         int type, size;
@@ -372,6 +397,12 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
         }
         command[bin_size] = '\0';
 
+        /* Decode per-command timeout */
+        long timeout_ms = 30000;
+        if (ei_decode_long(buf->buff, &index, &timeout_ms) < 0) {
+            timeout_ms = 30000;
+        }
+
         /* Send command to Maude */
         if (send_command(command, bin_size) < 0) {
             free(command);
@@ -380,11 +411,15 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
         }
         free(command);
 
-        /* Read response (30 second timeout) */
+        /* Read response up to the caller's deadline */
         char output[BUFSIZE];
-        int out_len = read_until_prompt(output, BUFSIZE, 30000);
+        int out_len = read_until_prompt(output, BUFSIZE, clamp_timeout(timeout_ms));
 
-        if (out_len < 0) {
+        if (out_len == -1) {
+            encode_error(&response, "read_timeout");
+        } else if (out_len == -3) {
+            encode_error(&response, "maude_eof");
+        } else if (out_len < 0) {
             encode_error(&response, "read_failed");
         } else {
             encode_ok(&response, output, out_len);
@@ -417,6 +452,12 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
         }
         path[5 + bin_size] = '\0';
 
+        /* Decode per-command timeout */
+        long timeout_ms = 30000;
+        if (ei_decode_long(buf->buff, &index, &timeout_ms) < 0) {
+            timeout_ms = 30000;
+        }
+
         /* Send load command to Maude */
         if (send_command(path, strlen(path)) < 0) {
             free(path);
@@ -427,10 +468,14 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
 
         /* Read response */
         char output[BUFSIZE];
-        int out_len = read_until_prompt(output, BUFSIZE, 30000);
+        int out_len = read_until_prompt(output, BUFSIZE, clamp_timeout(timeout_ms));
 
-        if (out_len < 0) {
-            encode_error(&response, "load_read_failed");
+        if (out_len == -1) {
+            encode_error(&response, "read_timeout");
+        } else if (out_len == -3) {
+            encode_error(&response, "maude_eof");
+        } else if (out_len < 0) {
+            encode_error(&response, "read_failed");
         } else {
             /* Check for errors in output */
             if (strstr(output, "Error") != NULL || strstr(output, "Warning") != NULL) {

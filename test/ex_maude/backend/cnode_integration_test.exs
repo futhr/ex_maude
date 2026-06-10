@@ -134,6 +134,78 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
       end
     end
 
+    describe "worker lifecycle" do
+      setup do
+        {:ok, pid} = CNode.start_link([])
+
+        Enum.reduce_while(1..40, false, fn _, _ ->
+          if CNode.alive?(pid) do
+            {:halt, true}
+          else
+            Process.sleep(100)
+            {:cont, false}
+          end
+        end)
+
+        on_exit(fn -> catch_exit(CNode.stop(pid)) end)
+        {:ok, pid: pid}
+      end
+
+      test "a timed-out command stops the worker for pool replacement", %{pid: pid} do
+        # The worker stops with {:shutdown, _}; trap the linked exit.
+        Process.flag(:trap_exit, true)
+        path = Path.join(System.tmp_dir!(), "test_cnode_loop_#{:rand.uniform(10_000)}.maude")
+        File.write!(path, "mod CNODE-LOOP is sort S . op a : -> S . rl a => a . endm")
+        on_exit(fn -> File.rm(path) end)
+
+        assert :ok = CNode.load_file(pid, path)
+
+        ref = Process.monitor(pid)
+
+        assert {:error, %ExMaude.Error{type: :timeout}} =
+                 CNode.execute(pid, "rewrite in CNODE-LOOP : a .", timeout: 300)
+
+        assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, {:bridge_failure, :timeout}}},
+                       2_000
+      end
+
+      test "responses are parsed like the other backends", %{pid: pid} do
+        assert {:ok, "3"} = CNode.execute(pid, "reduce in NAT : 1 + 2 .")
+      end
+
+      test "a stale reply from a previous command is never misattributed", %{pid: pid} do
+        Process.flag(:trap_exit, true)
+        # Force a timeout whose late bridge reply would previously have been
+        # consumed by the next command's bare receive.
+        path = Path.join(System.tmp_dir!(), "test_cnode_loop2_#{:rand.uniform(10_000)}.maude")
+        File.write!(path, "mod CNODE-LOOP2 is sort S . op a : -> S . rl a => a . endm")
+        on_exit(fn -> File.rm(path) end)
+
+        assert :ok = CNode.load_file(pid, path)
+        ref = Process.monitor(pid)
+
+        {:error, _} = CNode.execute(pid, "rewrite in CNODE-LOOP2 : a .", timeout: 300)
+        assert_receive {:DOWN, ^ref, :process, ^pid, _}, 2_000
+
+        # A fresh worker answers the new command with the new payload.
+        {:ok, pid2} = CNode.start_link([])
+
+        Enum.reduce_while(1..40, false, fn _, _ ->
+          if CNode.alive?(pid2),
+            do: {:halt, true},
+            else:
+              (
+                Process.sleep(100)
+                {:cont, false}
+              )
+        end)
+
+        on_exit(fn -> catch_exit(CNode.stop(pid2)) end)
+
+        assert {:ok, "42"} = CNode.execute(pid2, "reduce in NAT : 40 + 2 .")
+      end
+    end
+
     describe "alive?/1" do
       test "returns true for running worker" do
         {:ok, pid} = CNode.start_link([])

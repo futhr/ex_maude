@@ -38,11 +38,17 @@ defmodule ExMaude.Backend.CNode do
   use GenServer
   require Logger
 
-  alias ExMaude.{Binary, Error}
+  alias ExMaude.{Binary, Error, Parser}
 
   @default_timeout 30_000
-  @connect_timeout 10_000
+  @ping_timeout 2_000
   @health_check_interval 5_000
+  @connect_retries 10
+  @connect_retry_delay 500
+  # Grace period on top of the command timeout for the bridge's own
+  # timeout reply ({Ref, {:error, :read_failed}}) to arrive before we
+  # give up on the receive.
+  @reply_grace 500
 
   @typedoc """
   Internal state for the C-Node backend GenServer.
@@ -77,19 +83,31 @@ defmodule ExMaude.Backend.CNode do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
 
     try do
-      GenServer.call(server, {:execute, command}, timeout + 1_000)
+      GenServer.call(server, {:execute, command, timeout}, timeout + 1_000)
     catch
-      :exit, {:timeout, _} -> {:error, Error.timeout(timeout)}
+      :exit, {:timeout, _} ->
+        {:error, Error.timeout(timeout)}
+
+      :exit, {{:shutdown, reason}, _} ->
+        # The worker stopped mid-call (e.g. it was checked out again in the
+        # narrow window between a failure reply and the pool reaping it).
+        {:error, Error.pool_error({:worker_stopped, reason})}
     end
   end
 
   @impl ExMaude.Backend
   def load_file(server, path) do
-    case GenServer.call(server, {:load_file, path}, @default_timeout) do
+    case GenServer.call(server, {:load_file, path, @default_timeout}, @default_timeout + 1_000) do
       :ok -> :ok
       {:ok, _} -> :ok
       error -> error
     end
+  catch
+    :exit, {:timeout, _} ->
+      {:error, Error.timeout(@default_timeout)}
+
+    :exit, {{:shutdown, reason}, _} ->
+      {:error, Error.pool_error({:worker_stopped, reason})}
   end
 
   @impl ExMaude.Backend
@@ -130,22 +148,44 @@ defmodule ExMaude.Backend.CNode do
   end
 
   @impl GenServer
-  def handle_call({:execute, command}, _, %{connected: true} = state) do
-    result = send_cnode_command(state.cnode_name, {:execute, command})
-    emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
-    {:reply, result, state}
+  def handle_call({:execute, command, timeout}, _, %{connected: true} = state) do
+    case send_cnode_command(state.cnode_name, {:execute, command}, timeout) do
+      {:ok, raw} ->
+        result = Parser.parse_backend_response(raw)
+        emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
+        {:reply, result, state}
+
+      {:error, %Error{} = err} ->
+        stop_on_bridge_failure(err, state)
+
+      other ->
+        {:reply, {:error, Error.exception(:cnode_error, inspect(other))}, state}
+    end
   end
 
-  def handle_call({:execute, _}, _, %{connected: false} = state) do
+  def handle_call({:execute, _, _}, _, %{connected: false} = state) do
     {:reply, {:error, Error.exception(:not_connected, "C-Node not connected")}, state}
   end
 
-  def handle_call({:load_file, path}, _, %{connected: true} = state) do
-    result = send_cnode_command(state.cnode_name, {:load_file, path})
-    {:reply, result, state}
+  def handle_call({:load_file, path, timeout}, _, %{connected: true} = state) do
+    case send_cnode_command(state.cnode_name, {:load_file, path}, timeout) do
+      :ok ->
+        {:reply, :ok, state}
+
+      {:ok, _} ->
+        {:reply, :ok, state}
+
+      {:error, output} when is_binary(output) ->
+        # Semantic load failure (Maude warning/error text) — the session is
+        # still healthy, keep the worker.
+        {:reply, {:error, Error.from_output(output)}, state}
+
+      {:error, %Error{} = err} ->
+        stop_on_bridge_failure(err, state)
+    end
   end
 
-  def handle_call({:load_file, _}, _, %{connected: false} = state) do
+  def handle_call({:load_file, _, _}, _, %{connected: false} = state) do
     {:reply, {:error, Error.exception(:not_connected, "C-Node not connected")}, state}
   end
 
@@ -155,14 +195,18 @@ defmodule ExMaude.Backend.CNode do
 
   @impl GenServer
   def handle_info(:health_check, state) do
-    case send_cnode_command(state.cnode_name, :ping) do
+    case send_cnode_command(state.cnode_name, :ping, @ping_timeout) do
       :pong ->
         schedule_health_check()
         {:noreply, %{state | connected: true}}
 
-      _ ->
-        Logger.warning("C-Node health check failed")
-        {:noreply, %{state | connected: false}}
+      other ->
+        # A bridge that stops answering pings is gone for good as far as
+        # this worker is concerned — stop so the pool starts a fresh one
+        # instead of serving :not_connected forever.
+        Logger.warning("C-Node health check failed: #{inspect(other)}")
+        emit_telemetry(:crash, %{reason: :health_check_failed})
+        {:stop, {:shutdown, :health_check_failed}, state}
     end
   end
 
@@ -176,21 +220,40 @@ defmodule ExMaude.Backend.CNode do
     output = to_string(data)
     Logger.debug("C-Node output: #{String.trim(output)}")
 
-    # The READY signal may be mixed with other startup output.
+    # The READY signal may be mixed with other startup output. The bridge
+    # prints it after its own ei_connect to this node succeeded, so the
+    # first connect attempt normally succeeds immediately.
     if String.contains?(output, "READY") and not state.connected do
       Logger.info("C-Node ready, connecting...")
-
-      case connect_to_cnode(state) do
-        {:ok, state} ->
-          {:noreply, state}
-
-        {:error, reason} ->
-          Logger.error("Failed to connect to C-Node: #{inspect(reason)}")
-          {:stop, {:connect_failed, reason}, state}
-      end
+      handle_info({:connect_retry, @connect_retries}, state)
     else
       {:noreply, state}
     end
+  end
+
+  def handle_info({:connect_retry, 0}, state) do
+    Logger.error("Failed to connect to C-Node after all retries: #{state.cnode_name}")
+    {:stop, {:connect_failed, :retries_exhausted}, state}
+  end
+
+  def handle_info({:connect_retry, retries_left}, %{connected: false} = state) do
+    if Node.connect(state.cnode_name) do
+      Node.monitor(state.cnode_name, true)
+      Logger.info("Connected to C-Node: #{state.cnode_name}")
+      {:noreply, %{state | connected: true}}
+    else
+      Logger.warning(
+        "Connect attempt to #{state.cnode_name} failed, #{retries_left - 1} retries left"
+      )
+
+      Process.send_after(self(), {:connect_retry, retries_left - 1}, @connect_retry_delay)
+      {:noreply, state}
+    end
+  end
+
+  def handle_info({:connect_retry, _}, state) do
+    # Already connected — a stale retry message.
+    {:noreply, state}
   end
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
@@ -207,8 +270,11 @@ defmodule ExMaude.Backend.CNode do
   def terminate(reason, state) do
     Logger.debug("ExMaude.Backend.CNode terminating: #{inspect(reason)}")
 
+    # Fire-and-forget: when the bridge's message loop next wakes up (at
+    # latest after an in-flight read times out) it exits its loop and
+    # tears Maude down with it.
     if state.connected do
-      send_cnode_command(state.cnode_name, :stop)
+      send({:any, state.cnode_name}, :stop)
     end
 
     if state.port do
@@ -219,7 +285,16 @@ defmodule ExMaude.Backend.CNode do
       end
     end
 
+    # SIGTERM (not KILL) as a prompt backstop: the bridge traps it, exits
+    # its loop, and stop_maude() reaps the Maude child. SIGKILL would
+    # orphan a possibly CPU-pegged Maude.
+    if state.os_pid do
+      System.cmd("kill", ["-TERM", Integer.to_string(state.os_pid)], stderr_to_stdout: true)
+    end
+
     :ok
+  rescue
+    _ -> :ok
   end
 
   # coveralls-ignore-stop
@@ -275,38 +350,34 @@ defmodule ExMaude.Backend.CNode do
     end
   end
 
-  defp connect_to_cnode(state, retries \\ 10) do
-    if retries <= 0 do
-      Logger.error("Failed to connect to C-Node after all retries: #{state.cnode_name}")
-      {:error, :connect_exhausted}
-    else
-      Process.sleep(500)
-
-      if Node.connect(state.cnode_name) do
-        Node.monitor(state.cnode_name, true)
-        Logger.info("Connected to C-Node: #{state.cnode_name}")
-        {:ok, %{state | connected: true}}
-      else
-        Logger.warning(
-          "Connect attempt to #{state.cnode_name} failed, #{retries - 1} retries left"
-        )
-
-        connect_to_cnode(state, retries - 1)
-      end
+  # A timeout or bridge-level failure leaves the bridge's Maude session in
+  # an indeterminate state — Maude cannot cancel an in-flight computation,
+  # and its eventual output would be misattributed to the next caller.
+  # Reply, then stop so the pool starts a fresh bridge + Maude pair.
+  defp stop_on_bridge_failure(%Error{} = err, state) do
+    if err.type == :timeout do
+      emit_telemetry(:timeout, %{timeout_ms: err.details.timeout_ms})
     end
+
+    emit_telemetry(:command_complete, %{success: false})
+    {:stop, {:shutdown, {:bridge_failure, err.type}}, {:error, err}, state}
   end
 
-  defp send_cnode_command(cnode_name, command) do
+  # Sends a ref-tagged request and selectively receives the matching
+  # {ref, reply}. Stale replies from previously timed-out commands carry a
+  # different ref, are never matched here, and drain through the GenServer's
+  # handle_info catch-all instead of being misattributed.
+  defp send_cnode_command(cnode_name, request, timeout) do
+    ref = make_ref()
+
     try do
-      # Send command to C-Node using the :any registered name pattern
-      # The C-Node expects: {:execute, binary} or atoms like :ping, :stop
-      send({:any, cnode_name}, command)
+      send({:any, cnode_name}, build_request(request, ref, timeout))
 
       receive do
-        response -> response
+        {^ref, response} -> normalize_response(response, timeout)
       after
-        @connect_timeout ->
-          {:error, Error.timeout(@connect_timeout)}
+        timeout + @reply_grace ->
+          {:error, Error.timeout(timeout)}
       end
     catch
       kind, reason ->
@@ -314,6 +385,34 @@ defmodule ExMaude.Backend.CNode do
         {:error, Error.exception(:cnode_error, inspect(reason))}
     end
   end
+
+  defp build_request({:execute, command}, ref, timeout), do: {:execute, ref, command, timeout}
+  defp build_request({:load_file, path}, ref, timeout), do: {:load_file, ref, path, timeout}
+  defp build_request(:ping, ref, _), do: {:ping, ref}
+
+  # Bridge replies: {:ok, output} / :ok / :pong pass through; atom error
+  # reasons are infrastructure failures (:read_timeout maps to the caller's
+  # command deadline, :maude_eof to a crashed interpreter); binary error
+  # payloads are semantic Maude output and keep their shape for the caller
+  # to interpret.
+  defp normalize_response({:ok, output}, _), do: {:ok, output}
+  defp normalize_response(:ok, _), do: :ok
+  defp normalize_response(:pong, _), do: :pong
+
+  defp normalize_response({:error, :read_timeout}, timeout),
+    do: {:error, Error.timeout(timeout)}
+
+  defp normalize_response({:error, :maude_eof}, _),
+    do: {:error, Error.crash(0)}
+
+  defp normalize_response({:error, reason}, _) when is_atom(reason),
+    do: {:error, Error.exception(:cnode_error, "bridge failure: #{reason}")}
+
+  defp normalize_response({:error, output}, _) when is_binary(output),
+    do: {:error, output}
+
+  defp normalize_response(other, _),
+    do: {:error, Error.exception(:cnode_error, "unexpected bridge reply: #{inspect(other)}")}
 
   defp schedule_health_check do
     Process.send_after(self(), :health_check, @health_check_interval)
