@@ -116,7 +116,7 @@ defmodule ExMaude.MixProject do
       # NIF — precompiled binaries downloaded at install time
       {:rustler_precompiled, "~> 0.8"},
       # Rustler only needed when force-building from source
-      {:rustler, "~> 0.37", optional: true},
+      {:rustler, "~> 0.38", optional: true},
       # Development tools
       {:ex_doc, "~> 0.34", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

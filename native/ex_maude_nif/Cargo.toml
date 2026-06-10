@@ -10,5 +10,5 @@ name = "ex_maude_nif"
 crate-type = ["cdylib"]
 
 [dependencies]
-rustler = "0.37"
+rustler = "0.38"
 crossbeam-channel = "0.5"

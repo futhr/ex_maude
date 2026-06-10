@@ -15,7 +15,7 @@
 //! ## Safety
 //!
 //! NIFs share the BEAM's OS process. A segfault in this crate crashes the
-//! entire VM. `rustler 0.37` wraps every `#[rustler::nif]` body in
+//! entire VM. Rustler wraps every `#[rustler::nif]` body in
 //! `std::panic::catch_unwind`, so Rust `panic!`s become Elixir exceptions,
 //! but we still avoid `unwrap` and convert poisoned mutexes to returned
 //! errors as a matter of hygiene.
