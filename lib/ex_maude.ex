@@ -113,7 +113,9 @@ defmodule ExMaude do
 
     * `:max_depth` - Maximum search depth (default: 100)
     * `:max_solutions` - Maximum solutions to find (default: 1)
-    * `:condition` - Additional search condition
+    * `:arrow` - Search arrow: `=>1` (one step), `=>+` (one or more),
+      `=>*` (zero or more), `=>!` (terminal states only) (default: `=>*`)
+    * `:condition` - Additional search condition (`such that ...`)
     * `:timeout` - Maximum time in milliseconds (default: 30000)
   """
   @spec search(String.t(), String.t(), String.t(), keyword()) ::
@@ -156,15 +158,56 @@ defmodule ExMaude do
   defdelegate execute(command, opts \\ []), to: ExMaude.Maude
 
   @doc """
-  Checks if Maude is available and returns version info.
+  Returns the Maude interpreter version.
+
+  Runs `maude --version` on the resolved binary; works without a started
+  pool.
 
   ## Examples
 
       ExMaude.version()
-      #=> {:ok, "Maude 3.4"}
+      #=> {:ok, "3.5.1"}
   """
   @spec version() :: {:ok, String.t()} | {:error, term()}
   defdelegate version(), to: ExMaude.Maude
+
+  @doc """
+  Parses a term in the given module without reducing it.
+
+  Useful for checking syntax and seeing how Maude disambiguates a term.
+
+  ## Examples
+
+      ExMaude.parse("NAT", "1 + 2 + 3")
+      #=> {:ok, "1 + 2 + 3"}
+
+  ## Options
+
+    * `:timeout` - Maximum time in milliseconds (default: 5000)
+  """
+  @spec parse(String.t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  defdelegate parse(module, term, opts \\ []), to: ExMaude.Maude
+
+  @doc """
+  Shows the definition of a loaded module.
+
+  ## Examples
+
+      ExMaude.show_module("NAT")
+      #=> {:ok, "fmod NAT is ..."}
+  """
+  @spec show_module(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  defdelegate show_module(module, opts \\ []), to: ExMaude.Maude
+
+  @doc """
+  Lists all loaded modules.
+
+  ## Examples
+
+      {:ok, modules} = ExMaude.list_modules()
+  """
+  @spec list_modules(keyword()) :: {:ok, String.t()} | {:error, term()}
+  defdelegate list_modules(opts \\ []), to: ExMaude.Maude
 
   @doc """
   Returns the path to the bundled IoT rules Maude module.
