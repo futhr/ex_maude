@@ -260,6 +260,10 @@ defmodule ExMaude.Maude do
   end
 
   @doc false
+  # sobelow_skip ["CI.System"]
+  # The path comes from ExMaude.Binary.find/0 (explicit config, the local
+  # priv binary, or System.find_executable) — the same trust chain every
+  # backend already executes as a worker; --version adds no new exposure.
   @spec version(Path.t()) :: {:ok, String.t()} | {:error, Error.t()}
   def version(path) do
     case System.cmd(path, ["--version"], stderr_to_stdout: true) do
