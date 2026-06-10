@@ -21,17 +21,20 @@ ExMaude is an Elixir library providing bindings to [Maude](https://maude.cs.illi
 ExMaude.Backend.Port   ExMaude.Backend.CNode   ExMaude.Backend.NIF
         │                     │                     │
         ▼                     ▼                     ▼
-   PTY + Maude CLI    Erlang Distribution    Direct libmaude
-                      + maude_bridge          via Rustler
+  Pipes + Maude CLI   Erlang Distribution    Rust-managed Maude
+                      + maude_bridge         subprocess via Rustler
 ```
 
 ### Backend Comparison
 
-| Backend | Isolation | Latency | Status | Use Case |
+| Backend | Transport | Latency | Status | Use Case |
 |---------|-----------|---------|--------|----------|
-| **Port** | Full | Higher | Stable | Default, safe, works everywhere |
-| **C-Node** | Full | Medium | Stable | Production, structured data |
-| **NIF** | None | Lowest | Stable | Hot paths, latency-critical workloads |
+| **Port** | Erlang Port over pipes | Higher | Stable | Default, pure Elixir, works everywhere |
+| **C-Node** | Erlang distribution to a C bridge | Medium | Stable | Structured binary protocol |
+| **NIF** | Rustler NIF driving the subprocess | Lowest | Stable | Hot paths; Rust runs in-BEAM |
+
+All three backends run Maude as a separate OS process — a Maude crash never
+takes down the BEAM.
 
 ### Module Overview
 
@@ -39,7 +42,7 @@ ExMaude.Backend.Port   ExMaude.Backend.CNode   ExMaude.Backend.NIF
 ExMaude (Main API)
     │
     ├── ExMaude.Backend         Backend behaviour and selection
-    │   ├── Backend.Port        PTY-based Port communication
+    │   ├── Backend.Port        Pipe-based Port communication
     │   ├── Backend.CNode       Erlang C-Node bridge
     │   └── Backend.NIF         Rustler NIF (lowest latency)
     │
@@ -187,7 +190,7 @@ config :ex_maude,
   pool_max_overflow: 2,                # Extra workers under load
   timeout: 5_000,                      # Default command timeout
   start_pool: false,                   # Auto-start on app start
-  use_pty: true                        # Use PTY wrapper (Port backend)
+  use_pty: false                       # PTY wrapper opt-in (Port backend)
 ```
 
 ### Backend Selection
