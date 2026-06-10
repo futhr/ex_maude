@@ -57,7 +57,14 @@ defmodule ExMaude.Backend.NIF do
   defmodule Native do
     @moduledoc false
 
-    @force_build System.get_env("EX_MAUDE_BUILD") in ["1", "true"]
+    # Force-build from source when requested via env — or when a locally
+    # built artifact already exists. The latter keeps the dev loop
+    # self-healing: this module recompiles whenever a compile-time
+    # dependency (e.g. ExMaude.Error) changes, and without this clause a
+    # plain `mix compile` would silently bake in the no-NIF stubs until
+    # someone remembered to set EX_MAUDE_BUILD=1 again.
+    @force_build System.get_env("EX_MAUDE_BUILD") in ["1", "true"] or
+                   File.exists?("priv/native/ex_maude_nif.so")
     @checksum_file "checksum-Elixir.ExMaude.Backend.NIF.Native.exs"
     @has_precompiled (case File.read(@checksum_file) do
                         {:ok, content} ->
