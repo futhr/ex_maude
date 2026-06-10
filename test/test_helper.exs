@@ -12,6 +12,14 @@
 # NIF tests require the Rustler NIF to be compiled.
 # Run `mix test --include nif --include integration` to run NIF tests.
 
+# function_exported?/3 does not load modules, ExUnit randomizes test order,
+# and whether `mix test` happens to preload task modules varies across
+# Elixir versions — eagerly load every application module so the
+# module-contract tests (`assert function_exported?(...)`) cannot flake on
+# first-touch ordering.
+{:ok, modules} = :application.get_key(:ex_maude, :modules)
+Enum.each(modules, &Code.ensure_loaded!/1)
+
 # Use ExMaude.Binary for consistent Maude detection
 # (checks config, bundled binaries, and system PATH)
 maude_available = ExMaude.Binary.find() != nil
