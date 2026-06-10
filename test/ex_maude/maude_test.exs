@@ -247,10 +247,23 @@ defmodule ExMaude.MaudeTest do
 
   describe "version/0 integration" do
     @tag :integration
-    test "returns version info", %{maude_available: true} do
+    test "returns the real interpreter version", %{maude_available: true} do
       {:ok, version} = Maude.version()
-      assert is_binary(version)
-      assert String.contains?(version, "Maude")
+      assert version =~ ~r/^\d+\.\d+/
+    end
+
+    @tag :integration
+    test "agrees with the bundled VERSION metadata when using the bundled binary",
+         %{maude_available: true} do
+      # Only meaningful when the resolved binary IS the bundled one.
+      if ExMaude.Binary.bundled?() and ExMaude.Binary.find() == ExMaude.Binary.bundled_path() do
+        {:ok, version} = Maude.version()
+        assert version == ExMaude.Binary.version()
+      end
+    end
+
+    test "reports a structured error for an unrunnable binary" do
+      assert {:error, %Error{type: :file_not_found}} = Maude.version("/nonexistent/maude")
     end
   end
 

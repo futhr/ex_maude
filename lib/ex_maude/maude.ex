@@ -237,21 +237,42 @@ defmodule ExMaude.Maude do
   end
 
   @doc """
-  Returns Maude version information.
+  Returns the Maude interpreter version, e.g. `{:ok, "3.5.1"}`.
+
+  Runs `maude --version` on the binary resolved by `ExMaude.Binary.find/0`
+  (configured path, then bundled binary, then system PATH). No pool or
+  worker is involved, so this works even with `start_pool: false`.
 
   ## Examples
 
       ExMaude.Maude.version()
-      #=> {:ok, "Maude (version available at runtime)"}
+      #=> {:ok, "3.5.1"}
   """
-  @spec version() :: {:ok, String.t()} | {:error, term()}
+  @spec version() :: {:ok, String.t()} | {:error, Error.t()}
   def version do
-    # Maude prints its version in the startup banner, which we suppress with
-    # `-no-banner` for a clean prompt. Probe with a no-op command instead.
-    case execute("show modules .") do
-      {:ok, _} -> {:ok, "Maude (version available at runtime)"}
-      error -> error
+    case ExMaude.Binary.find() do
+      nil ->
+        {:error, Error.file_not_found("maude (configure :maude_path or run `mix maude.install`)")}
+
+      path ->
+        version(path)
     end
+  end
+
+  @doc false
+  @spec version(Path.t()) :: {:ok, String.t()} | {:error, Error.t()}
+  def version(path) do
+    case System.cmd(path, ["--version"], stderr_to_stdout: true) do
+      {output, 0} ->
+        {:ok, String.trim(output)}
+
+      {output, status} ->
+        {:error,
+         Error.exception(:maude_crash, "maude --version exited #{status}: #{String.trim(output)}")}
+    end
+  rescue
+    e in ErlangError ->
+      {:error, Error.exception(:file_not_found, "cannot run #{path}: #{inspect(e.original)}")}
   end
 
   @doc """
