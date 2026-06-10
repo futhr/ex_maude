@@ -54,16 +54,21 @@ defmodule ExMaude do
   Backend.Port         Backend.CNode         Backend.NIF
         │                     │                     │
         ▼                     ▼                     ▼
-   PTY + Maude CLI    Erlang Distribution    Direct libmaude
+   Pipes + Maude CLI   Erlang Distribution   Rust-managed Maude
+                       + C bridge process    subprocess (pipes)
   ```
 
   ## Backends
 
-  | Backend | Isolation | Latency | Use Case |
+  All three backends run Maude as a **separate OS process** — a Maude crash
+  never takes down the BEAM. They differ in transport and in how much
+  native code runs inside the BEAM itself:
+
+  | Backend | Transport | Latency | Use Case |
   |---------|-----------|---------|----------|
-  | `:port` | Full | Higher | Default, safe, works everywhere |
-  | `:cnode` | Full | Medium | Production, structured data |
-  | `:nif` | None | Lowest | Hot paths, latency-critical workloads |
+  | `:port` | Erlang Port over pipes | Higher | Default, pure Elixir, works everywhere |
+  | `:cnode` | Erlang distribution to a C bridge | Medium | Structured binary protocol; needs epmd and the compiled bridge |
+  | `:nif` | Rustler NIF driving the subprocess | Lowest | Hot paths; the Rust layer runs inside the BEAM (panics are caught, a segfault would crash the VM) |
 
   """
 

@@ -6,7 +6,7 @@
 
 [Installation](#installation) |
 [Quick Start](#quick-start) |
-[Documentation](https://github.com/futhr/ex_maude)
+[Documentation](https://hexdocs.pm/ex_maude)
 
 ---
 
@@ -43,7 +43,7 @@ a powerful formal specification language based on rewriting logic. Use ExMaude f
 ### Requirements
 
 - Elixir ~> 1.17
-- Erlang/OTP 26+
+- Erlang/OTP 27+
 
 Add `ex_maude` to your dependencies in `mix.exs`:
 
@@ -357,15 +357,19 @@ ExMaude uses a pluggable backend architecture, allowing different communication 
 ExMaude.Backend.Port   ExMaude.Backend.CNode   ExMaude.Backend.NIF
         │                     │                     │
         ▼                     ▼                     ▼
-   PTY + Maude CLI    Erlang Distribution    Direct libmaude
-                      + maude_bridge          via Rustler
+  Pipes + Maude CLI   Erlang Distribution    Rust-managed Maude
+                      + maude_bridge         subprocess via Rustler
 ```
 
-| Backend | Isolation | Latency | Use Case |
+All three backends run Maude as a **separate OS process** — a Maude crash never
+takes down the BEAM. They differ in transport and in how much native code runs
+inside the BEAM itself:
+
+| Backend | Transport | Latency | Use Case |
 |---------|-----------|---------|----------|
-| **Port** | Full | Higher | Default, safe, works everywhere |
-| **C-Node** | Full | Medium | Production, structured data |
-| **NIF** | None | Lowest | Hot paths, after profiling |
+| **Port** | Erlang Port over pipes | Higher | Default, pure Elixir, works everywhere |
+| **C-Node** | Erlang distribution to a C bridge | Medium | Structured binary protocol |
+| **NIF** | Rustler NIF driving the subprocess | Lowest | Hot paths; Rust runs in-BEAM (panics caught, a segfault would crash the VM) |
 
 ### Module Overview
 

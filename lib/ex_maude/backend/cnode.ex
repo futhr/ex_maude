@@ -8,8 +8,8 @@ defmodule ExMaude.Backend.CNode do
   ## Features
 
     * Full process isolation - C-Node crash doesn't affect the BEAM
-    * Binary Erlang term protocol - no text parsing overhead
-    * Lower latency than Port + PTY wrapper
+    * Binary Erlang term protocol - no Erlang Port framing overhead
+    * Lower latency than the Port backend
 
   ## Trade-offs
 
