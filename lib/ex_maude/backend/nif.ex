@@ -151,7 +151,13 @@ defmodule ExMaude.Backend.NIF do
     try do
       GenServer.call(server, {:execute, command, timeout}, timeout + 1_000)
     catch
-      :exit, {:timeout, _} -> {:error, Error.timeout(timeout)}
+      :exit, {:timeout, _} ->
+        {:error, Error.timeout(timeout)}
+
+      :exit, {{:shutdown, reason}, _} ->
+        # The worker stopped mid-call (e.g. it was checked out again in the
+        # narrow window between a failure reply and the pool reaping it).
+        {:error, Error.pool_error({:worker_stopped, reason})}
     end
   end
 
@@ -166,6 +172,12 @@ defmodule ExMaude.Backend.NIF do
   @spec load_file(GenServer.server(), Path.t()) :: :ok | {:error, term()}
   def load_file(server, path) do
     GenServer.call(server, {:load_file, path, @default_timeout}, @default_timeout + 1_000)
+  catch
+    :exit, {:timeout, _} ->
+      {:error, Error.timeout(@default_timeout)}
+
+    :exit, {{:shutdown, reason}, _} ->
+      {:error, Error.pool_error({:worker_stopped, reason})}
   end
 
   @impl ExMaude.Backend
@@ -208,30 +220,31 @@ defmodule ExMaude.Backend.NIF do
 
   @impl GenServer
   def handle_call({:execute, command, timeout}, _, %{handle: handle} = state) do
-    result =
-      case run_native_execute(handle, normalize_command(command), timeout) do
-        {:ok, raw} -> Parser.parse_backend_response(raw)
-        {:error, _} = err -> err
-      end
+    case run_native_execute(handle, normalize_command(command), timeout) do
+      {:ok, raw} ->
+        result = Parser.parse_backend_response(raw)
+        emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
+        {:reply, result, state}
 
-    emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
-    {:reply, result, state}
+      {:error, err} ->
+        stop_on_native_failure(err, state)
+    end
   end
 
   def handle_call({:load_file, path, timeout}, _, %{handle: handle} = state) do
-    result =
-      case run_native_execute(handle, normalize_command("load #{path}"), timeout) do
-        {:ok, raw} ->
+    case run_native_execute(handle, normalize_command("load #{path}"), timeout) do
+      {:ok, raw} ->
+        result =
           case Parser.parse_backend_response(raw) do
             {:ok, _} -> :ok
             {:error, _} = err -> err
           end
 
-        {:error, _} = err ->
-          err
-      end
+        {:reply, result, state}
 
-    {:reply, result, state}
+      {:error, err} ->
+        stop_on_native_failure(err, state)
+    end
   end
 
   def handle_call(:alive?, _, %{handle: handle} = state) do
@@ -262,6 +275,20 @@ defmodule ExMaude.Backend.NIF do
   end
 
   # coveralls-ignore-stop
+
+  # Every error surfaced by the native layer (timeout, EOF, I/O failure,
+  # poisoned lock) leaves the subprocess and its reader channel in an
+  # untrustworthy state: Maude may still be computing, and its eventual
+  # output sits in the channel where it would be served as the *next*
+  # command's response. Reply, then stop so the pool starts a fresh worker.
+  defp stop_on_native_failure(%Error{} = err, state) do
+    if err.type == :timeout do
+      emit_telemetry(:timeout, %{timeout_ms: err.details.timeout_ms})
+    end
+
+    emit_telemetry(:command_complete, %{success: false})
+    {:stop, {:shutdown, {:native_failure, err.type}}, {:error, err}, state}
+  end
 
   defp start_native(maude_path) do
     case safe_call(fn -> Native.start(maude_path) end) do

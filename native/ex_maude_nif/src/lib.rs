@@ -118,8 +118,8 @@ fn start(maude_path: String) -> NifResult<ResourceArc<MaudeProcess>> {
 /// Execute a Maude command, returning everything before the next prompt.
 ///
 /// `timeout_ms` is the per-command deadline. On timeout, the subprocess is
-/// left running but in an indeterminate state — callers should treat the
-/// worker as dead and restart it via the pool.
+/// left running but in an indeterminate state — the Elixir wrapper stops
+/// the worker so the pool replaces it with a fresh process.
 #[rustler::nif(schedule = "DirtyIo")]
 fn execute_with_timeout(
     process: ResourceArc<MaudeProcess>,

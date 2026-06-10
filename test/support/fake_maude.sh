@@ -5,6 +5,8 @@
 #   * prints the `Maude> ` prompt immediately and after every command
 #   * `hang ...` lines produce no response (simulates a wedged interpreter
 #     stuck in an unbounded rewrite)
+#   * `die ...` lines exit without a response (simulates a crashed
+#     interpreter: readers observe EOF)
 #   * `quit` exits cleanly
 #   * anything else is echoed back as a String result so tests can correlate
 #     each response with the exact command that produced it
@@ -18,6 +20,9 @@ while IFS= read -r line; do
       ;;
     hang*)
       sleep 600
+      ;;
+    die*)
+      exit 1
       ;;
     *)
       printf 'result String: "echo:%s"\nMaude> ' "$line"

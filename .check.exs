@@ -67,12 +67,11 @@
      enabled: File.exists?("priv/maude_bridge"),
      deps: [:c_compile, :ex_unit]},
 
-    # NIF integration tests (only if NIF is compiled)
+    # NIF integration tests (only if NIF is compiled — rustler emits
+    # priv/native/ex_maude_nif.so on every platform, no lib prefix)
     {:test_nif,
      command: "mix test --include nif --include integration",
-     enabled:
-       File.exists?("priv/native/libex_maude_nif.so") or
-         File.exists?("priv/native/libex_maude_nif.dylib"),
+     enabled: File.exists?("priv/native/ex_maude_nif.so"),
      deps: [:ex_unit]}
   ]
 ]
