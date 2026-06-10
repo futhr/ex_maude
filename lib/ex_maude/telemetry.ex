@@ -33,6 +33,34 @@ defmodule ExMaude.Telemetry do
   - Measurements: `%{duration: integer}`
   - Metadata: `%{operation: atom, module: String.t, kind: atom, reason: term}`
 
+  ### Server (Worker) Events
+
+  Emitted by the backend workers (Port, C-Node, NIF) around the lifecycle of
+  each Maude OS process. All carry `%{time: integer}` plus the measurements
+  below, with metadata `%{pid: pid, backend: :port | :cnode | :nif}`.
+
+  `[:ex_maude, :server, :start]`
+  - Measurements: `%{maude_path: String.t}`
+  - Emitted when a worker's Maude process is ready. Also fires when the pool
+    replaces a worker after a timeout or crash.
+
+  `[:ex_maude, :server, :command_start]`
+  - Measurements: `%{command: String.t}` (truncated to 100 bytes)
+
+  `[:ex_maude, :server, :command_complete]`
+  - Measurements: `%{success: boolean, response_size: integer}`
+
+  `[:ex_maude, :server, :timeout]`
+  - Measurements: `%{timeout_ms: integer}` (Port also reports `buffer_size`)
+  - A command timed out. The worker **stops** with `{:shutdown, _}` and the
+    pool starts a replacement (Maude cannot cancel an in-flight computation,
+    so the session is no longer trustworthy); expect a follow-up
+    `[:ex_maude, :server, :start]` event.
+
+  `[:ex_maude, :server, :crash]`
+  - Measurements: `%{exit_status: integer}`
+  - The Maude OS process exited unexpectedly.
+
   ### Pool Events
 
   Emitted for worker pool checkout operations.
@@ -169,6 +197,11 @@ defmodule ExMaude.Telemetry do
       [:ex_maude, :command, :start],
       [:ex_maude, :command, :stop],
       [:ex_maude, :command, :exception],
+      [:ex_maude, :server, :start],
+      [:ex_maude, :server, :command_start],
+      [:ex_maude, :server, :command_complete],
+      [:ex_maude, :server, :timeout],
+      [:ex_maude, :server, :crash],
       [:ex_maude, :pool, :checkout, :start],
       [:ex_maude, :pool, :checkout, :stop],
       [:ex_maude, :iot, :detect_conflicts, :start],

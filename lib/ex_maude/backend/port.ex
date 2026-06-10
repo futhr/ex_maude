@@ -21,8 +21,16 @@ defmodule ExMaude.Backend.Port do
 
       config :ex_maude,
         backend: :port,
-        use_pty: true  # Set to false if PTY allocation fails
+        use_pty: true  # Set to false to use pipes with `maude -interactive`
 
+  ## Timeouts and worker lifecycle
+
+  Each command carries its own timeout. When it fires, the caller receives
+  `{:error, %ExMaude.Error{type: :timeout}}` and the worker **stops** with
+  `{:shutdown, :command_timeout}` so the pool replaces it with a fresh
+  process. Maude has no way to cancel an in-flight computation, so a
+  timed-out session is in an indeterminate state — reusing it could deliver
+  the previous command's response to the next caller.
   """
 
   @behaviour ExMaude.Backend
@@ -33,7 +41,23 @@ defmodule ExMaude.Backend.Port do
   alias ExMaude.{Binary, Error}
 
   @default_timeout_ms 5_000
+  @startup_timeout_ms 10_000
   @prompt_marker "Maude>"
+  @maude_args ["-no-banner", "-no-wrap", "-no-advise"]
+
+  @typedoc """
+  The in-flight command, if any.
+
+  The `ref` ties the pending command to its `{:command_timeout, ref}` timer
+  message: a timer that fires after its command completed carries a stale
+  ref and is ignored instead of cutting into the next command.
+  """
+  @type pending :: %{
+          from: GenServer.from(),
+          ref: reference(),
+          timer: reference(),
+          timeout: pos_integer()
+        }
 
   @typedoc """
   Internal state for the Port backend GenServer.
@@ -41,12 +65,12 @@ defmodule ExMaude.Backend.Port do
   @type t :: %__MODULE__{
           port: port() | nil,
           buffer: String.t() | nil,
-          from: GenServer.from() | nil,
-          timeout_ref: reference() | nil,
-          maude_path: String.t() | nil
+          pending: pending() | nil,
+          maude_path: String.t() | nil,
+          os_pid: non_neg_integer() | nil
         }
 
-  defstruct [:port, :buffer, :from, :timeout_ref, :maude_path]
+  defstruct [:port, :buffer, :pending, :maude_path, :os_pid]
 
   # Client API
 
@@ -62,7 +86,13 @@ defmodule ExMaude.Backend.Port do
     try do
       GenServer.call(server, {:execute, command, timeout}, timeout + 1_000)
     catch
-      :exit, {:timeout, _} -> {:error, Error.timeout(timeout)}
+      :exit, {:timeout, _} ->
+        {:error, Error.timeout(timeout)}
+
+      :exit, {{:shutdown, reason}, _} ->
+        # The worker stopped mid-call (e.g. it was checked out again in the
+        # narrow window between a timeout reply and the pool reaping it).
+        {:error, Error.pool_error({:worker_stopped, reason})}
     end
   end
 
@@ -87,31 +117,33 @@ defmodule ExMaude.Backend.Port do
   end
 
   # Server Callbacks
-  # coveralls-ignore-start
-  # GenServer callbacks require actual Maude process - tested via integration tests
 
   @impl GenServer
   def init(opts) do
     maude_path = opts[:maude_path] || find_maude_path()
     preload_modules = opts[:preload_modules] || config_preload_modules()
+    startup_timeout = opts[:startup_timeout_ms] || @startup_timeout_ms
 
-    case start_maude_port(maude_path) do
+    case start_maude_port(maude_path, opts) do
       {:ok, port} ->
         state = %__MODULE__{
           port: port,
           buffer: "",
-          from: nil,
-          timeout_ref: nil,
-          maude_path: maude_path
+          pending: nil,
+          maude_path: maude_path,
+          os_pid: port_os_pid(port)
         }
 
-        state =
-          state
-          |> wait_for_ready()
-          |> preload_modules(preload_modules)
+        case become_ready(state, preload_modules, startup_timeout) do
+          {:ok, state} ->
+            emit_telemetry(:start, %{maude_path: maude_path})
+            {:ok, state}
 
-        emit_telemetry(:start, %{maude_path: maude_path})
-        {:ok, state}
+          {:error, reason} ->
+            # init returning {:stop, _} skips terminate/2 — clean up inline.
+            shutdown_maude(state)
+            {:stop, {:maude_start_failed, reason}}
+        end
 
       {:error, reason} ->
         {:stop, {:maude_start_failed, reason}}
@@ -119,14 +151,22 @@ defmodule ExMaude.Backend.Port do
   end
 
   @impl GenServer
-  def handle_call({:execute, command, timeout}, from, state) do
+  def handle_call({:execute, command, timeout}, from, %{pending: nil} = state) do
     command = ensure_command_format(command)
     Port.command(state.port, command)
-    timeout_ref = Process.send_after(self(), :command_timeout, timeout)
+    ref = make_ref()
+    timer = Process.send_after(self(), {:command_timeout, ref}, timeout)
 
     emit_telemetry(:command_start, %{command: truncate(command, 100)})
 
-    {:noreply, %{state | from: from, buffer: "", timeout_ref: timeout_ref}}
+    pending = %{from: from, ref: ref, timer: timer, timeout: timeout}
+    {:noreply, %{state | pending: pending, buffer: ""}}
+  end
+
+  def handle_call({:execute, _, _}, _, state) do
+    # Unreachable through the pool (a worker serves one checked-out caller at
+    # a time) but a direct caller could race the in-flight command.
+    {:reply, {:error, Error.new(:busy, "another command is already in flight")}, state}
   end
 
   def handle_call(:alive?, _, state) do
@@ -134,17 +174,20 @@ defmodule ExMaude.Backend.Port do
     {:reply, alive, state}
   end
 
+  # coveralls-ignore-start
+  # Paths below require a live (or deliberately wedged) Maude process; they
+  # are exercised by the fake-script lifecycle tests and integration tests.
+
   @impl GenServer
   def handle_info({port, {:data, data}}, %{port: port} = state) do
     buffer = state.buffer <> to_string(data)
 
     if response_complete?(buffer) do
-      if state.timeout_ref, do: Process.cancel_timer(state.timeout_ref)
-
       response = parse_response(buffer)
 
-      if state.from do
-        GenServer.reply(state.from, response)
+      if state.pending do
+        Process.cancel_timer(state.pending.timer)
+        GenServer.reply(state.pending.from, response)
       end
 
       emit_telemetry(:command_complete, %{
@@ -152,7 +195,7 @@ defmodule ExMaude.Backend.Port do
         response_size: byte_size(buffer)
       })
 
-      {:noreply, %{state | from: nil, buffer: "", timeout_ref: nil}}
+      {:noreply, %{state | pending: nil, buffer: ""}}
     else
       {:noreply, %{state | buffer: buffer}}
     end
@@ -162,21 +205,31 @@ defmodule ExMaude.Backend.Port do
     Logger.error("Maude process exited with status #{status}")
     emit_telemetry(:crash, %{exit_status: status})
 
-    if state.from do
-      GenServer.reply(state.from, {:error, Error.crash(status)})
+    if state.pending do
+      GenServer.reply(state.pending.from, {:error, Error.crash(status)})
     end
 
-    {:stop, {:maude_exit, status}, state}
+    {:stop, {:maude_exit, status}, %{state | pending: nil}}
   end
 
-  def handle_info(:command_timeout, state) do
-    if state.from do
-      GenServer.reply(state.from, {:error, Error.timeout(@default_timeout_ms)})
-    end
+  def handle_info({:command_timeout, ref}, %{pending: %{ref: ref} = pending} = state) do
+    GenServer.reply(pending.from, {:error, Error.timeout(pending.timeout)})
 
-    emit_telemetry(:timeout, %{buffer_size: byte_size(state.buffer)})
+    emit_telemetry(:timeout, %{
+      buffer_size: byte_size(state.buffer),
+      timeout_ms: pending.timeout
+    })
 
-    {:noreply, %{state | from: nil, buffer: "", timeout_ref: nil}}
+    # Maude is still chewing on the timed-out command; its eventual output
+    # would be misattributed to the next caller. Stop so the pool replaces
+    # this worker with a fresh process. {:shutdown, _} keeps logs quiet.
+    {:stop, {:shutdown, :command_timeout}, %{state | pending: nil}}
+  end
+
+  def handle_info({:command_timeout, _}, state) do
+    # The timer fired after its command completed (cancel_timer lost the
+    # race); the ref no longer matches the pending command, so drop it.
+    {:noreply, state}
   end
 
   def handle_info(_, state) do
@@ -186,7 +239,18 @@ defmodule ExMaude.Backend.Port do
   @impl GenServer
   def terminate(reason, state) do
     Logger.debug("ExMaude.Backend.Port terminating: #{inspect(reason)}")
+    shutdown_maude(state)
+    :ok
+  end
 
+  # coveralls-ignore-stop
+
+  # Private Functions
+  # coveralls-ignore-start
+  # These functions require an actual Maude process - tested via the
+  # fake-script lifecycle tests and integration tests.
+
+  defp shutdown_maude(state) do
     if state.port do
       try do
         if port_alive?(state.port) do
@@ -199,38 +263,35 @@ defmodule ExMaude.Backend.Port do
       end
     end
 
-    :ok
+    kill_os_process(state.os_pid)
   end
 
-  # coveralls-ignore-stop
+  # A wedged Maude (e.g. mid-infinite-rewrite) never reads the `quit`, and
+  # Port.close/1 does not signal the OS process — without this a timed-out
+  # command would leak a CPU-pegged interpreter. In PTY mode the pid is the
+  # wrapper's; killing it tears down its PTY and Maude with it.
+  defp kill_os_process(nil), do: :ok
 
-  # Private Functions
-  # coveralls-ignore-start
-  # These functions require actual Maude process - tested via integration tests
+  defp kill_os_process(os_pid) do
+    System.cmd("kill", ["-KILL", Integer.to_string(os_pid)], stderr_to_stdout: true)
+    :ok
+  rescue
+    _ -> :ok
+  end
 
-  defp start_maude_port(maude_path) do
+  defp port_os_pid(port) do
+    case Port.info(port, :os_pid) do
+      {:os_pid, os_pid} -> os_pid
+      nil -> nil
+    end
+  end
+
+  defp start_maude_port(maude_path, opts) do
     maude_executable = find_executable(maude_path)
-    use_pty = Application.get_env(:ex_maude, :use_pty, true)
+    use_pty = Keyword.get(opts, :use_pty, Application.get_env(:ex_maude, :use_pty, true))
 
-    # Base args - suppress banner, line wrapping, and advisories
-    maude_args = ["-no-banner", "-no-wrap", "-no-advise"]
-
-    # When not using PTY, add -interactive to force prompt output
-    maude_args =
-      if use_pty do
-        maude_args
-      else
-        ["-interactive" | maude_args]
-      end
-
-    # Use script/unbuffer to create a PTY so Maude outputs prompts
-    # Can be disabled via config if PTY allocation fails (e.g., in Docker/CI)
     {wrapper_executable, wrapper_args} =
-      if use_pty do
-        pty_wrapper(maude_executable, maude_args)
-      else
-        {maude_executable, maude_args}
-      end
+      resolve_launcher(use_pty, :os.type(), maude_executable)
 
     try do
       port =
@@ -252,35 +313,53 @@ defmodule ExMaude.Backend.Port do
     end
   end
 
-  # Use a PTY wrapper to make Maude think it's running interactively
-  # This is needed because Maude only outputs prompts in TTY mode
-  defp pty_wrapper(executable, args) do
-    case :os.type() do
-      {:unix, :darwin} ->
-        case System.find_executable("script") do
-          nil -> {executable, args}
-          script_path -> {script_path, ["-q", "/dev/null", executable | args]}
-        end
+  # coveralls-ignore-stop
 
-      {:unix, _} ->
-        # Linux: prefer `unbuffer` (from expect); fall back to `script -qc`
-        # whose syntax differs from macOS.
-        cond do
-          unbuffer = System.find_executable("unbuffer") ->
-            {unbuffer, [executable | args]}
+  @doc false
+  # Maude only prints its `Maude>` prompt when it believes it is interactive:
+  # either stdin is a TTY (PTY wrapper) or `-interactive` forces it. Every
+  # branch must produce one of the two — a launcher with neither yields a
+  # worker whose commands can never complete.
+  #
+  # PTY wrappers: macOS `script -q`, Linux `unbuffer` (expect) or `script -qc`.
+  # When no wrapper exists (minimal containers), fall back to plain pipes
+  # with `-interactive`, the same mode the NIF and C-Node backends use.
+  @spec resolve_launcher(boolean(), {atom(), atom()}, String.t(), (String.t() -> String.t() | nil)) ::
+          {String.t(), [String.t()]}
+  def resolve_launcher(use_pty?, os_type, executable, finder \\ &System.find_executable/1)
 
-          script = System.find_executable("script") ->
-            cmd = Enum.join([executable | args], " ")
-            {script, ["-qc", cmd, "/dev/null"]}
+  def resolve_launcher(false, _, executable, _) do
+    {executable, ["-interactive" | @maude_args]}
+  end
 
-          true ->
-            {executable, args}
-        end
-
-      _ ->
-        {executable, args}
+  def resolve_launcher(true, {:unix, :darwin}, executable, finder) do
+    case finder.("script") do
+      nil -> {executable, ["-interactive" | @maude_args]}
+      script_path -> {script_path, ["-q", "/dev/null", executable | @maude_args]}
     end
   end
+
+  def resolve_launcher(true, {:unix, _}, executable, finder) do
+    # Linux: prefer `unbuffer` (from expect); fall back to `script -qc`
+    # whose syntax differs from macOS.
+    cond do
+      unbuffer = finder.("unbuffer") ->
+        {unbuffer, [executable | @maude_args]}
+
+      script = finder.("script") ->
+        cmd = Enum.join([executable | @maude_args], " ")
+        {script, ["-qc", cmd, "/dev/null"]}
+
+      true ->
+        {executable, ["-interactive" | @maude_args]}
+    end
+  end
+
+  def resolve_launcher(true, _, executable, _) do
+    {executable, ["-interactive" | @maude_args]}
+  end
+
+  # coveralls-ignore-start
 
   defp find_executable(path) do
     case System.find_executable(path) do
@@ -293,33 +372,45 @@ defmodule ExMaude.Backend.Port do
     Binary.find() || "maude"
   end
 
-  defp wait_for_ready(state) do
+  defp become_ready(state, preload, startup_timeout) do
+    with {:ok, state} <- wait_for_ready(state, startup_timeout) do
+      preload_modules(state, preload, startup_timeout)
+    end
+  end
+
+  defp wait_for_ready(state, startup_timeout) do
     receive do
       {port, {:data, data}} when port == state.port ->
         buffer = state.buffer <> to_string(data)
 
         if String.contains?(buffer, @prompt_marker) do
-          %{state | buffer: ""}
+          {:ok, %{state | buffer: ""}}
         else
-          wait_for_ready(%{state | buffer: buffer})
+          wait_for_ready(%{state | buffer: buffer}, startup_timeout)
         end
+
+      {port, {:exit_status, status}} when port == state.port ->
+        {:error, {:exited_during_startup, status}}
     after
-      10_000 ->
-        Logger.error("Timeout waiting for Maude to start")
-        state
+      startup_timeout ->
+        Logger.error("Timeout waiting for Maude prompt (#{startup_timeout}ms)")
+        {:error, :no_prompt}
     end
   end
 
-  defp preload_modules(state, []), do: state
+  defp preload_modules(state, [], _), do: {:ok, state}
 
-  defp preload_modules(state, [path | rest]) do
+  defp preload_modules(state, [path | rest], startup_timeout) do
     if File.exists?(path) do
       Port.command(state.port, "load #{path}\n")
-      state = wait_for_ready(state)
-      preload_modules(state, rest)
+
+      case wait_for_ready(state, startup_timeout) do
+        {:ok, state} -> preload_modules(state, rest, startup_timeout)
+        {:error, reason} -> {:error, {:preload_failed, path, reason}}
+      end
     else
       Logger.warning("Preload module not found: #{path}")
-      preload_modules(state, rest)
+      preload_modules(state, rest, startup_timeout)
     end
   end
 

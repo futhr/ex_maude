@@ -11,6 +11,7 @@ defmodule ExMaude.Error do
     * `:module_not_found` - Referenced module doesn't exist
     * `:syntax_error` - Invalid Maude syntax
     * `:timeout` - Operation timed out
+    * `:busy` - Worker already has a command in flight
     * `:maude_crash` - Maude process crashed
     * `:file_not_found` - File doesn't exist
     * `:load_error` - Failed to load a module
@@ -51,6 +52,7 @@ defmodule ExMaude.Error do
           | :module_not_found
           | :syntax_error
           | :timeout
+          | :busy
           | :maude_crash
           | :file_not_found
           | :load_error

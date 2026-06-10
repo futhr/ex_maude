@@ -22,9 +22,9 @@ defmodule ExMaude.Backend.PortTest do
       state = %Port{}
       assert Map.has_key?(state, :port)
       assert Map.has_key?(state, :buffer)
-      assert Map.has_key?(state, :from)
-      assert Map.has_key?(state, :timeout_ref)
+      assert Map.has_key?(state, :pending)
       assert Map.has_key?(state, :maude_path)
+      assert Map.has_key?(state, :os_pid)
     end
   end
 

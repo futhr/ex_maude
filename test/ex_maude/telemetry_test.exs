@@ -218,6 +218,11 @@ defmodule ExMaude.TelemetryTest do
     test "event names follow :app :component :action pattern" do
       events = Telemetry.events()
 
+      # Span events end in a phase; server worker events are point-in-time
+      # lifecycle markers and end in the action itself.
+      phases = [:start, :stop, :exception]
+      lifecycle_actions = [:start, :command_start, :command_complete, :timeout, :crash]
+
       for event <- events do
         # Should have at least [:app, :component, :action]
         assert length(event) >= 3
@@ -225,8 +230,10 @@ defmodule ExMaude.TelemetryTest do
         # First element should be :ex_maude
         assert hd(event) == :ex_maude
 
-        # Last element should be a phase (:start, :stop, :exception)
-        assert List.last(event) in [:start, :stop, :exception]
+        case event do
+          [:ex_maude, :server, action] -> assert action in lifecycle_actions
+          _ -> assert List.last(event) in phases
+        end
       end
     end
   end
@@ -304,10 +311,12 @@ defmodule ExMaude.TelemetryTest do
   describe "events/0 additional tests" do
     test "returns the full list of public events" do
       events = Telemetry.events()
-      assert length(events) == 9
+      assert length(events) == 14
 
       assert [:ex_maude, :ai, :detect_conflicts, :start] in events
       assert [:ex_maude, :ai, :detect_conflicts, :stop] in events
+      assert [:ex_maude, :server, :timeout] in events
+      assert [:ex_maude, :server, :crash] in events
     end
 
     test "all events are unique" do
