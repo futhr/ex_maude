@@ -67,6 +67,22 @@ Releases are managed by maintainers using git_ops:
 3. Push with tags: `git push --follow-tags`
 4. CI will publish to Hex.pm on the `v*` tag
 
+### What the tag triggers
+
+The `v*` tag drives a two-stage pipeline:
+
+1. **release.yml** builds precompiled NIF binaries for every supported
+   target (macOS aarch64/x86_64, Linux gnu/musl × aarch64/x86_64,
+   Windows gnu/msvc) and attaches them to the GitHub release.
+2. **publish.yml** runs after the NIF build succeeds. It checks the
+   project out, runs the test/lint suite, then executes
+   `mix rustler_precompiled.download ExMaude.Backend.NIF.Native --all --print`
+   to populate `checksum-Elixir.ExMaude.Backend.NIF.Native.exs` from the
+   uploaded artifacts, and only then runs `mix hex.publish`. The checksum
+   file is intentionally empty in git — it must be generated against the
+   release artifacts at publish time, or consumers could not verify their
+   downloaded NIF binaries.
+
 ## Questions?
 
 Open an issue for questions or discussions.

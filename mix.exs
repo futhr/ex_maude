@@ -158,6 +158,8 @@ defmodule ExMaude.MixProject do
         LICENSE
         CHANGELOG.md
         usage-rules.md
+        notebooks
+        cheatsheets
         bench/output
       ],
       maintainers: ["Tobias Bohwalli <hi@futhr.io>"]
@@ -169,6 +171,7 @@ defmodule ExMaude.MixProject do
       main: "readme",
       extras: [
         "README.md": [title: "Overview"],
+        "cheatsheets/cheatsheet.cheatmd": [title: "Cheatsheet"],
         "notebooks/quickstart.livemd": [title: "Quick Start"],
         "notebooks/advanced.livemd": [title: "Advanced Usage"],
         "notebooks/ai-rules.livemd": [title: "AI Rules"],
@@ -183,10 +186,38 @@ defmodule ExMaude.MixProject do
         LICENSE: [title: "License"]
       ],
       groups_for_extras: [
-        "Getting Started": ~r/README/,
+        "Getting Started": ~r/README|cheatsheet/,
         "Interactive Tutorials": ~r/notebooks\//,
         Reference: ~r/CHANGELOG|CONTRIBUTING|AGENTS|usage-rules|LICENSE/,
         Performance: ~r/bench\/output/
+      ],
+      groups_for_modules: [
+        "Core API": [ExMaude, ExMaude.Maude, ExMaude.Term, ExMaude.Parser],
+        Results: [ExMaude.Result.Reduction, ExMaude.Result.Search, ExMaude.Result.Solution],
+        "Domain: IoT": [
+          ExMaude.IoT,
+          ExMaude.IoT.Encoder,
+          ExMaude.IoT.Validator,
+          ExMaude.IoT.ConflictParser
+        ],
+        "Domain: AI": [
+          ExMaude.AI,
+          ExMaude.AI.Encoder,
+          ExMaude.AI.Validator,
+          ExMaude.AI.ConflictParser
+        ],
+        Runtime: [
+          ExMaude.Application,
+          ExMaude.Pool,
+          ExMaude.Server,
+          ExMaude.Backend,
+          ExMaude.Backend.Port,
+          ExMaude.Backend.CNode,
+          ExMaude.Backend.NIF,
+          ExMaude.Binary
+        ],
+        Observability: [ExMaude.Telemetry],
+        Errors: [ExMaude.Error]
       ],
       source_ref: "v#{@version}",
       source_url: @source_url,
