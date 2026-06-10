@@ -173,10 +173,29 @@ defmodule ExMaude.IoT.Encoder do
 
   @doc """
   Encodes a string value for Maude (quoted).
+
+  Backslashes and double quotes are escaped so the content cannot break
+  out of the Maude string literal.
+
+  ## Examples
+
+      iex> ExMaude.IoT.Encoder.encode_string("hello")
+      ~s("hello")
+
+      iex> ExMaude.IoT.Encoder.encode_string(~s(say "hi"))
+      ~s("say \\\\"hi\\\\"")
   """
   @spec encode_string(String.t() | atom()) :: String.t()
-  def encode_string(s) when is_binary(s), do: "\"#{s}\""
-  def encode_string(s) when is_atom(s), do: "\"#{Atom.to_string(s)}\""
+  def encode_string(s) when is_binary(s) do
+    escaped =
+      s
+      |> String.replace("\\", "\\\\")
+      |> String.replace("\"", "\\\"")
+
+    ~s("#{escaped}")
+  end
+
+  def encode_string(s) when is_atom(s), do: encode_string(Atom.to_string(s))
 
   @doc """
   Encodes a value into Maude's wrapped value syntax.

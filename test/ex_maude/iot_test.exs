@@ -174,6 +174,22 @@ defmodule ExMaude.IoTTest do
       assert conflict.rule2 in ["motion-light", "night-mode"]
     end
 
+    test "survives property values containing quotes", %{maude_available: true} do
+      # Unescaped quotes used to produce invalid Maude terms (parse errors).
+      rules = [
+        %{
+          id: "announce",
+          thing_id: "speaker-1",
+          trigger: {:prop_eq, "motion", true},
+          actions: [{:set_prop, "speaker-1", "message", ~s(say "welcome home")}],
+          priority: 1
+        }
+      ]
+
+      assert {:ok, conflicts} = IoT.detect_conflicts(rules)
+      assert is_list(conflicts)
+    end
+
     test "detects environment conflict with opposing env effects", %{maude_available: true} do
       rules = [
         %{

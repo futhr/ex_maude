@@ -223,6 +223,26 @@ defmodule ExMaude.IoT.EncoderTest do
     test "converts atom to quoted string" do
       assert Encoder.encode_string(:world) == "\"world\""
     end
+
+    test "escapes embedded double quotes" do
+      assert Encoder.encode_string(~s(hello "world")) == ~s("hello \\"world\\"")
+    end
+
+    test "escapes backslashes" do
+      assert Encoder.encode_string("a\\b") == ~s("a\\\\b")
+    end
+
+    test "escapes a single backslash before a quote correctly" do
+      assert Encoder.encode_string(~s(a\\"b)) == ~s("a\\\\\\"b")
+    end
+
+    test "escapes consecutive backslashes" do
+      assert Encoder.encode_string("a\\\\b") == ~s("a\\\\\\\\b")
+    end
+
+    test "escapes quotes inside encoded values" do
+      assert Encoder.encode_value(~s(say "hi")) == ~s|strVal("say \\"hi\\"")|
+    end
   end
 
   describe "encode_value/1" do
