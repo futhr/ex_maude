@@ -1,7 +1,9 @@
 defmodule ExMaude.BinaryTest do
   @moduledoc false
 
-  use ExUnit.Case, async: true
+  # Mutates global config (Application.put_env) — must not run concurrently
+  # with other suites that read it.
+  use ExUnit.Case, async: false
 
   alias ExMaude.Binary
 
