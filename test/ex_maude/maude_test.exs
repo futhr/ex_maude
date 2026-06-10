@@ -197,6 +197,13 @@ defmodule ExMaude.MaudeTest do
     end
 
     @tag :integration
+    test "reduces a partial function to a kind-level result", %{maude_available: true} do
+      # 1 / 0 has no well-sorted normal form; Maude answers `result [Rat]: 1 / 0`.
+      {:ok, result} = Maude.reduce("RAT", "1 / 0")
+      assert result == "1 / 0"
+    end
+
+    @tag :integration
     test "handles invalid module", %{maude_available: true} do
       result = Maude.reduce("NONEXISTENT-MODULE", "1 + 1")
       assert {:error, %Error{}} = result

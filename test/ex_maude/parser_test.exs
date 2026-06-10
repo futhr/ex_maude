@@ -30,6 +30,18 @@ some extra output"
       assert String.contains?(result, "42")
     end
 
+    test "parses kind-level result from a partial function" do
+      assert {:ok, "1 / 0", "[Rat]"} = Parser.parse_result("result [Rat]: 1 / 0")
+    end
+
+    test "parses kind-level result with parameterized kind" do
+      assert {:ok, "x", "[List{Nat}]"} = Parser.parse_result("result [List{Nat}]: x")
+    end
+
+    test "parses parameterized sort" do
+      assert {:ok, "1 2 3", "List{Nat}"} = Parser.parse_result("result List{Nat}: 1 2 3")
+    end
+
     test "returns error for no result" do
       assert {:error, :no_result} = Parser.parse_result("some other output")
     end

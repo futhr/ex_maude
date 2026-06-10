@@ -75,11 +75,17 @@ defmodule ExMaude.Parser do
 
       iex> ExMaude.Parser.parse_result("result Bool: true")
       {:ok, "true", "Bool"}
+
+  Maude prints a kind instead of a sort when a term doesn't reduce to a
+  well-sorted value — partial functions are the everyday trigger:
+
+      iex> ExMaude.Parser.parse_result("result [Rat]: 1 / 0")
+      {:ok, "1 / 0", "[Rat]"}
   """
   @spec parse_result(String.t()) :: {:ok, String.t(), String.t()} | {:error, :no_result}
   def parse_result(output) do
-    # Allow parameterized type names like `List{Nat}` in the sort.
-    case Regex.run(~r/result\s+([\w\{\},\s]+?):\s*(.+)/s, output) do
+    # Allow parameterized sorts like `List{Nat}` and kinds like `[Rat]`.
+    case Regex.run(~r/result\s+([\w\{\}\[\],\s]+?):\s*(.+)/s, output) do
       [_, type, value] -> {:ok, String.trim(value), String.trim(type)}
       nil -> {:error, :no_result}
     end
