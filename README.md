@@ -92,7 +92,7 @@ config :ex_maude,
   pool_max_overflow: 2,                # Extra workers under load
   timeout: 5_000,                      # Default command timeout (ms)
   start_pool: false,                   # Auto-start pool on application start
-  use_pty: true                        # Use PTY wrapper (Port backend only)
+  use_pty: false                       # PTY wrapper opt-in (Port backend only)
 ```
 
 ### Configuration Options
@@ -105,9 +105,9 @@ config :ex_maude,
 | `pool_max_overflow` | `integer()` | `2` | Extra workers allowed under load |
 | `timeout` | `integer()` | `5000` | Default command timeout in ms |
 | `start_pool` | `boolean()` | `false` | Auto-start pool on application boot |
-| `use_pty` | `boolean()` | `true` | Use PTY wrapper for Maude prompts |
+| `use_pty` | `boolean()` | `false` | Wrap Maude in a PTY instead of pipes with `-interactive` |
 
-Set `use_pty: false` if you encounter `script: openpty: Device not configured` errors (common in Docker/CI environments).
+By default the Port backend talks to `maude -interactive` over plain pipes — the same mode the C-Node and NIF backends use, and it needs no extra tooling. Set `use_pty: true` to wrap Maude in a PTY (`script`/`unbuffer`) instead.
 
 ### Backend Selection
 

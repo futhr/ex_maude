@@ -36,7 +36,7 @@ defmodule ExMaude do
         pool_max_overflow: 2,          # Extra workers under load
         timeout: 5_000,                # Default command timeout
         start_pool: false,             # Auto-start on application boot
-        use_pty: true                  # Use PTY wrapper (Port backend only)
+        use_pty: false                 # PTY wrapper opt-in (Port backend only)
 
   ## Architecture
 

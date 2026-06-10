@@ -2,8 +2,9 @@ defmodule ExMaude.Backend.Port do
   @moduledoc """
   Port-based backend for ExMaude.
 
-  This backend communicates with Maude via an Erlang Port, using a PTY wrapper
-  to ensure Maude outputs prompts for response detection.
+  This backend communicates with Maude via an Erlang Port over plain pipes,
+  passing `-interactive` so Maude prints its prompt for response detection
+  (the same mode the C-Node and NIF backends use).
 
   ## Features
 
@@ -13,7 +14,8 @@ defmodule ExMaude.Backend.Port do
 
   ## Trade-offs
 
-    * Higher latency due to PTY wrapper and text parsing
+    * Higher latency than the NIF backend due to port messaging and text
+      parsing
     * Regex-based error detection
     * Larger memory footprint per worker
 
@@ -21,7 +23,7 @@ defmodule ExMaude.Backend.Port do
 
       config :ex_maude,
         backend: :port,
-        use_pty: true  # Set to false to use pipes with `maude -interactive`
+        use_pty: false  # Set to true to wrap Maude in a PTY (script/unbuffer)
 
   ## Timeouts and worker lifecycle
 
@@ -288,7 +290,7 @@ defmodule ExMaude.Backend.Port do
 
   defp start_maude_port(maude_path, opts) do
     maude_executable = find_executable(maude_path)
-    use_pty = Keyword.get(opts, :use_pty, Application.get_env(:ex_maude, :use_pty, true))
+    use_pty = Keyword.get(opts, :use_pty, Application.get_env(:ex_maude, :use_pty, false))
 
     {wrapper_executable, wrapper_args} =
       resolve_launcher(use_pty, :os.type(), maude_executable)
