@@ -226,11 +226,13 @@ defmodule ExMaude.Maude do
   defp do_execute(command, opts) do
     timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
 
+    # The +1s keeps the checkout wait from expiring before a worker whose
+    # in-flight command is about to hit its own deadline frees up.
     Pool.transaction(
       fn worker ->
         Server.execute(worker, command, timeout: timeout)
       end,
-      timeout: timeout + 1_000
+      checkout_timeout: timeout + 1_000
     )
   end
 

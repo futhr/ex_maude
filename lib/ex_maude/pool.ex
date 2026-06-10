@@ -94,12 +94,19 @@ defmodule ExMaude.Pool do
 
   ## Options
 
-    * `:timeout` - Checkout timeout in ms (default: 5000)
+    * `:checkout_timeout` - How long to wait for a free worker, in ms
+      (default: 5000). This bounds only the checkout; the command executed
+      inside `fun` carries its own `:timeout`.
+    * `:timeout` - Deprecated alias for `:checkout_timeout`, kept for
+      backwards compatibility.
   """
   @spec transaction((pid() -> result), keyword()) :: result | {:error, Error.t()}
         when result: any()
   def transaction(fun, opts \\ []) when is_function(fun, 1) do
-    timeout = Keyword.get(opts, :timeout, @checkout_timeout_ms)
+    timeout =
+      Keyword.get(opts, :checkout_timeout) ||
+        Keyword.get(opts, :timeout, @checkout_timeout_ms)
+
     start_time = System.monotonic_time()
 
     backend = config_backend()
@@ -128,19 +135,32 @@ defmodule ExMaude.Pool do
   end
 
   @doc """
-  Broadcasts a function to all workers in the pool.
+  Broadcasts a function to all currently-available workers in the pool.
 
-  Useful for operations that need to affect all Maude sessions,
-  such as loading a module.
+  Useful for operations that need to affect all Maude sessions, such as
+  loading a module. Workers that are checked out by other callers at that
+  moment are skipped by design — for module loading this is safe in
+  combination with worker `:preload_modules` configuration.
 
   ## Examples
 
       ExMaude.Pool.broadcast(fn worker ->
         ExMaude.Server.load_file(worker, "/path/to/module.maude")
       end)
+
+  ## Options
+
+    * `:timeout` - Per-worker time budget in ms (default: 30000). Should be
+      at least as large as the command timeout used inside `fun`, so the
+      worker's own command deadline fires first.
+
+  A worker whose call exceeds the budget yields `{:error, _}` in the result
+  list; the caller is never taken down.
   """
-  @spec broadcast(fun()) :: [:ok | {:error, Error.t() | term()}]
-  def broadcast(fun) when is_function(fun, 1) do
+  @spec broadcast((pid() -> result), keyword()) :: [result | {:error, Error.t()}]
+        when result: any()
+  def broadcast(fun, opts \\ []) when is_function(fun, 1) do
+    timeout = Keyword.get(opts, :timeout, 30_000)
     pool_size = config_pool_size() + config_max_overflow()
 
     # Checkout all workers (up to pool size + overflow)
@@ -154,22 +174,22 @@ defmodule ExMaude.Pool do
       end
       |> Enum.reject(&is_nil/1)
 
-    # Execute function on each worker
+    # Run the function on every worker, then check each one back in from
+    # here. The checkin must NOT live inside the task: on_timeout kills the
+    # task brutally, skipping its after blocks, which would leak the
+    # checkout. Checking in a worker that died mid-call is a no-op for
+    # poolboy (it already replaced it on the EXIT).
     results =
       workers
-      |> Task.async_stream(
-        fn worker ->
-          try do
-            fun.(worker)
-          after
-            :poolboy.checkin(@pool_name, worker)
-          end
-        end,
-        timeout: 30_000
-      )
-      |> Enum.map(fn
-        {:ok, result} -> result
-        {:exit, reason} -> {:error, Error.pool_error({:exit, reason})}
+      |> Task.async_stream(fun, timeout: timeout, on_timeout: :kill_task, ordered: true)
+      |> Enum.zip(workers)
+      |> Enum.map(fn {result, worker} ->
+        :poolboy.checkin(@pool_name, worker)
+
+        case result do
+          {:ok, value} -> value
+          {:exit, reason} -> {:error, Error.pool_error({:broadcast_failed, reason})}
+        end
       end)
 
     results

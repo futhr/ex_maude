@@ -487,6 +487,45 @@ defmodule ExMaude.PoolTest do
       assert is_list(results)
       assert Enum.all?(results, &(&1 == :ok))
     end
+
+    @tag :integration
+    test "a slow worker yields an error without killing the caller",
+         %{maude_available: true} do
+      results =
+        Pool.broadcast(
+          fn _worker ->
+            Process.sleep(500)
+            :late
+          end,
+          timeout: 100
+        )
+
+      # The caller survives; every slow call surfaces as a structured error.
+      assert is_list(results)
+      assert Enum.all?(results, &match?({:error, %ExMaude.Error{type: :pool_error}}, &1))
+    end
+
+    @tag :integration
+    test "workers are returned to the pool after a timed-out broadcast",
+         %{maude_available: true} do
+      Pool.broadcast(fn _ -> Process.sleep(300) end, timeout: 100)
+
+      # Every checkout taken by the broadcast must be released — a leaked
+      # checkout would shrink the pool until exhaustion.
+      available =
+        Enum.reduce_while(1..50, 0, fn _, _ ->
+          case Pool.status() do
+            %{available: a, in_use: 0} ->
+              {:halt, a}
+
+            _ ->
+              Process.sleep(20)
+              {:cont, 0}
+          end
+        end)
+
+      assert available > 0
+    end
   end
 
   describe "config helpers" do
