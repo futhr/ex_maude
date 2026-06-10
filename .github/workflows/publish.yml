@@ -23,7 +23,8 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.18"
+          # Keep in lockstep with ci.yml's lint/dialyzer matrix entry.
+          elixir-version: "1.19"
           otp-version: "28"
 
       - name: Setup Rust
@@ -58,6 +59,9 @@ jobs:
 
       - name: Run Doctor
         run: mix doctor
+
+      - name: Audit dependencies
+        run: mix deps.audit
 
       - name: Generate documentation
         run: mix docs
