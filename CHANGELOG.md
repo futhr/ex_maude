@@ -5,6 +5,72 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.3.0](https://github.com/futhr/ex_maude/compare/v0.2.0...v0.3.0) (2026-06-10)
+### Breaking Changes:
+
+* package: stop bundling GPL Maude binaries in the hex tarball by futhr
+
+* port: default to plain pipes with -interactive, PTY opt-in by futhr
+
+### Upgrade notes:
+
+* **Install Maude separately.** The hex package no longer ships Maude
+  binaries (they are GPL-licensed; the package is MIT). Run
+  `mix maude.install` once after updating, keep `maude` on your `PATH`,
+  or set `config :ex_maude, maude_path: "..."`. The tarball shrinks from
+  ~15 MB to ~110 KB.
+* **Workers restart after a command timeout.** A timed-out worker is in
+  an indeterminate state (Maude cannot cancel an in-flight computation),
+  so all three backends now stop it with `{:shutdown, _}` and the pool
+  starts a replacement. Worker pids are therefore not stable across
+  timeouts, and a `[:ex_maude, :server, :timeout]` telemetry event is
+  followed by a fresh `[:ex_maude, :server, :start]`.
+* **Port backend uses pipes by default.** Maude is launched with
+  `-interactive` over plain pipes — the mode the C-Node and NIF backends
+  always used. Set `use_pty: true` to restore the `script`/`unbuffer`
+  wrapper.
+* **`verify_safety/3` and `verify_liveness/3` surface real errors.**
+  Encoding bugs, missing modules, and Maude syntax errors now return
+  `{:error, _}` instead of being absorbed into `{:ok, :unverified}`;
+  `:unverified` remains the result for timeouts and an unavailable pool.
+* **`Pool.broadcast/2` no longer exits the caller** when a worker is
+  slow; slow workers yield `{:error, _}` entries in the result list.
+  `Pool.transaction/2` accepts `:checkout_timeout` (the old `:timeout`
+  key remains as an alias).
+* **`ExMaude.version/0` returns the real interpreter version** (e.g.
+  `{:ok, "3.5.1"}` from `maude --version`) instead of a placeholder
+  string, and works without a started pool.
+
+### Features:
+
+* add parse, show_module and list_modules to the ExMaude facade by futhr
+
+* maude: detect the real Maude version by futhr
+
+* add bounded LTL safety and liveness verification by futhr
+
+### Bug Fixes:
+
+* nif: keep building the NIF once a local artifact exists by futhr
+
+* pool: make broadcast survive slow workers and always return them by futhr
+
+* iot: surface encoding and infrastructure bugs from verify functions by futhr
+
+* iot: escape quotes and backslashes when encoding strings by futhr
+
+* parser: accept kind-level sorts in result lines by futhr
+
+* cnode: correlate bridge replies with refs and restart on failure by futhr
+
+* nif: restart worker after native timeout, eof, or io error by futhr
+
+* port: stop poisoned workers on timeout and fail fast at startup by futhr
+
+* check: run the quality tools that deps: [:compiler] silently skipped by futhr
+
+* iot: drop unreachable error clause in build_world by futhr
+
 ## [v0.2.0](https://github.com/futhr/ex_maude/compare/v0.1.1...v0.2.0) (2026-05-18)
 
 ### Features:
