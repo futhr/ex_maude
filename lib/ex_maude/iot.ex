@@ -374,14 +374,9 @@ defmodule ExMaude.IoT do
   end
 
   defp build_world(rules, opts) do
-    case Encoder.encode_rules(rules) do
-      {:ok, rule_set} ->
-        state = build_state(Keyword.get(opts, :initial_state, []))
-        {:ok, "world(#{state}, #{rule_set})"}
-
-      error ->
-        error
-    end
+    {:ok, rule_set} = Encoder.encode_rules(rules)
+    state = build_state(Keyword.get(opts, :initial_state, []))
+    {:ok, "world(#{state}, #{rule_set})"}
   end
 
   defp build_state([]), do: "emptyS"
