@@ -84,9 +84,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.new(:timeout, "Operation timed out")
-      error.type    #=> :timeout
-      error.message #=> "Operation timed out"
+      iex> error = ExMaude.Error.new(:timeout, "Operation timed out")
+      ...> {error.type, error.message}
+      {:timeout, "Operation timed out"}
   """
   @spec new(error_type(), String.t(), keyword()) :: t()
   def new(type, message, opts \\ []) do
@@ -105,9 +105,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.exception(:not_connected, "C-Node not connected")
-      error.type    #=> :not_connected
-      error.message #=> "C-Node not connected"
+      iex> error = ExMaude.Error.exception(:not_connected, "C-Node not connected")
+      ...> {error.type, error.message}
+      {:not_connected, "C-Node not connected"}
   """
   @spec exception(error_type(), String.t()) :: t()
   def exception(type, message) do
@@ -122,9 +122,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.from_output("Warning: module FOO not found")
-      error.type    #=> :module_not_found
-      error.message #=> "module FOO not found"
+      iex> error = ExMaude.Error.from_output("Warning: module FOO not found")
+      ...> {error.type, error.message}
+      {:module_not_found, "Module not found: FOO"}
   """
   @spec from_output(String.t()) :: t()
   def from_output(output) when is_binary(output) do
@@ -185,9 +185,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.timeout(5000)
-      error.type    #=> :timeout
-      error.message #=> "Operation timed out after 5000ms"
+      iex> error = ExMaude.Error.timeout(5000)
+      ...> {error.type, error.message}
+      {:timeout, "Operation timed out after 5000ms"}
   """
   @spec timeout(non_neg_integer()) :: t()
   def timeout(timeout_ms) do
@@ -203,8 +203,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.crash(137)
-      error.type    #=> :maude_crash
+      iex> error = ExMaude.Error.crash(137)
+      ...> {error.type, error.message}
+      {:maude_crash, "Maude process crashed with exit code 137"}
   """
   @spec crash(integer()) :: t()
   def crash(exit_code) do
@@ -220,8 +221,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.file_not_found("/path/to/missing.maude")
-      error.type #=> :file_not_found
+      iex> error = ExMaude.Error.file_not_found("/path/to/missing.maude")
+      ...> {error.type, error.message}
+      {:file_not_found, "File not found: /path/to/missing.maude"}
   """
   @spec file_not_found(Path.t()) :: t()
   def file_not_found(path) do
@@ -237,8 +239,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.partial_load([{:error, "syntax error"}])
-      error.type #=> :load_error
+      iex> error = ExMaude.Error.partial_load([{:error, "syntax error"}])
+      ...> {error.type, error.message}
+      {:load_error, "Partial load: 1 module(s) failed to load"}
   """
   @spec partial_load([term()]) :: t()
   def partial_load(failures) when is_list(failures) do
@@ -256,8 +259,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.pool_error(:timeout)
-      error.type #=> :pool_error
+      iex> error = ExMaude.Error.pool_error(:timeout)
+      ...> {error.type, error.message}
+      {:pool_error, "Pool checkout timed out"}
   """
   @spec pool_error(term()) :: t()
   def pool_error(reason) do
@@ -281,8 +285,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.invalid_path("Path escapes temp directory")
-      error.type #=> :invalid_path
+      iex> error = ExMaude.Error.invalid_path("Path escapes temp directory")
+      ...> {error.type, error.message}
+      {:invalid_path, "Path escapes temp directory"}
   """
   @spec invalid_path(String.t()) :: t()
   def invalid_path(reason) do
@@ -309,8 +314,9 @@ defmodule ExMaude.Error do
 
   ## Examples
 
-      error = ExMaude.Error.new(:timeout, "timed out")
-      ExMaude.Error.to_tuple(error)  #=> {:timeout, "timed out"}
+      iex> error = ExMaude.Error.new(:timeout, "timed out")
+      ...> ExMaude.Error.to_tuple(error)
+      {:timeout, "timed out"}
   """
   @spec to_tuple(t()) :: {error_type(), String.t()}
   def to_tuple(%__MODULE__{type: type, message: message}) do

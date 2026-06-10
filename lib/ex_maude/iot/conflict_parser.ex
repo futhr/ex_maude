@@ -94,11 +94,16 @@ defmodule ExMaude.IoT.ConflictParser do
 
   ## Examples
 
-      output = "result ConflictSet: noConflict"
-      [] = parse_conflicts(output)
+      iex> ExMaude.IoT.ConflictParser.parse_conflicts("result ConflictSet: noConflict")
+      []
 
-      output = "result ConflictSet: conflict(stateConflict, rule(\\"r1\\"...), rule(\\"r2\\"...), \\"reason\\")"
-      [%{type: :state_conflict, rule1: "r1", rule2: "r2", reason: "reason"}] = parse_conflicts(output)
+      iex> output =
+      ...>   ~s|result ConflictSet: conflict(stateConflict, | <>
+      ...>     ~s|rule("r1", thing("a"), always, nil, 1), | <>
+      ...>     ~s|rule("r2", thing("a"), always, nil, 1), "Conflicting state changes")|
+      ...>
+      ...> ExMaude.IoT.ConflictParser.parse_conflicts(output)
+      [%{type: :state_conflict, rule1: "r1", rule2: "r2", reason: "Conflicting state changes"}]
   """
   @spec parse_conflicts(String.t()) :: [conflict()]
   def parse_conflicts(output) do

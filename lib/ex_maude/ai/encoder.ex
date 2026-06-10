@@ -43,6 +43,15 @@ defmodule ExMaude.AI.Encoder do
   Encodes a list of AI rules into Maude rule-set syntax.
 
   Returns `{:ok, maude_string}` on success.
+
+  ## Examples
+
+      iex> rules = [%{id: "r1", agent_id: {"acme", "ag-1"}, trigger: {:always}, invocations: []}]
+      ...> ExMaude.AI.Encoder.encode_rules(rules)
+      {:ok, ~s|aiRule("r1", agent(tenant("acme"), "ag-1"), alwaysP, nilInvocation, noCap, 0, 1)|}
+
+      iex> ExMaude.AI.Encoder.encode_rules([])
+      {:ok, "emptyRules"}
   """
   @spec encode_rules([ExMaude.AI.ai_rule()]) :: {:ok, String.t()}
   def encode_rules([]), do: {:ok, "emptyRules"}
@@ -72,6 +81,14 @@ defmodule ExMaude.AI.Encoder do
 
   Used as the second argument to `detectAllConflicts/2` and similar
   facade operations.
+
+  ## Examples
+
+      iex> ExMaude.AI.Encoder.encode_jurisdiction_set([:eu, :us])
+      "eu ;; us"
+
+      iex> ExMaude.AI.Encoder.encode_jurisdiction_set([])
+      "noJurisdiction"
   """
   @spec encode_jurisdiction_set([atom()]) :: String.t()
   def encode_jurisdiction_set([]), do: "noJurisdiction"

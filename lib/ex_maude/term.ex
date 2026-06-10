@@ -68,9 +68,9 @@ defmodule ExMaude.Term do
 
   ## Examples
 
-      term = ExMaude.Term.new("42", "Nat")
-      term.value #=> "42"
-      term.sort  #=> "Nat"
+      iex> term = ExMaude.Term.new("42", "Nat")
+      ...> {term.value, term.sort}
+      {"42", "Nat"}
   """
   @spec new(String.t(), String.t(), keyword()) :: t()
   def new(value, sort, opts \\ []) do
@@ -87,9 +87,13 @@ defmodule ExMaude.Term do
 
   ## Examples
 
-      term = ExMaude.Term.new("42", "Nat")
-      ExMaude.Term.sort?(term, "Nat")   #=> true
-      ExMaude.Term.sort?(term, "Bool")  #=> false
+      iex> term = ExMaude.Term.new("42", "Nat")
+      ...> ExMaude.Term.sort?(term, "Nat")
+      true
+
+      iex> term = ExMaude.Term.new("42", "Nat")
+      ...> ExMaude.Term.sort?(term, "Bool")
+      false
   """
   @spec sort?(t(), String.t()) :: boolean()
   def sort?(%__MODULE__{sort: sort}, expected_sort) do
@@ -103,11 +107,13 @@ defmodule ExMaude.Term do
 
   ## Examples
 
-      term = ExMaude.Term.new("42", "Nat")
-      ExMaude.Term.to_integer(term)  #=> {:ok, 42}
+      iex> term = ExMaude.Term.new("42", "Nat")
+      ...> ExMaude.Term.to_integer(term)
+      {:ok, 42}
 
-      term = ExMaude.Term.new("true", "Bool")
-      ExMaude.Term.to_integer(term)  #=> {:error, :not_numeric}
+      iex> term = ExMaude.Term.new("true", "Bool")
+      ...> ExMaude.Term.to_integer(term)
+      {:error, :not_numeric}
   """
   @spec to_integer(t()) :: {:ok, integer()} | {:error, :not_numeric}
   def to_integer(%__MODULE__{value: value, sort: sort})
@@ -127,8 +133,9 @@ defmodule ExMaude.Term do
 
   ## Examples
 
-      term = ExMaude.Term.new("true", "Bool")
-      ExMaude.Term.to_boolean(term)  #=> {:ok, true}
+      iex> term = ExMaude.Term.new("true", "Bool")
+      ...> ExMaude.Term.to_boolean(term)
+      {:ok, true}
   """
   @spec to_boolean(t()) :: {:ok, boolean()} | {:error, :not_boolean}
   def to_boolean(%__MODULE__{value: "true", sort: "Bool"}), do: {:ok, true}
@@ -142,8 +149,9 @@ defmodule ExMaude.Term do
 
   ## Examples
 
-      term = ExMaude.Term.new("3.14", "Float")
-      ExMaude.Term.to_float(term)  #=> {:ok, 3.14}
+      iex> term = ExMaude.Term.new("3.14", "Float")
+      ...> ExMaude.Term.to_float(term)
+      {:ok, 3.14}
   """
   @spec to_float(t()) :: {:ok, float()} | {:error, :not_float}
   def to_float(%__MODULE__{value: value, sort: "Float"}) do

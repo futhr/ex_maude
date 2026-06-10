@@ -74,8 +74,9 @@ defmodule ExMaude.IoT.Encoder do
 
   ## Examples
 
-      rules = [%{id: "r1", thing_id: "t1", trigger: {:always}, actions: [], priority: 1}]
-      {:ok, "rule(\\"r1\\", thing(\\"t1\\"), always, nil, 1)"} = encode_rules(rules)
+      iex> rules = [%{id: "r1", thing_id: "t1", trigger: {:always}, actions: [], priority: 1}]
+      ...> ExMaude.IoT.Encoder.encode_rules(rules)
+      {:ok, ~s|rule("r1", thing("t1"), always, nil, 1)|}
   """
   @spec encode_rules([ExMaude.IoT.rule()]) :: {:ok, String.t()}
   def encode_rules([]), do: {:ok, "empty"}

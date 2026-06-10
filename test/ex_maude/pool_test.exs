@@ -493,7 +493,7 @@ defmodule ExMaude.PoolTest do
          %{maude_available: true} do
       results =
         Pool.broadcast(
-          fn _worker ->
+          fn _ ->
             Process.sleep(500)
             :late
           end,

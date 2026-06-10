@@ -5,6 +5,8 @@ defmodule ExMaude.AI.ValidatorTest do
 
   alias ExMaude.AI.Validator
 
+  doctest ExMaude.AI.Validator
+
   describe "validate_rule/1" do
     test "accepts a minimally valid rule" do
       rule = %{

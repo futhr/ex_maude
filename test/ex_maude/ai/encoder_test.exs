@@ -5,6 +5,8 @@ defmodule ExMaude.AI.EncoderTest do
 
   alias ExMaude.AI.Encoder
 
+  doctest ExMaude.AI.Encoder
+
   describe "encode_string/1" do
     test "wraps a simple string in quotes" do
       assert Encoder.encode_string("hello") == ~s("hello")

@@ -69,6 +69,26 @@ defmodule ExMaude.AI.ConflictParser do
   conflict maps. Pairwise conflicts include both `:rule1` and
   `:rule2`; single-rule conflicts include only `:rule1` and a `nil`
   `:rule2`.
+
+  ## Examples
+
+      iex> ExMaude.AI.ConflictParser.parse_conflicts("result AIConflictSet: noAIConflict")
+      []
+
+      iex> output =
+      ...>   ~s|aiConflictSingle(sovereigntyViolation, aiRule("r3", | <>
+      ...>     ~s|agent(tenant("acme"), "ag-1"), alwaysP, nilInvocation, noCap, 0, 1), | <>
+      ...>     ~s|"Tool invocation routes through forbidden jurisdiction")|
+      ...>
+      ...> ExMaude.AI.ConflictParser.parse_conflicts(output)
+      [
+        %{
+          type: :sovereignty_violation,
+          rule1: "r3",
+          rule2: nil,
+          reason: "Tool invocation routes through forbidden jurisdiction"
+        }
+      ]
   """
   @spec parse_conflicts(String.t()) :: [conflict()]
   def parse_conflicts(output) do

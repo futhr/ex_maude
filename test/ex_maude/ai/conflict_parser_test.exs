@@ -5,6 +5,8 @@ defmodule ExMaude.AI.ConflictParserTest do
 
   alias ExMaude.AI.ConflictParser
 
+  doctest ExMaude.AI.ConflictParser
+
   describe "parse_conflicts/1" do
     test "returns empty list for noAIConflict" do
       output = "result AIConflictSet: noAIConflict"

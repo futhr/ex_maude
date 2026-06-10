@@ -27,6 +27,36 @@ defmodule ExMaude.AI.Validator do
 
   Returns `:ok` on success, or `{:error, [error_msg]}` listing all
   validation failures.
+
+  ## Examples
+
+      iex> ExMaude.AI.Validator.validate_rule(%{
+      ...>   id: "r1",
+      ...>   agent_id: {"acme", "ag-1"},
+      ...>   trigger: {:always},
+      ...>   invocations: []
+      ...> })
+      :ok
+
+      iex> ExMaude.AI.Validator.validate_rule(%{})
+      {:error,
+       [
+         "missing required field: id",
+         "missing required field: agent_id",
+         "missing required field: trigger",
+         "missing required field: invocations"
+       ]}
+
+      iex> rule = %{
+      ...>   id: "r1",
+      ...>   agent_id: {"acme", "ag-1"},
+      ...>   trigger: {:contains, "x", "y"},
+      ...>   invocations: []
+      ...> }
+      ...>
+      ...> ExMaude.AI.Validator.validate_rule(rule)
+      {:error,
+       ["trigger: :contains is unverifiable in ai-rules.maude (route to string-match safety net)"]}
   """
   @spec validate_rule(term()) :: :ok | {:error, [String.t()]}
   def validate_rule(rule) when is_map(rule) do

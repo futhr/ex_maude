@@ -91,14 +91,22 @@ defmodule ExMaude.IoT.Validator do
 
   ## Examples
 
-      :ok = validate_rule(%{
-        id: "my-rule",
-        thing_id: "device-1",
-        trigger: {:prop_eq, "state", true},
-        actions: [{:set_prop, "device-1", "power", "on"}]
-      })
+      iex> ExMaude.IoT.Validator.validate_rule(%{
+      ...>   id: "my-rule",
+      ...>   thing_id: "device-1",
+      ...>   trigger: {:prop_eq, "state", true},
+      ...>   actions: [{:set_prop, "device-1", "power", "on"}]
+      ...> })
+      :ok
 
-      {:error, ["missing required field: id"]} = validate_rule(%{})
+      iex> ExMaude.IoT.Validator.validate_rule(%{})
+      {:error,
+       [
+         "missing required field: id",
+         "missing required field: thing_id",
+         "missing required field: trigger",
+         "missing required field: actions"
+       ]}
   """
   @spec validate_rule(map()) :: :ok | {:error, [String.t()]}
   def validate_rule(rule) when is_map(rule) do
