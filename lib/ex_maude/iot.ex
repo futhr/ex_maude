@@ -285,8 +285,12 @@ defmodule ExMaude.IoT do
     * `{:ok, :safe}` - no bad world reachable within `max_depth`
     * `{:error, {:counterexample, solutions}}` - a reachable bad world (the
       `solutions` carry the matching state/substitution)
-    * `{:ok, :unverified}` - Maude unavailable, timed out, or otherwise unable
-      to decide (absence of proof, not evidence of safety)
+    * `{:ok, :unverified}` - Maude unavailable or timed out — unable to decide
+      (absence of proof, not evidence of safety)
+    * `{:error, %ExMaude.Error{}}` - the verification itself failed (e.g.
+      a rule that doesn't encode to valid Maude, or a missing module);
+      surfaced as an error rather than `:unverified` because it indicates a
+      bug in the input, not an inconclusive search
 
   `bad_state` is a `state_pred` or a list of them (a list means "all present in
   the same reachable world").
@@ -302,7 +306,9 @@ defmodule ExMaude.IoT do
       #=> {:error, {:counterexample, [_ | _]}}
   """
   @spec verify_safety([rule()], state_pred() | [state_pred()], world_opts()) ::
-          {:ok, :safe} | {:error, {:counterexample, [map()]}} | {:ok, :unverified}
+          {:ok, :safe}
+          | {:ok, :unverified}
+          | {:error, {:counterexample, [map()]} | ExMaude.Error.t() | term()}
   def verify_safety(rules, bad_state, opts \\ []) when is_list(rules) do
     max_depth = Keyword.get(opts, :max_depth, 50)
     timeout = Keyword.get(opts, :timeout, 30_000)
@@ -322,7 +328,7 @@ defmodule ExMaude.IoT do
         [_ | _] -> {:error, {:counterexample, solutions}}
       end
     else
-      {:error, _} -> {:ok, :unverified}
+      {:error, err} -> verification_failure(err)
     end
   end
 
@@ -340,7 +346,9 @@ defmodule ExMaude.IoT do
 
     * `{:ok, :live}` - every reachable terminal world satisfies `goal_state`
     * `{:error, :deadlock_possible}` - a reachable terminal world misses the goal
-    * `{:ok, :unverified}` - Maude unavailable, timed out, or undecided
+    * `{:ok, :unverified}` - Maude unavailable or timed out — undecided
+    * `{:error, %ExMaude.Error{}}` - the verification itself failed (invalid
+      rule encoding, missing module, ...)
 
   ## Examples
 
@@ -348,7 +356,9 @@ defmodule ExMaude.IoT do
       #=> {:ok, :live}
   """
   @spec verify_liveness([rule()], state_pred(), world_opts()) ::
-          {:ok, :live} | {:error, :deadlock_possible} | {:ok, :unverified}
+          {:ok, :live}
+          | {:ok, :unverified}
+          | {:error, :deadlock_possible | ExMaude.Error.t() | term()}
   def verify_liveness(rules, goal_state, opts \\ []) when is_list(rules) do
     max_depth = Keyword.get(opts, :max_depth, 50)
     timeout = Keyword.get(opts, :timeout, 30_000)
@@ -369,9 +379,20 @@ defmodule ExMaude.IoT do
         [_ | _] -> {:error, :deadlock_possible}
       end
     else
-      {:error, _} -> {:ok, :unverified}
+      {:error, err} -> verification_failure(err)
     end
   end
+
+  # Absence of an answer — pool down, worker missing, command deadline — is
+  # not evidence either way and maps to the documented {:ok, :unverified}.
+  # Anything else (a rule that encodes to invalid Maude, a missing module,
+  # a syntax error) is a bug in the input or this library and must surface
+  # as an error rather than masquerade as an inconclusive verification.
+  defp verification_failure(%ExMaude.Error{type: type})
+       when type in [:timeout, :pool_error, :not_connected],
+       do: {:ok, :unverified}
+
+  defp verification_failure(err), do: {:error, err}
 
   defp build_world(rules, opts) do
     {:ok, rule_set} = Encoder.encode_rules(rules)

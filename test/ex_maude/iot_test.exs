@@ -612,4 +612,32 @@ defmodule ExMaude.IoTTest do
                )
     end
   end
+
+  describe "verification failure discrimination" do
+    test "a rule that encodes to invalid Maude surfaces an error, not :unverified",
+         %{maude_available: true} do
+      # A tuple that no Encoder clause understands raises at encode time;
+      # a malformed trigger that *does* encode produces a Maude-level error.
+      rules = [
+        %{
+          id: "broken",
+          thing_id: "d",
+          # Unknown trigger shape encodes to an unparseable Maude term.
+          trigger: {:prop_eq, "state"},
+          actions: [{:set_prop, "d", "state", "x"}],
+          priority: 1
+        }
+      ]
+
+      result =
+        try do
+          IoT.verify_safety(rules, {:thing_state, "d", "state", "x"})
+        rescue
+          e -> {:raised, e}
+        end
+
+      refute result == {:ok, :unverified},
+             "an encoding bug must not masquerade as an inconclusive verification"
+    end
+  end
 end
