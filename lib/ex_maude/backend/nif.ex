@@ -113,6 +113,10 @@ defmodule ExMaude.Backend.NIF do
     def start(_), do: :erlang.nif_error(:nif_not_loaded)
 
     @doc false
+    @spec start_with_timeout(String.t(), non_neg_integer()) :: reference() | {:error, term()}
+    def start_with_timeout(_, _), do: :erlang.nif_error(:nif_not_loaded)
+
+    @doc false
     @spec execute_with_timeout(reference(), String.t(), non_neg_integer()) ::
             binary() | {:error, term()}
     def execute_with_timeout(_, _, _), do: :erlang.nif_error(:nif_not_loaded)
@@ -124,6 +128,14 @@ defmodule ExMaude.Backend.NIF do
     @doc false
     @spec alive(reference()) :: boolean()
     def alive(_), do: :erlang.nif_error(:nif_not_loaded)
+
+    @doc false
+    @spec child_pid(reference()) :: non_neg_integer() | {:error, term()}
+    def child_pid(_), do: :erlang.nif_error(:nif_not_loaded)
+
+    @doc false
+    @spec last_spawned_pid() :: non_neg_integer()
+    def last_spawned_pid, do: :erlang.nif_error(:nif_not_loaded)
   end
 
   # Client API
@@ -215,8 +227,9 @@ defmodule ExMaude.Backend.NIF do
   def init(opts) do
     maude_path = opts[:maude_path] || Binary.find() || "maude"
     preload_modules = opts[:preload_modules] || config_preload_modules()
+    startup_timeout = opts[:startup_timeout_ms] || 10_000
 
-    case start_native(maude_path) do
+    case start_native(maude_path, startup_timeout) do
       {:ok, handle} ->
         case preload_native_modules(handle, preload_modules) do
           :ok ->
@@ -305,8 +318,8 @@ defmodule ExMaude.Backend.NIF do
     {:stop, {:shutdown, {:native_failure, err.type}}, {:error, err}, state}
   end
 
-  defp start_native(maude_path) do
-    case safe_call(fn -> Native.start(maude_path) end) do
+  defp start_native(maude_path, startup_timeout) do
+    case safe_call(fn -> Native.start_with_timeout(maude_path, startup_timeout) end) do
       {:ok, handle} when is_reference(handle) ->
         {:ok, handle}
 

@@ -14,6 +14,7 @@ defmodule ExMaude.Backend.NIFLifecycleTest do
   alias ExMaude.Error
 
   @fake_maude Path.expand("../../support/fake_maude.sh", __DIR__)
+  @fake_silent Path.expand("../../support/fake_silent.sh", __DIR__)
 
   defp start_fake_worker do
     start_supervised!({NIF, maude_path: @fake_maude}, restart: :temporary)
@@ -64,6 +65,26 @@ defmodule ExMaude.Backend.NIFLifecycleTest do
 
       assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, {:native_failure, :maude_crash}}},
                      1_000
+    end
+  end
+
+  describe "native process ownership" do
+    test "failed startup kills and reaps the spawned process" do
+      assert {:error, {:timeout, 100}} = NIF.Native.start_with_timeout(@fake_silent, 100)
+      os_pid = NIF.Native.last_spawned_pid()
+      os_pid = Integer.to_string(os_pid)
+      assert_process_gone(os_pid)
+    end
+
+    test "dropping the final resource reference reaps the child" do
+      handle = NIF.Native.start(@fake_maude)
+      os_pid = NIF.Native.child_pid(handle)
+      os_pid = Integer.to_string(os_pid)
+
+      handle = nil
+      assert is_nil(handle)
+      :erlang.garbage_collect(self())
+      assert_process_gone(os_pid)
     end
   end
 
@@ -124,5 +145,18 @@ defmodule ExMaude.Backend.NIFLifecycleTest do
           {:cont, nil}
       end
     end) || flunk("pool never recovered an available worker")
+  end
+
+  defp assert_process_gone(os_pid) do
+    Enum.reduce_while(1..100, nil, fn _, _ ->
+      case System.cmd("kill", ["-0", os_pid], stderr_to_stdout: true) do
+        {_, 0} ->
+          Process.sleep(10)
+          {:cont, nil}
+
+        _ ->
+          {:halt, :ok}
+      end
+    end) || flunk("native Maude process #{os_pid} was not reaped")
   end
 end

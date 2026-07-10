@@ -24,6 +24,7 @@ use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender};
 use rustler::{Error, NifResult, ResourceArc};
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -42,6 +43,7 @@ const READER_BUF_SIZE: usize = 4096;
 const READER_JOIN_TIMEOUT: Duration = Duration::from_millis(200);
 const GRACEFUL_QUIT_WAIT: Duration = Duration::from_millis(50);
 const STARTUP_TIMEOUT_MS: u64 = 10_000;
+static LAST_SPAWNED_PID: AtomicU32 = AtomicU32::new(0);
 
 enum ReaderMsg {
     Data(Vec<u8>),
@@ -60,10 +62,17 @@ pub struct MaudeProcess {
     stdin: Mutex<ChildStdin>,
     rx: Receiver<ReaderMsg>,
     readers: Mutex<Vec<JoinHandle<()>>>,
+    pending: Mutex<Vec<u8>>,
 }
 
 #[rustler::resource_impl]
 impl rustler::Resource for MaudeProcess {}
+
+impl Drop for MaudeProcess {
+    fn drop(&mut self) {
+        shutdown_process(self);
+    }
+}
 
 /// Probe used by `ExMaude.Backend.available?(:nif)` to detect whether
 /// Rustler has populated the native function table.
@@ -72,9 +81,29 @@ fn nif_loaded() -> bool {
     true
 }
 
+#[rustler::nif]
+fn last_spawned_pid() -> u32 {
+    LAST_SPAWNED_PID.load(Ordering::Relaxed)
+}
+
 /// Start a new Maude subprocess.
 #[rustler::nif(schedule = "DirtyIo")]
 fn start(maude_path: String) -> NifResult<ResourceArc<MaudeProcess>> {
+    start_process(maude_path, STARTUP_TIMEOUT_MS)
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn start_with_timeout(
+    maude_path: String,
+    startup_timeout_ms: u64,
+) -> NifResult<ResourceArc<MaudeProcess>> {
+    start_process(maude_path, startup_timeout_ms)
+}
+
+fn start_process(
+    maude_path: String,
+    startup_timeout_ms: u64,
+) -> NifResult<ResourceArc<MaudeProcess>> {
     let mut child = Command::new(&maude_path)
         .args(["-no-banner", "-no-wrap", "-no-advise", "-interactive"])
         .stdin(Stdio::piped())
@@ -83,20 +112,22 @@ fn start(maude_path: String) -> NifResult<ResourceArc<MaudeProcess>> {
         .spawn()
         .map_err(|e| io_error(format!("spawn failed: {e}")))?;
 
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| io_error("failed to capture stdin"))?;
+    LAST_SPAWNED_PID.store(child.id(), Ordering::Relaxed);
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| io_error("failed to capture stdout"))?;
+    let Some(stdin) = child.stdin.take() else {
+        terminate_child(&mut child);
+        return Err(io_error("failed to capture stdin"));
+    };
 
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| io_error("failed to capture stderr"))?;
+    let Some(stdout) = child.stdout.take() else {
+        terminate_child(&mut child);
+        return Err(io_error("failed to capture stdout"));
+    };
+
+    let Some(stderr) = child.stderr.take() else {
+        terminate_child(&mut child);
+        return Err(io_error("failed to capture stderr"));
+    };
 
     let (tx, rx) = unbounded::<ReaderMsg>();
     let stdout_handle = spawn_reader(Box::new(stdout), tx.clone(), "stdout");
@@ -107,10 +138,13 @@ fn start(maude_path: String) -> NifResult<ResourceArc<MaudeProcess>> {
         stdin: Mutex::new(stdin),
         rx,
         readers: Mutex::new(vec![stdout_handle, stderr_handle]),
+        pending: Mutex::new(Vec::new()),
     };
 
-    // Drain the startup banner up to the first prompt with a generous deadline.
-    read_until_prompt(&process, STARTUP_TIMEOUT_MS)?;
+    if let Err(error) = read_until_prompt(&process, startup_timeout_ms) {
+        shutdown_process(&process);
+        return Err(error);
+    }
 
     Ok(ResourceArc::new(process))
 }
@@ -148,26 +182,14 @@ fn stop(process: ResourceArc<MaudeProcess>) -> NifResult<()> {
     //      hangs on a wedged child.
     //   5. Join the reader threads (bounded).
 
-    if let Ok(mut stdin) = process.stdin.lock() {
-        let _ = writeln!(stdin, "quit .");
-        let _ = stdin.flush();
-    }
-
-    thread::sleep(GRACEFUL_QUIT_WAIT);
-
-    {
-        let mut child = process.child.lock().map_err(|_| poison_error("child"))?;
-        let _ = child.kill();
-        wait_with_timeout(&mut child, READER_JOIN_TIMEOUT);
-    }
-
-    if let Ok(mut readers) = process.readers.lock() {
-        for handle in readers.drain(..) {
-            join_with_timeout(handle, READER_JOIN_TIMEOUT);
-        }
-    }
-
+    shutdown_process(&process);
     Ok(())
+}
+
+#[rustler::nif]
+fn child_pid(process: ResourceArc<MaudeProcess>) -> NifResult<u32> {
+    let child = process.child.lock().map_err(|_| poison_error("child"))?;
+    Ok(child.id())
 }
 
 fn wait_with_timeout(child: &mut Child, timeout: Duration) {
@@ -227,7 +249,11 @@ fn spawn_reader(
 /// Drain stdout chunks into a rolling buffer until `"Maude>"` is found.
 fn read_until_prompt(process: &MaudeProcess, timeout_ms: u64) -> NifResult<String> {
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
-    let mut buf: Vec<u8> = Vec::with_capacity(READER_BUF_SIZE);
+    let mut buf = process
+        .pending
+        .lock()
+        .map_err(|_| poison_error("pending"))?
+        .split_off(0);
 
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -242,6 +268,13 @@ fn read_until_prompt(process: &MaudeProcess, timeout_ms: u64) -> NifResult<Strin
                 if let Some(idx) = find_subslice(&buf, PROMPT) {
                     let prefix = &buf[..idx];
                     let text = String::from_utf8_lossy(prefix).trim().to_string();
+
+                    let remainder = buf[(idx + PROMPT.len())..].to_vec();
+                    *process
+                        .pending
+                        .lock()
+                        .map_err(|_| poison_error("pending"))? = remainder;
+
                     return Ok(text);
                 }
             }
@@ -251,6 +284,32 @@ fn read_until_prompt(process: &MaudeProcess, timeout_ms: u64) -> NifResult<Strin
             Err(RecvTimeoutError::Disconnected) => return Err(eof_error()),
         }
     }
+}
+
+fn shutdown_process(process: &MaudeProcess) {
+    if let Ok(mut stdin) = process.stdin.lock() {
+        let _ = writeln!(stdin, "quit .");
+        let _ = stdin.flush();
+    }
+
+    thread::sleep(GRACEFUL_QUIT_WAIT);
+
+    if let Ok(mut child) = process.child.lock() {
+        terminate_child(&mut child);
+    }
+
+    if let Ok(mut readers) = process.readers.lock() {
+        for handle in readers.drain(..) {
+            join_with_timeout(handle, READER_JOIN_TIMEOUT);
+        }
+    }
+}
+
+fn terminate_child(child: &mut Child) {
+    if matches!(child.try_wait(), Ok(None)) {
+        let _ = child.kill();
+    }
+    wait_with_timeout(child, READER_JOIN_TIMEOUT);
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
