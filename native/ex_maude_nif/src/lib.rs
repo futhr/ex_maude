@@ -1,7 +1,7 @@
 //! ExMaude NIF — Rust-side management of a Maude subprocess.
 //!
 //! Each `MaudeProcess` owns a child process plus a dedicated reader thread
-//! that streams raw stdout chunks onto a `crossbeam_channel`. NIF entry points
+//! that streams raw output chunks onto a `crossbeam_channel`. NIF entry points
 //! drain the channel with `recv_timeout`, which gives us per-command deadlines
 //! that `std::io` does not offer for child stdout pipes.
 //!
@@ -51,12 +51,12 @@ enum ReaderMsg {
     Eof,
 }
 
-/// Wrapper around the Maude subprocess and its two reader threads.
+/// Wrapper around the Maude subprocess and its output reader thread.
 ///
-/// We capture stdout and stderr separately on the Rust side but merge them
-/// into a single channel — Maude emits error/warning text on stderr (e.g.
-/// `Warning: no module FOO.`) which we need to surface alongside stdout
-/// to match the Port backend's `stderr_to_stdout: true` semantics.
+/// Maude's stdout and stderr share one OS pipe. Combining the descriptors in
+/// the child preserves write order: if separate reader threads were merged in
+/// user space, a prompt from stdout could overtake an error from stderr and
+/// leak that error into the following command's response.
 pub struct MaudeProcess {
     child: Mutex<Child>,
     stdin: Mutex<ChildStdin>,
@@ -104,11 +104,17 @@ fn start_process(
     maude_path: String,
     startup_timeout_ms: u64,
 ) -> NifResult<ResourceArc<MaudeProcess>> {
+    let (output_reader, output_writer) =
+        os_pipe::pipe().map_err(|e| io_error(format!("output pipe failed: {e}")))?;
+    let error_writer = output_writer
+        .try_clone()
+        .map_err(|e| io_error(format!("output pipe clone failed: {e}")))?;
+
     let mut child = Command::new(&maude_path)
         .args(["-no-banner", "-no-wrap", "-no-advise", "-interactive"])
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::from(output_writer))
+        .stderr(Stdio::from(error_writer))
         .spawn()
         .map_err(|e| io_error(format!("spawn failed: {e}")))?;
 
@@ -119,25 +125,14 @@ fn start_process(
         return Err(io_error("failed to capture stdin"));
     };
 
-    let Some(stdout) = child.stdout.take() else {
-        terminate_child(&mut child);
-        return Err(io_error("failed to capture stdout"));
-    };
-
-    let Some(stderr) = child.stderr.take() else {
-        terminate_child(&mut child);
-        return Err(io_error("failed to capture stderr"));
-    };
-
     let (tx, rx) = unbounded::<ReaderMsg>();
-    let stdout_handle = spawn_reader(Box::new(stdout), tx.clone(), "stdout");
-    let stderr_handle = spawn_reader(Box::new(stderr), tx, "stderr");
+    let output_handle = spawn_reader(Box::new(output_reader), tx, "output");
 
     let process = MaudeProcess {
         child: Mutex::new(child),
         stdin: Mutex::new(stdin),
         rx,
-        readers: Mutex::new(vec![stdout_handle, stderr_handle]),
+        readers: Mutex::new(vec![output_handle]),
         pending: Mutex::new(Vec::new()),
     };
 
@@ -224,12 +219,7 @@ fn spawn_reader(
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
-                    // Only the stdout reader announces EOF — stderr can EOF
-                    // long before stdout (Maude doesn't always write to it),
-                    // and a spurious EOF would short-circuit recv_timeout.
-                    if source == "stdout" {
-                        let _ = tx.send(ReaderMsg::Eof);
-                    }
+                    let _ = tx.send(ReaderMsg::Eof);
                     return;
                 }
                 Ok(n) => {

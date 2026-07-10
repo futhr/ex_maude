@@ -102,9 +102,11 @@ defmodule ExMaude.Backend.NIFIntegrationTest do
     end
 
     test "survives a malformed command and keeps the worker usable", %{pid: pid} do
-      _ = NIF.execute(pid, "@@@ garbage @@@ .")
-      assert NIF.alive?(pid)
-      assert {:ok, "6"} = NIF.execute(pid, "reduce in NAT : 1 + 2 + 3 .")
+      for _ <- 1..10 do
+        assert {:error, %Error{type: :syntax_error}} = NIF.execute(pid, "@@@ garbage @@@ .")
+        assert NIF.alive?(pid)
+        assert {:ok, "6"} = NIF.execute(pid, "reduce in NAT : 1 + 2 + 3 .")
+      end
     end
   end
 
