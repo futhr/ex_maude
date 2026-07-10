@@ -68,6 +68,29 @@ defmodule ExMaude.AITest do
       assert {:ok, []} = AI.detect_conflicts(rules)
     end
 
+    test "an empty jurisdiction policy disables sovereignty checking", %{maude_available: true} do
+      rules = [
+        %{
+          id: "us-routing",
+          agent_id: {"acme", "ag1"},
+          trigger: {:always},
+          invocations: [{:invoke_tool, "search", %{}, "internet_access", :us}]
+        }
+      ]
+
+      assert {:ok, conflicts} = AI.detect_conflicts(rules)
+      refute Enum.any?(conflicts, &(&1.type == :sovereignty_violation))
+    end
+
+    test "validates rules and jurisdiction options before encoding" do
+      assert {:error, %{"<index 0>" => ["rule must be a map"]}} = AI.detect_conflicts([:bad])
+
+      rules = [%{id: "r", agent_id: {"a", "b"}, trigger: {:always}, invocations: []}]
+
+      assert {:error, %ExMaude.Error{type: :validation}} =
+               AI.detect_conflicts(rules, jurisdictions: [:mars])
+    end
+
     test "detects sovereignty violation when invocation jurisdiction outside allowed",
          %{maude_available: true} do
       rules = [
@@ -84,6 +107,20 @@ defmodule ExMaude.AITest do
       {:ok, conflicts} = AI.detect_conflicts(rules, jurisdictions: [:eu, :ch])
 
       assert Enum.any?(conflicts, &(&1.type == :sovereignty_violation))
+    end
+
+    test "allows an EU sub-jurisdiction when EU is allowed", %{maude_available: true} do
+      rules = [
+        %{
+          id: "de-routing",
+          agent_id: {"acme", "ag1"},
+          trigger: {:always},
+          invocations: [{:invoke_tool, "search", %{}, "internet_access", :de}]
+        }
+      ]
+
+      assert {:ok, conflicts} = AI.detect_conflicts(rules, jurisdictions: [:eu])
+      refute Enum.any?(conflicts, &(&1.type == :sovereignty_violation))
     end
 
     test "detects approval-gate bypass on high_impact invocation without prior gate",
@@ -121,6 +158,41 @@ defmodule ExMaude.AITest do
       {:ok, conflicts} = AI.detect_conflicts(rules, jurisdictions: [:eu])
 
       refute Enum.any?(conflicts, &(&1.type == :approval_gate_bypass))
+    end
+
+    test "the documented multi-rule example completes without crashing Maude", %{
+      maude_available: true
+    } do
+      rules = [
+        %{
+          id: "approve-then-dose",
+          agent_id: {"acme", "ph-controller"},
+          trigger: {:prop_lt, "ph", {:int, 6}},
+          invocations: [
+            {:require_approval, "dosing_high_delta"},
+            {:invoke_tool, "dose_chemical", %{"chemical" => "ph_up", "ml" => 50}, "high_impact",
+             :eu}
+          ],
+          capability_grants: [{:cap, "ph_dosing", "v1"}],
+          authority_required: 2,
+          priority: 1
+        },
+        %{
+          id: "auto-dose",
+          agent_id: {"acme", "ph-controller"},
+          trigger: {:prop_lt, "ph", {:int, 5}},
+          invocations: [
+            {:invoke_tool, "dose_chemical", %{"chemical" => "ph_up", "ml" => 100}, "high_impact",
+             :eu}
+          ],
+          capability_grants: [],
+          authority_required: 0,
+          priority: 1
+        }
+      ]
+
+      assert {:ok, conflicts} = AI.detect_conflicts(rules, jurisdictions: [:eu])
+      assert Enum.any?(conflicts, &(&1.type == :approval_gate_bypass))
     end
   end
 
@@ -227,6 +299,80 @@ defmodule ExMaude.AITest do
       {:ok, conflicts} = AI.detect_pair_conflicts(rules)
 
       refute Enum.any?(conflicts, &(&1.type == :sovereignty_violation))
+    end
+
+    test "detects capability cascades and authority escalation in either order", %{
+      maude_available: true
+    } do
+      grant = %{
+        id: "grant",
+        agent_id: {"acme", "source"},
+        trigger: {:always},
+        invocations: [],
+        capability_grants: [{:cap, "deploy", "v1"}],
+        authority_required: 1
+      }
+
+      require = %{
+        id: "require",
+        agent_id: {"acme", "sink"},
+        trigger: {:capability_required, "deploy"},
+        invocations: [],
+        authority_required: 5
+      }
+
+      for rules <- [[grant, require], [require, grant]] do
+        assert {:ok, conflicts} = AI.detect_pair_conflicts(rules)
+        assert Enum.any?(conflicts, &(&1.type == :agent_loop_cascade))
+        assert Enum.any?(conflicts, &(&1.type == :authority_escalation))
+      end
+    end
+
+    test "handles multi-capability comparisons without overflowing Maude", %{
+      maude_available: true
+    } do
+      rules = [
+        %{
+          id: "pack-a",
+          agent_id: {"acme", "a"},
+          trigger: {:always},
+          invocations: [],
+          capability_grants: [{:cap, "search", "v1"}, {:cap, "read", "v1"}],
+          priority: 1
+        },
+        %{
+          id: "pack-b",
+          agent_id: {"acme", "b"},
+          trigger: {:always},
+          invocations: [],
+          capability_grants: [{:cap, "search", "v2"}, {:cap, "write", "v1"}],
+          priority: 1
+        }
+      ]
+
+      assert {:ok, conflicts} = AI.detect_pair_conflicts(rules)
+      assert Enum.any?(conflicts, &(&1.type == :capability_shadowing))
+      assert Enum.any?(conflicts, &(&1.type == :pack_tool_composition_mismatch))
+    end
+
+    test "detects conflicting required arguments for the same tool", %{maude_available: true} do
+      rules = [
+        %{
+          id: "call-a",
+          agent_id: {"acme", "agent"},
+          trigger: {:always},
+          invocations: [{:invoke_tool, "deploy", %{"region" => "eu"}, "deploy", :eu}]
+        },
+        %{
+          id: "call-b",
+          agent_id: {"acme", "agent"},
+          trigger: {:always},
+          invocations: [{:invoke_tool, "deploy", %{"region" => "us"}, "deploy", :eu}]
+        }
+      ]
+
+      assert {:ok, conflicts} = AI.detect_pair_conflicts(rules)
+      assert Enum.any?(conflicts, &(&1.type == :tool_call_conflict))
     end
   end
 

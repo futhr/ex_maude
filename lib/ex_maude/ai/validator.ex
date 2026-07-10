@@ -22,6 +22,10 @@ defmodule ExMaude.AI.Validator do
     - `:priority` — non-negative integer (default 1)
   """
 
+  @jurisdictions [:eu, :us, :cn, :ch, :uk, :ca, :au, :other]
+  @subjurisdictions [:de, :fr, :es, :it, :nl, :se, :fi, :dk, :pl, :be, :ie, :pt, :at]
+  @all_jurisdictions @jurisdictions ++ @subjurisdictions
+
   @doc """
   Validates a single AI rule.
 
@@ -55,8 +59,7 @@ defmodule ExMaude.AI.Validator do
       ...> }
       ...>
       ...> ExMaude.AI.Validator.validate_rule(rule)
-      {:error,
-       ["trigger: :contains is unverifiable in ai-rules.maude (route to string-match safety net)"]}
+      {:error, ["trigger: unsupported :contains predicate; ai-rules.maude does not implement it"]}
   """
   @spec validate_rule(term()) :: :ok | {:error, [String.t()]}
   def validate_rule(rule) when is_map(rule) do
@@ -95,13 +98,20 @@ defmodule ExMaude.AI.Validator do
             acc
 
           {:error, errs} ->
-            id = Map.get(rule || %{}, :id) || "<index #{idx}>"
+            id =
+              case rule do
+                %{id: id} when is_binary(id) and id != "" -> id
+                _ -> "<index #{idx}>"
+              end
+
             Map.put(acc, id, errs)
         end
       end)
 
     if failures == %{}, do: :ok, else: {:error, failures}
   end
+
+  def validate_rules(_), do: {:error, %{"rules" => ["rules must be a list"]}}
 
   defp validate_required_fields(errors, rule) do
     [:id, :agent_id, :trigger, :invocations]
@@ -191,9 +201,9 @@ defmodule ExMaude.AI.Validator do
   @spec validate_predicate(term()) :: :ok | {:error, String.t()}
   def validate_predicate({:always}), do: :ok
 
-  def validate_predicate({prop_op, key, _})
+  def validate_predicate({prop_op, key, value})
       when prop_op in [:prop_eq, :prop_gt, :prop_lt, :prop_gte, :prop_lte] and is_binary(key) do
-    :ok
+    validate_value(value)
   end
 
   def validate_predicate({:capability_required, name}) when is_binary(name) and name != "",
@@ -209,8 +219,8 @@ defmodule ExMaude.AI.Validator do
   def validate_predicate({:authority_at_least, n}) when is_integer(n) and n >= 0, do: :ok
   def validate_predicate({:authority_required, n}) when is_integer(n) and n >= 0, do: :ok
 
-  def validate_predicate({:jurisdiction_allowed, j}) when is_atom(j) and not is_nil(j), do: :ok
-  def validate_predicate({:jurisdiction_forbidden, j}) when is_atom(j) and not is_nil(j), do: :ok
+  def validate_predicate({:jurisdiction_allowed, j}) when j in @all_jurisdictions, do: :ok
+  def validate_predicate({:jurisdiction_forbidden, j}) when j in @all_jurisdictions, do: :ok
 
   def validate_predicate({:latency_at_most, ms}) when is_integer(ms) and ms >= 0, do: :ok
 
@@ -228,14 +238,11 @@ defmodule ExMaude.AI.Validator do
 
   def validate_predicate({:not, p}), do: validate_predicate(p)
 
-  # Regex / contains operators are explicitly unverifiable in the
-  # equational fragment of Maude. Surface that contract here so the
-  # caller can route to a different safety net.
   def validate_predicate({:contains, _, _}),
-    do: {:error, ":contains is unverifiable in ai-rules.maude (route to string-match safety net)"}
+    do: {:error, "unsupported :contains predicate; ai-rules.maude does not implement it"}
 
   def validate_predicate({:matches, _, _}),
-    do: {:error, ":matches is unverifiable in ai-rules.maude (route to regex safety net)"}
+    do: {:error, "unsupported :matches predicate; ai-rules.maude does not implement it"}
 
   def validate_predicate(other), do: {:error, "unsupported predicate shape: #{inspect(other)}"}
 
@@ -243,7 +250,7 @@ defmodule ExMaude.AI.Validator do
   @spec validate_invocation(term()) :: :ok | {:error, String.t()}
   def validate_invocation({:invoke_tool, name, args, cap_required, jurisdiction})
       when is_binary(name) and name != "" and is_map(args) and is_binary(cap_required) and
-             is_atom(jurisdiction) and not is_nil(jurisdiction) do
+             jurisdiction in @all_jurisdictions do
     case validate_arg_map(args) do
       :ok -> :ok
       {:error, msg} -> {:error, "invoke_tool args: #{msg}"}
@@ -285,7 +292,7 @@ defmodule ExMaude.AI.Validator do
       when is_integer(lo) and is_integer(hi) and lo >= 0 and hi >= lo,
       do: :ok
 
-  def validate_value({:jurisdiction, j}) when is_atom(j) and not is_nil(j), do: :ok
+  def validate_value({:jurisdiction, j}) when j in @all_jurisdictions, do: :ok
   def validate_value(nil), do: :ok
 
   def validate_value(s) when is_binary(s), do: :ok
@@ -293,4 +300,22 @@ defmodule ExMaude.AI.Validator do
   def validate_value(b) when is_boolean(b), do: :ok
 
   def validate_value(other), do: {:error, "unsupported value shape: #{inspect(other)}"}
+
+  @doc false
+  @spec validate_jurisdictions(term()) :: :ok | {:error, ExMaude.Error.t()}
+  def validate_jurisdictions(jurisdictions) when is_list(jurisdictions) do
+    if Enum.all?(jurisdictions, &(&1 in @all_jurisdictions)) do
+      :ok
+    else
+      {:error,
+       ExMaude.Error.new(
+         :validation,
+         "jurisdictions must use the supported Maude jurisdiction enumeration"
+       )}
+    end
+  end
+
+  def validate_jurisdictions(_) do
+    {:error, ExMaude.Error.new(:validation, "jurisdictions must be a list")}
+  end
 end

@@ -167,12 +167,17 @@ defmodule ExMaude.AI.ValidatorTest do
                )
     end
 
-    test "marks contains/matches as unverifiable" do
+    test "marks contains/matches as unsupported" do
       assert {:error, msg} = Validator.validate_predicate({:contains, "k", "needle"})
-      assert msg =~ "unverifiable"
+      assert msg =~ "unsupported"
 
       assert {:error, msg} = Validator.validate_predicate({:matches, "k", ~r/x/})
-      assert msg =~ "unverifiable"
+      assert msg =~ "unsupported"
+    end
+
+    test "rejects property values the encoder cannot represent" do
+      assert {:error, _} = Validator.validate_predicate({:prop_eq, "k", 3.14})
+      assert {:error, _} = Validator.validate_predicate({:prop_eq, "k", %{bad: true}})
     end
 
     test "rejects unknown predicate shapes" do
@@ -202,6 +207,14 @@ defmodule ExMaude.AI.ValidatorTest do
     test "rejects nil jurisdiction" do
       assert {:error, _} =
                Validator.validate_invocation({:invoke_tool, "x", %{}, "cap", nil})
+    end
+
+    test "rejects jurisdictions outside the Maude enumeration" do
+      assert {:error, _} =
+               Validator.validate_invocation({:invoke_tool, "x", %{}, "cap", :mars})
+
+      assert {:error, _} = Validator.validate_predicate({:jurisdiction_allowed, :mars})
+      assert {:error, _} = Validator.validate_value({:jurisdiction, :mars})
     end
 
     test "rejects unknown invocation shapes" do
@@ -254,6 +267,15 @@ defmodule ExMaude.AI.ValidatorTest do
 
       assert {:error, failures} = Validator.validate_rules(rules)
       assert map_size(failures) == 3
+    end
+
+    test "reports a non-map entry without raising" do
+      assert {:error, %{"<index 0>" => ["rule must be a map"]}} =
+               Validator.validate_rules([:bad])
+    end
+
+    test "rejects non-list batches" do
+      assert {:error, %{"rules" => ["rules must be a list"]}} = Validator.validate_rules(%{})
     end
   end
 

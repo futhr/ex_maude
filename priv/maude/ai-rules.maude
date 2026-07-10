@@ -87,6 +87,9 @@ fmod JURISDICTION is
   eq inJurisdictionSet(J:Jurisdiction, noJurisdiction) = false .
   eq inJurisdictionSet(J:Jurisdiction, J:Jurisdiction) = true .
   eq inJurisdictionSet(J:Jurisdiction, J:Jurisdiction ;; JS:JurisdictionSet) = true .
+  eq inJurisdictionSet(SJ:SubJurisdiction, J:Jurisdiction ;; JS:JurisdictionSet) =
+    eqJurisdiction(parentOf(SJ:SubJurisdiction), J:Jurisdiction) or
+    inJurisdictionSet(SJ:SubJurisdiction, JS:JurisdictionSet) .
   eq inJurisdictionSet(J1:Jurisdiction, J2:Jurisdiction ;; JS:JurisdictionSet) =
     eqJurisdiction(J1:Jurisdiction, J2:Jurisdiction) or inJurisdictionSet(J1:Jurisdiction, JS:JurisdictionSet) .
   eq inJurisdictionSet(J:Jurisdiction, JS:JurisdictionSet) = false [owise] .
@@ -185,10 +188,9 @@ fmod CAPABILITY is
 
   op containsCap : String CapabilitySet -> Bool .
   eq containsCap(N:String, noCap) = false .
-  eq containsCap(N:String, cap(N:String, S:String)) = true .
   eq containsCap(N:String, cap(N:String, S:String) || CS:CapabilitySet) = true .
-  eq containsCap(N:String, C:Capability || CS:CapabilitySet) = containsCap(N:String, CS:CapabilitySet) [owise] .
-  eq containsCap(N:String, C:Capability) = false [owise] .
+  eq containsCap(N:String, cap(M:String, S:String) || CS:CapabilitySet) =
+    containsCap(N:String, CS:CapabilitySet) [owise] .
 endfm
 
 *** ============================================================
@@ -215,7 +217,7 @@ fmod TOOL-INVOCATION is
   op _:_ : String PredicateValue -> ArgEntry [ctor] .
   subsort ArgEntry < ArgMap .
   op argMap : -> ArgMap [ctor] .
-  op _,,_ : ArgMap ArgMap -> ArgMap [ctor assoc comm id: argMap] .
+  op _andArg_ : ArgMap ArgMap -> ArgMap [ctor assoc comm id: argMap] .
 
   *** Tool invocation: tool name, args, required capability, optional
   *** sovereignty-bearing route, and optional approval class
@@ -434,15 +436,13 @@ fmod TOOL-CONFLICT-DETECTOR is
   *** Does an arg entry conflict with any in a map?
   op entryConflictsWithMap : ArgEntry ArgMap -> Bool .
   eq entryConflictsWithMap(E:ArgEntry, argMap) = false .
-  eq entryConflictsWithMap(E:ArgEntry, E2:ArgEntry) = argEntriesConflict(E:ArgEntry, E2:ArgEntry) .
-  eq entryConflictsWithMap(E:ArgEntry, E2:ArgEntry ,, AM:ArgMap) =
+  eq entryConflictsWithMap(E:ArgEntry, E2:ArgEntry andArg AM:ArgMap) =
     argEntriesConflict(E:ArgEntry, E2:ArgEntry) or entryConflictsWithMap(E:ArgEntry, AM:ArgMap) .
 
   *** Do two arg maps have any conflicting pinned arguments?
   op argMapsConflict : ArgMap ArgMap -> Bool .
   eq argMapsConflict(argMap, AM:ArgMap) = false .
-  eq argMapsConflict(E:ArgEntry, AM:ArgMap) = entryConflictsWithMap(E:ArgEntry, AM:ArgMap) .
-  eq argMapsConflict(E:ArgEntry ,, AM1:ArgMap, AM2:ArgMap) =
+  eq argMapsConflict(E:ArgEntry andArg AM1:ArgMap, AM2:ArgMap) =
     entryConflictsWithMap(E:ArgEntry, AM2:ArgMap) or argMapsConflict(AM1:ArgMap, AM2:ArgMap) .
 
   *** Do two single invocations conflict (same tool, conflicting args)?
@@ -497,20 +497,25 @@ fmod CAPABILITY-CONFLICT-DETECTOR is
   *** Do two capability sets share a capability name?
   op sharesCapName : CapabilitySet CapabilitySet -> Bool .
   eq sharesCapName(noCap, CS:CapabilitySet) = false .
-  eq sharesCapName(cap(N:String, S:String), CS:CapabilitySet) = containsCap(N:String, CS:CapabilitySet) .
   eq sharesCapName(cap(N:String, S:String) || CS1:CapabilitySet, CS2:CapabilitySet) =
     containsCap(N:String, CS2:CapabilitySet) or sharesCapName(CS1:CapabilitySet, CS2:CapabilitySet) .
 
   *** Do two capability sets share a name AND disagree on shape?
+  op containsCapDifferentShape : String String CapabilitySet -> Bool .
+  eq containsCapDifferentShape(N:String, S:String, noCap) = false .
+  eq containsCapDifferentShape(N:String, S:String,
+                               cap(N:String, S2:String) || CS:CapabilitySet) =
+    not (S:String == S2:String) or
+    containsCapDifferentShape(N:String, S:String, CS:CapabilitySet) .
+  eq containsCapDifferentShape(N:String, S:String,
+                               cap(M:String, S2:String) || CS:CapabilitySet) =
+    containsCapDifferentShape(N:String, S:String, CS:CapabilitySet) [owise] .
+
   op sharesCapNameDifferentShape : CapabilitySet CapabilitySet -> Bool .
   eq sharesCapNameDifferentShape(noCap, CS:CapabilitySet) = false .
-  eq sharesCapNameDifferentShape(cap(N:String, S1:String), cap(N:String, S2:String)) =
-    not (S1:String == S2:String) .
-  eq sharesCapNameDifferentShape(cap(N:String, S1:String), cap(N:String, S2:String) || CS:CapabilitySet) =
-    not (S1:String == S2:String) or sharesCapNameDifferentShape(cap(N:String, S1:String), CS:CapabilitySet) .
-  eq sharesCapNameDifferentShape(C:Capability, C2:Capability) = false [owise] .
-  eq sharesCapNameDifferentShape(C:Capability || CS1:CapabilitySet, CS2:CapabilitySet) =
-    sharesCapNameDifferentShape(C:Capability, CS2:CapabilitySet)
+  eq sharesCapNameDifferentShape(cap(N:String, S:String) || CS1:CapabilitySet,
+                                 CS2:CapabilitySet) =
+    containsCapDifferentShape(N:String, S:String, CS2:CapabilitySet)
     or sharesCapNameDifferentShape(CS1:CapabilitySet, CS2:CapabilitySet) .
 
   op detectCapabilityShadowing : AIRule AIRule -> AIConflictSet .
@@ -562,6 +567,7 @@ fmod SOVEREIGNTY-DETECTOR is
     or listHasForbiddenJurisdiction(IL:ToolInvocationList, JS:JurisdictionSet) .
 
   op detectSovereigntyViolation : AIRule JurisdictionSet -> AIConflictSet .
+  eq detectSovereigntyViolation(R:AIRule, noJurisdiction) = noAIConflict .
   eq detectSovereigntyViolation(R:AIRule, Allowed:JurisdictionSet) =
     if listHasForbiddenJurisdiction(ruleInvocations(R:AIRule), Allowed:JurisdictionSet)
     then aiConflictSingle(sovereigntyViolation, R:AIRule, "Tool invocation routes through forbidden jurisdiction")
@@ -637,9 +643,20 @@ fmod AUTHORITY-CHECK is
   *** Does R1's invocation list grant the capability R2 requires?
   *** (Reuse trigger semantics from iot-rules-style cascade detection.)
   op grantsRequired : AIRule AIRule -> Bool .
+  op authorityPredicateRequiresCap : Predicate -> String .
+  eq authorityPredicateRequiresCap(capabilityRequired(C:String)) = C:String .
+  eq authorityPredicateRequiresCap(andP(P1:Predicate, P2:Predicate)) =
+    if authorityPredicateRequiresCap(P1:Predicate) =/= ""
+    then authorityPredicateRequiresCap(P1:Predicate)
+    else authorityPredicateRequiresCap(P2:Predicate)
+    fi .
+  eq authorityPredicateRequiresCap(P:Predicate) = "" [owise] .
+
   eq grantsRequired(R1:AIRule, R2:AIRule) =
     eqTenantId(tenantOf(ruleAgent(R1:AIRule)), tenantOf(ruleAgent(R2:AIRule))) and
-    sharesCapName(ruleCapabilityGrants(R1:AIRule), ruleCapabilityGrants(R2:AIRule)) .
+    authorityPredicateRequiresCap(ruleTrigger(R2:AIRule)) =/= "" and
+    containsCap(authorityPredicateRequiresCap(ruleTrigger(R2:AIRule)),
+                ruleCapabilityGrants(R1:AIRule)) .
 
   op detectAuthorityEscalation : AIRule AIRule -> AIConflictSet .
   eq detectAuthorityEscalation(R1:AIRule, R2:AIRule) =
@@ -709,7 +726,9 @@ fmod AI-CONFLICT-DETECTOR is
     detectCapabilityShadowing(R1:AIRule, R2:AIRule) ||c||
     detectPackToolCompositionMismatch(R1:AIRule, R2:AIRule) ||c||
     detectAuthorityEscalation(R1:AIRule, R2:AIRule) ||c||
-    detectAgentLoopCascade(R1:AIRule, R2:AIRule) .
+    detectAuthorityEscalation(R2:AIRule, R1:AIRule) ||c||
+    detectAgentLoopCascade(R1:AIRule, R2:AIRule) ||c||
+    detectAgentLoopCascade(R2:AIRule, R1:AIRule) .
 
   *** Per-rule single-rule detection (sovereignty, approval-gate)
   op detectSingleRuleConflicts : AIRule JurisdictionSet -> AIConflictSet .

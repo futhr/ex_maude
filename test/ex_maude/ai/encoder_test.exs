@@ -287,7 +287,8 @@ defmodule ExMaude.AI.EncoderTest do
 
   describe "encode_value/1 edge cases" do
     test "rejects bare floats by raising FunctionClauseError" do
-      assert_raise FunctionClauseError, fn -> Encoder.encode_value(3.14) end
+      unsupported = :erlang.binary_to_term(:erlang.term_to_binary(3.14))
+      assert_raise FunctionClauseError, fn -> Encoder.encode_value(unsupported) end
     end
 
     test "encodes intVal for zero" do
@@ -374,23 +375,23 @@ defmodule ExMaude.AI.EncoderTest do
     end
 
     test "single-key map omits separator" do
-      assert Encoder.encode_arg_map(%{"k" => {:int, 1}}) == ~s|"k" : intVal("1")|
+      assert Encoder.encode_arg_map(%{"k" => {:int, 1}}) == ~s|("k" : intVal("1"))|
     end
 
     test "multi-key map sorts keys deterministically" do
       assert Encoder.encode_arg_map(%{"b" => {:int, 2}, "a" => {:int, 1}}) ==
-               ~s|"a" : intVal("1") ,, "b" : intVal("2")|
+               ~s|("a" : intVal("1")) andArg ("b" : intVal("2"))|
     end
 
     test "stringifies non-binary keys via to_string/1" do
       assert Encoder.encode_arg_map(%{:atom_key => {:str, "v"}}) ==
-               ~s|"atom_key" : strVal("v")|
+               ~s|("atom_key" : strVal("v"))|
     end
 
     test "accepts bare scalars and wraps via encode_value" do
-      assert Encoder.encode_arg_map(%{"k" => "plain"}) == ~s|"k" : strVal("plain")|
-      assert Encoder.encode_arg_map(%{"k" => 7}) == ~s|"k" : intVal("7")|
-      assert Encoder.encode_arg_map(%{"k" => true}) == ~s|"k" : boolVal(true)|
+      assert Encoder.encode_arg_map(%{"k" => "plain"}) == ~s|("k" : strVal("plain"))|
+      assert Encoder.encode_arg_map(%{"k" => 7}) == ~s|("k" : intVal("7"))|
+      assert Encoder.encode_arg_map(%{"k" => true}) == ~s|("k" : boolVal(true))|
     end
   end
 

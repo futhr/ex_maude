@@ -12,7 +12,7 @@ defmodule ExMaude.AI do
 
   ## Conflict types
 
-  Ten conflict types are detected:
+  Seven conflict types are detected:
 
     1. `:tool_call_conflict` — same agent, same tool, conflicting
        required arguments
@@ -20,24 +20,17 @@ defmodule ExMaude.AI do
        at equal priority within a tenant
     3. `:pack_tool_composition_mismatch` — same capability name with
        mismatched type-shape signatures
-    4. `:budget_cascade` — chained rule firings exceed tenant budget
-       under bounded simulation (search-based, not yet wired up)
-    5. `:cost_ceiling_infeasibility` — tenant policy intersection
-       leaves an empty cost-acceptable provider set (search-based)
-    6. `:sovereignty_violation` — tool invocation routes through a
+    4. `:sovereignty_violation` — tool invocation routes through a
        jurisdiction outside the tenant's allowed set
-    7. `:authority_escalation` — rule grants a capability that
+    5. `:authority_escalation` — rule grants a capability that
        another rule requires at higher authority
-    8. `:approval_gate_bypass` — high-impact invocation reachable
+    6. `:approval_gate_bypass` — high-impact invocation reachable
        without traversing an approval gate
-    9. `:agent_loop_cascade` — one rule's capability grants another
+    7. `:agent_loop_cascade` — one rule's capability grants another
        rule's required capability (cascade edge)
-   10. `:provider_routing_infeasibility` — empty action space under
-       tenant policy intersection
 
-  Conflicts 1, 2, 3, 6, 7, 8, 9 are pure-equational and run on the
-  hot path. Conflicts 4, 5, 10 require state-space search via
-  `ExMaude.search/4` and are not yet exposed on the public API.
+  Budget, cost-ceiling, and provider-routing terms are reserved in the
+  bundled Maude model, but no public detector currently implements them.
 
   ## Usage
 
@@ -156,10 +149,10 @@ defmodule ExMaude.AI do
       {:ok, conflicts} = ExMaude.AI.detect_conflicts(rules, jurisdictions: [:eu, :ch])
   """
   @spec detect_conflicts([ai_rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
-  def detect_conflicts(rules, opts \\ []) when is_list(rules) do
+  def detect_conflicts(rules, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 10_000)
     jurisdictions = Keyword.get(opts, :jurisdictions, [])
-    rule_count = length(rules)
+    rule_count = if is_list(rules), do: length(rules), else: 0
     start_time = System.monotonic_time()
 
     :telemetry.execute(
@@ -169,7 +162,9 @@ defmodule ExMaude.AI do
     )
 
     result =
-      with :ok <- ensure_ai_module_loaded(),
+      with :ok <- Validator.validate_rules(rules),
+           :ok <- Validator.validate_jurisdictions(jurisdictions),
+           :ok <- ensure_ai_module_loaded(),
            {:ok, maude_rules} <- Encoder.encode_rules(rules),
            jurisdiction_set = Encoder.encode_jurisdiction_set(jurisdictions),
            {:ok, output} <- run_detection(maude_rules, jurisdiction_set, timeout) do
@@ -203,7 +198,8 @@ defmodule ExMaude.AI do
   def detect_pair_conflicts(rules, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 10_000)
 
-    with :ok <- ensure_ai_module_loaded(),
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- ensure_ai_module_loaded(),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command =
            "reduce in AI-CONFLICT-DETECTOR : detectAllPairConflicts(#{maude_rules}) .",
@@ -225,7 +221,9 @@ defmodule ExMaude.AI do
     timeout = Keyword.get(opts, :timeout, 10_000)
     jurisdictions = Keyword.get(opts, :jurisdictions, [])
 
-    with :ok <- ensure_ai_module_loaded(),
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- Validator.validate_jurisdictions(jurisdictions),
+         :ok <- ensure_ai_module_loaded(),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          jurisdiction_set = Encoder.encode_jurisdiction_set(jurisdictions),
          command =

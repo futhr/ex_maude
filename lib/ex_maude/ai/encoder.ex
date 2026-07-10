@@ -184,7 +184,10 @@ defmodule ExMaude.AI.Encoder do
   @spec encode_invocation(ExMaude.AI.tool_invocation()) :: String.t()
   def encode_invocation({:invoke_tool, name, args, cap_required, jurisdiction})
       when is_binary(name) and is_map(args) and is_binary(cap_required) and is_atom(jurisdiction) do
-    "invokeTool(tool(#{encode_string(name)}), #{encode_arg_map(args)}, #{encode_string(cap_required)}, #{Atom.to_string(jurisdiction)})"
+    encoded_args = encode_arg_map(args)
+    args_term = if map_size(args) == 0, do: encoded_args, else: "(#{encoded_args})"
+
+    "invokeTool(tool(#{encode_string(name)}), #{args_term}, #{encode_string(cap_required)}, #{Atom.to_string(jurisdiction)})"
   end
 
   def encode_invocation({:require_approval, class}) when is_binary(class) do
@@ -217,8 +220,8 @@ defmodule ExMaude.AI.Encoder do
   def encode_arg_map(args) when is_map(args) do
     args
     |> Enum.sort()
-    |> Enum.map_join(" ,, ", fn {k, v} ->
-      "#{encode_string(to_string(k))} : #{encode_value(v)}"
+    |> Enum.map_join(" andArg ", fn {k, v} ->
+      "(#{encode_string(to_string(k))} : #{encode_value(v)})"
     end)
   end
 
