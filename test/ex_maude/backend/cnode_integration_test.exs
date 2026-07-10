@@ -7,6 +7,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
   @moduletag :cnode
   @moduletag :integration
   @moduletag timeout: 60_000
+  @fake_drip Path.expand("../../support/fake_drip_maude.sh", __DIR__)
 
   # Check prerequisites at module load time
   @cnode_available Backend.available?(:cnode) and Node.alive?()
@@ -104,6 +105,16 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
 
       test "handles timeout option", %{pid: pid} do
         assert {:ok, _} = CNode.execute(pid, "reduce in NAT : 1 + 1 .", timeout: 5000)
+      end
+
+      test "returns responses larger than the former 64 KiB bridge buffer", %{pid: pid} do
+        payload = String.duplicate("x", 100_000)
+
+        assert {:ok, result} =
+                 CNode.execute(pid, ~s|reduce in STRING : "#{payload}"|, timeout: 10_000)
+
+        assert byte_size(result) >= byte_size(payload)
+        assert result =~ String.slice(payload, 0, 1_000)
       end
     end
 
@@ -207,6 +218,18 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
         on_exit(fn -> catch_exit(CNode.stop(pid2)) end)
 
         assert {:ok, "42"} = CNode.execute(pid2, "reduce in NAT : 40 + 2 .")
+      end
+
+      test "continuous partial output cannot extend the command deadline", %{pid: pooled_pid} do
+        CNode.stop(pooled_pid)
+        Process.flag(:trap_exit, true)
+        {:ok, pid} = CNode.start_link(maude_path: @fake_drip)
+
+        started_at = System.monotonic_time(:millisecond)
+        assert {:error, %ExMaude.Error{type: :timeout}} = CNode.execute(pid, "drip", timeout: 150)
+        elapsed = System.monotonic_time(:millisecond) - started_at
+
+        assert elapsed < 700
       end
     end
 

@@ -76,29 +76,7 @@ defmodule ExMaude.Backend.CNode do
 
   @impl ExMaude.Backend
   def start_link(opts \\ []) do
-    startup_timeout = Keyword.get(opts, :startup_timeout_ms, @default_timeout)
-    preload_modules = Keyword.get(opts, :preload_modules, config_preload_modules())
-
-    case GenServer.start_link(__MODULE__, opts) do
-      {:ok, server} ->
-        result =
-          case await_connection(server, startup_timeout) do
-            :ok -> preload_modules(server, preload_modules)
-            {:error, _} = error -> error
-          end
-
-        case result do
-          :ok ->
-            {:ok, server}
-
-          {:error, _} = error ->
-            safe_stop(server)
-            error
-        end
-
-      other ->
-        other
-    end
+    GenServer.start_link(__MODULE__, opts)
   end
 
   @impl ExMaude.Backend
@@ -153,17 +131,30 @@ defmodule ExMaude.Backend.CNode do
   def init(opts) do
     maude_path = opts[:maude_path] || Binary.find() || "maude"
     cookie = opts[:cookie] || get_cookie()
+    startup_timeout = opts[:startup_timeout_ms] || @default_timeout
+    preload_modules = opts[:preload_modules] || config_preload_modules()
 
     state = %__MODULE__{
       maude_path: maude_path,
       cookie: cookie
     }
 
-    case start_cnode(state) do
+    result =
+      with {:ok, state} <- start_cnode(state),
+           {:ok, state} <- await_bridge_ready(state, startup_timeout),
+           :ok <- preload_cnode_modules(state, preload_modules) do
+        {:ok, state}
+      end
+
+    case result do
       {:ok, state} ->
         schedule_health_check()
         emit_telemetry(:start, %{maude_path: maude_path})
         {:ok, state}
+
+      {:error, reason, state} ->
+        cleanup_cnode(state)
+        {:stop, {:cnode_start_failed, reason}}
 
       {:error, reason} ->
         {:stop, {:cnode_start_failed, reason}}
@@ -292,30 +283,7 @@ defmodule ExMaude.Backend.CNode do
   @impl GenServer
   def terminate(reason, state) do
     Logger.debug("ExMaude.Backend.CNode terminating: #{inspect(reason)}")
-
-    # Fire-and-forget: when the bridge's message loop next wakes up (at
-    # latest after an in-flight read times out) it exits its loop and
-    # tears Maude down with it.
-    if state.connected do
-      send({:any, state.cnode_name}, :stop)
-    end
-
-    if state.port do
-      try do
-        Port.close(state.port)
-      rescue
-        ArgumentError -> :ok
-      end
-    end
-
-    # SIGTERM (not KILL) as a prompt backstop: the bridge traps it, exits
-    # its loop, and stop_maude() reaps the Maude child. SIGKILL would
-    # orphan a possibly CPU-pegged Maude.
-    if state.os_pid do
-      System.cmd("kill", ["-TERM", Integer.to_string(state.os_pid)], stderr_to_stdout: true)
-    end
-
-    :ok
+    cleanup_cnode(state)
   rescue
     _ -> :ok
   end
@@ -458,7 +426,7 @@ defmodule ExMaude.Backend.CNode do
   defp generate_node_name do
     # Distribution node names are atoms. Reuse a bounded set of slots so
     # worker restarts cannot grow the VM's atom table without limit.
-    id = rem(:erlang.unique_integer([:positive]), @node_name_slots)
+    id = rem(:erlang.unique_integer([:positive, :monotonic]), @node_name_slots)
     node_str = "maude_bridge_#{id}"
     # Extract hostname from current node (e.g., test@studio -> studio)
     hostname =
@@ -472,42 +440,93 @@ defmodule ExMaude.Backend.CNode do
     {node_str, node_atom}
   end
 
-  defp await_connection(server, timeout) do
+  defp await_bridge_ready(state, timeout) do
     deadline = System.monotonic_time(:millisecond) + timeout
-    await_connection_until(server, deadline)
+    await_bridge_ready_until(state, deadline, "")
   end
 
-  defp await_connection_until(server, deadline) do
-    cond do
-      alive?(server) ->
-        :ok
+  defp await_bridge_ready_until(state, deadline, output) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
 
-      not Process.alive?(server) ->
-        {:error, :cnode_start_failed}
+    receive do
+      {port, {:data, data}} when port == state.port ->
+        output = output <> to_string(data)
 
-      System.monotonic_time(:millisecond) >= deadline ->
-        {:error, :cnode_connection_timeout}
+        if String.contains?(output, "READY") do
+          connect_cnode(state, @connect_retries)
+        else
+          await_bridge_ready_until(state, deadline, output)
+        end
 
-      true ->
-        Process.sleep(25)
-        await_connection_until(server, deadline)
+      {port, {:exit_status, status}} when port == state.port ->
+        {:error, {:cnode_exit, status, String.trim(output)}, state}
+    after
+      remaining -> {:error, :cnode_connection_timeout, state}
     end
   end
 
-  defp preload_modules(_, []), do: :ok
+  defp connect_cnode(state, 0), do: {:error, :connect_retries_exhausted, state}
 
-  defp preload_modules(server, [path | paths]) do
-    case load_file(server, path) do
-      :ok -> preload_modules(server, paths)
-      {:error, reason} -> {:error, {:preload_failed, path, reason}}
+  defp connect_cnode(state, retries_left) do
+    if Node.connect(state.cnode_name) do
+      Node.monitor(state.cnode_name, true)
+      {:ok, %{state | connected: true}}
+    else
+      Process.sleep(@connect_retry_delay)
+      connect_cnode(state, retries_left - 1)
     end
   end
 
-  defp safe_stop(server) do
-    if Process.alive?(server), do: GenServer.stop(server, :normal)
+  defp preload_cnode_modules(_, []), do: :ok
+
+  defp preload_cnode_modules(state, [path | paths]) do
+    case send_cnode_command(state.cnode_name, {:load_file, path}, @default_timeout) do
+      :ok ->
+        preload_cnode_modules(state, paths)
+
+      {:ok, _} ->
+        preload_cnode_modules(state, paths)
+
+      {:error, output} when is_binary(output) ->
+        {:error, {:preload_failed, path, Error.from_output(output)}, state}
+
+      {:error, reason} ->
+        {:error, {:preload_failed, path, reason}, state}
+    end
+  end
+
+  defp cleanup_cnode(state) do
+    if state.connected, do: send({:any, state.cnode_name}, :stop)
+
+    if state.os_pid do
+      System.cmd("kill", ["-TERM", Integer.to_string(state.os_pid)], stderr_to_stdout: true)
+      wait_for_os_exit(state.os_pid, 200)
+    end
+
+    if state.port do
+      try do
+        Port.close(state.port)
+      rescue
+        ArgumentError -> :ok
+      end
+    end
+
     :ok
-  catch
-    :exit, _ -> :ok
+  rescue
+    _ -> :ok
+  end
+
+  defp wait_for_os_exit(_, 0), do: :ok
+
+  defp wait_for_os_exit(os_pid, attempts) do
+    case System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true) do
+      {_, 0} ->
+        Process.sleep(10)
+        wait_for_os_exit(os_pid, attempts - 1)
+
+      _ ->
+        :ok
+    end
   end
 
   defp normalize_command(command) do

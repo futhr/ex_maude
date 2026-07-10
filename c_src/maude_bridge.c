@@ -27,8 +27,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <stdint.h>
 #include <sys/wait.h>
 #include <sys/select.h>
+#include <time.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/types.h>
@@ -40,12 +42,16 @@
 
 /* Forward declarations */
 static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf);
-static int read_until_prompt(char *output, int max_len, int timeout_ms);
+static int read_until_prompt(char **output, size_t *capacity, int timeout_ms);
 static int send_command(const char *cmd, size_t len);
+static int write_all(int fd, const char *data, size_t len);
+static int64_t monotonic_ms(void);
+static int reap_with_timeout(pid_t pid, int timeout_ms);
 static void encode_ok(ei_x_buff *response, const char *data, int data_len);
 static void encode_error(ei_x_buff *response, const char *reason);
 
-#define BUFSIZE 65536
+#define INITIAL_BUFSIZE 65536
+#define MAX_RESPONSE_SIZE (16 * 1024 * 1024)
 #define PROMPT "Maude>"
 #define PROMPT_LEN 6
 
@@ -54,8 +60,6 @@ typedef struct {
     pid_t pid;
     int stdin_fd;
     int stdout_fd;
-    char buffer[BUFSIZE];
-    int buffer_len;
 } MaudeProcess;
 
 static MaudeProcess maude = {0};
@@ -126,8 +130,6 @@ static int start_maude(const char *maude_path) {
 
     maude.stdin_fd = stdin_pipe[1];
     maude.stdout_fd = stdout_pipe[0];
-    maude.buffer_len = 0;
-
     /* Set stdout to non-blocking for select() */
     set_nonblocking(maude.stdout_fd);
 
@@ -142,15 +144,17 @@ static void stop_maude(void) {
         /* GCC ignores (void) cast for warn_unused_result; use pragma */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-result"
-        write(maude.stdin_fd, quit_cmd, strlen(quit_cmd));
+        write_all(maude.stdin_fd, quit_cmd, strlen(quit_cmd));
 #pragma GCC diagnostic pop
 
-        /* Give it a moment to exit gracefully */
-        usleep(100000);
+        if (!reap_with_timeout(maude.pid, 100)) {
+            kill(maude.pid, SIGTERM);
 
-        /* Force kill if still running */
-        kill(maude.pid, SIGTERM);
-        waitpid(maude.pid, NULL, 0);
+            if (!reap_with_timeout(maude.pid, 200)) {
+                kill(maude.pid, SIGKILL);
+                waitpid(maude.pid, NULL, 0);
+            }
+        }
 
         close(maude.stdin_fd);
         close(maude.stdout_fd);
@@ -158,17 +162,29 @@ static void stop_maude(void) {
     }
 }
 
+static int reap_with_timeout(pid_t pid, int timeout_ms) {
+    int64_t deadline = monotonic_ms() + timeout_ms;
+
+    while (monotonic_ms() < deadline) {
+        pid_t result = waitpid(pid, NULL, WNOHANG);
+        if (result == pid || (result < 0 && errno == ECHILD)) return 1;
+        if (result < 0 && errno != EINTR) return 0;
+        usleep(5000);
+    }
+
+    return 0;
+}
+
 /* Send command to Maude */
 static int send_command(const char *cmd, size_t len) {
-    ssize_t written = write(maude.stdin_fd, cmd, len);
-    if (written < 0) {
+    if (write_all(maude.stdin_fd, cmd, len) < 0) {
         perror("write to maude");
         return -1;
     }
 
     /* Ensure command ends with newline */
     if (len == 0 || cmd[len - 1] != '\n') {
-        if (write(maude.stdin_fd, "\n", 1) < 0) {
+        if (write_all(maude.stdin_fd, "\n", 1) < 0) {
             perror("write newline to maude");
             return -1;
         }
@@ -177,31 +193,62 @@ static int send_command(const char *cmd, size_t len) {
     return 0;
 }
 
+static int write_all(int fd, const char *data, size_t len) {
+    size_t total = 0;
+
+    while (total < len) {
+        ssize_t written = write(fd, data + total, len - total);
+        if (written < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        total += (size_t)written;
+    }
+
+    return 0;
+}
+
+static int64_t monotonic_ms(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) < 0) return -1;
+    return ((int64_t)now.tv_sec * 1000) + (now.tv_nsec / 1000000);
+}
+
 /* Read from Maude until we see the prompt
  * Returns: >= 0 on success (number of output bytes before prompt)
  *          -1 on timeout (no prompt found)
  *          -2 on read error
  *          -3 on EOF (Maude closed)
  */
-static int read_until_prompt(char *output, int max_len, int timeout_ms) {
-    int total = 0;
+static int read_until_prompt(char **output, size_t *capacity, int timeout_ms) {
+    size_t total = 0;
     fd_set readfds;
     struct timeval tv;
     int prompt_found = 0;
+    int64_t deadline = monotonic_ms() + timeout_ms;
 
-    while (total < max_len - 1) {
+    if (*output == NULL) {
+        *capacity = INITIAL_BUFSIZE;
+        *output = malloc(*capacity);
+        if (*output == NULL) return -4;
+    }
+
+    while (running && total < MAX_RESPONSE_SIZE) {
+        int64_t remaining = deadline - monotonic_ms();
+        if (remaining <= 0) break;
+
         FD_ZERO(&readfds);
         FD_SET(maude.stdout_fd, &readfds);
 
-        tv.tv_sec = timeout_ms / 1000;
-        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        tv.tv_sec = (long)(remaining / 1000);
+        tv.tv_usec = (long)((remaining % 1000) * 1000);
 
         int ready = select(maude.stdout_fd + 1, &readfds, NULL, NULL, &tv);
 
         if (ready < 0) {
             if (errno == EINTR) continue;
             perror("select");
-            output[total] = '\0';
+            (*output)[total] = '\0';
             return -2;  /* Read error */
         }
 
@@ -216,84 +263,93 @@ static int read_until_prompt(char *output, int max_len, int timeout_ms) {
         if (n < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) continue;
             perror("read from maude");
-            output[total] = '\0';
+            (*output)[total] = '\0';
             return -2;  /* Read error */
         }
 
         if (n == 0) {
             /* EOF - Maude closed */
-            output[total] = '\0';
+            (*output)[total] = '\0';
             return -3;
         }
 
-        /* Append to output buffer */
-        int copy_len = (total + n > max_len - 1) ? (max_len - 1 - total) : (int)n;
-        memcpy(output + total, buf, copy_len);
-        total += copy_len;
+        size_t needed = total + (size_t)n + 1;
+        if (needed > MAX_RESPONSE_SIZE) return -4;
+
+        if (needed > *capacity) {
+            size_t new_capacity = *capacity;
+            while (new_capacity < needed) new_capacity *= 2;
+            if (new_capacity > MAX_RESPONSE_SIZE) new_capacity = MAX_RESPONSE_SIZE;
+
+            char *resized = realloc(*output, new_capacity);
+            if (resized == NULL) return -4;
+            *output = resized;
+            *capacity = new_capacity;
+        }
+
+        memcpy(*output + total, buf, (size_t)n);
+        total += (size_t)n;
 
         /* Check for prompt - search entire buffer for small buffers,
          * or just the tail for large buffers (optimization) */
-        output[total] = '\0';
+        (*output)[total] = '\0';
         
-        if (strstr(output, PROMPT) != NULL) {
+        if (strstr(*output, PROMPT) != NULL) {
             /* Found prompt, remove it from output */
-            char *prompt_pos = strstr(output, PROMPT);
+            char *prompt_pos = strstr(*output, PROMPT);
             if (prompt_pos != NULL) {
                 *prompt_pos = '\0';
-                total = (int)(prompt_pos - output);
+                total = (size_t)(prompt_pos - *output);
             }
             prompt_found = 1;
             break;
         }
     }
 
-    output[total] = '\0';
+    (*output)[total] = '\0';
 
     /* Trim leading/trailing whitespace */
-    while (total > 0 && (output[total-1] == '\n' || output[total-1] == '\r' || output[total-1] == ' ')) {
-        output[--total] = '\0';
+    while (total > 0 && ((*output)[total-1] == '\n' || (*output)[total-1] == '\r' || (*output)[total-1] == ' ')) {
+        (*output)[--total] = '\0';
     }
 
-    char *start = output;
+    char *start = *output;
     while (*start == '\n' || *start == '\r' || *start == ' ') {
         start++;
     }
 
-    if (start != output) {
-        memmove(output, start, strlen(start) + 1);
-        total = (int)strlen(output);
+    if (start != *output) {
+        memmove(*output, start, strlen(start) + 1);
+        total = strlen(*output);
     }
 
     if (!prompt_found) {
         return -1;  /* Timeout without finding prompt */
     }
 
-    return total;  /* Success - return output length (may be 0) */
+    return (int)total;  /* Success - return output length (may be 0) */
 }
 
 /* Wait for initial Maude prompt after startup */
 static int wait_for_ready(void) {
-    char buf[BUFSIZE];
-    
-    /* With -no-banner, Maude may not output anything until we send a command.
-     * Send a simple newline to trigger the prompt. */
-    /* GCC ignores (void) cast for warn_unused_result; use pragma */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-result"
-    write(maude.stdin_fd, "\n", 1);
-#pragma GCC diagnostic pop
-    
-    int result = read_until_prompt(buf, BUFSIZE, 10000);
+    char *buf = NULL;
+    size_t capacity = 0;
+
+    /* Interactive Maude emits its initial prompt without input. Sending a
+     * newline here races that prompt and can leave a second empty response in
+     * the pipe, where it would be mistaken for the first real command. */
+    int result = read_until_prompt(&buf, &capacity, 10000);
     if (result >= 0) {
         fprintf(stderr, "Maude ready (startup output %d bytes): '%s'\n", result, buf);
     } else if (result == -1) {
         fprintf(stderr, "Maude startup: timeout waiting for prompt (no 'Maude>' found)\n");
-        fprintf(stderr, "Partial output received: '%s'\n", buf);
+        fprintf(stderr, "Partial output received: '%s'\n", buf == NULL ? "" : buf);
     } else if (result == -2) {
         fprintf(stderr, "Maude startup: read error\n");
     } else if (result == -3) {
         fprintf(stderr, "Maude startup: process closed (EOF)\n");
     }
+    free(buf);
     return result;
 }
 
@@ -412,18 +468,20 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
         free(command);
 
         /* Read response up to the caller's deadline */
-        char output[BUFSIZE];
-        int out_len = read_until_prompt(output, BUFSIZE, clamp_timeout(timeout_ms));
+        char *output = NULL;
+        size_t output_capacity = 0;
+        int out_len = read_until_prompt(&output, &output_capacity, clamp_timeout(timeout_ms));
 
         if (out_len == -1) {
             encode_error(&response, "read_timeout");
         } else if (out_len == -3) {
             encode_error(&response, "maude_eof");
         } else if (out_len < 0) {
-            encode_error(&response, "read_failed");
+            encode_error(&response, out_len == -4 ? "response_too_large" : "read_failed");
         } else {
             encode_ok(&response, output, out_len);
         }
+        free(output);
 
     } else if (strcmp(cmd, "ping") == 0) {
         ei_x_encode_atom(&response, "pong");
@@ -467,15 +525,16 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
         free(path);
 
         /* Read response */
-        char output[BUFSIZE];
-        int out_len = read_until_prompt(output, BUFSIZE, clamp_timeout(timeout_ms));
+        char *output = NULL;
+        size_t output_capacity = 0;
+        int out_len = read_until_prompt(&output, &output_capacity, clamp_timeout(timeout_ms));
 
         if (out_len == -1) {
             encode_error(&response, "read_timeout");
         } else if (out_len == -3) {
             encode_error(&response, "maude_eof");
         } else if (out_len < 0) {
-            encode_error(&response, "read_failed");
+            encode_error(&response, out_len == -4 ? "response_too_large" : "read_failed");
         } else {
             /* Check for errors in output */
             if (strstr(output, "Error") != NULL || strstr(output, "Warning") != NULL) {
@@ -486,6 +545,7 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
                 ei_x_encode_atom(&response, "ok");
             }
         }
+        free(output);
 
     } else {
         encode_error(&response, "unknown_command");
@@ -588,9 +648,9 @@ int main(int argc, char **argv) {
 
     /* Connect to Erlang node with retry logic */
     fprintf(stderr, "Connecting to Erlang node: %s (with retry)\n", erlang_node);
-    int fd = connect_with_retry(&ec, erlang_node, 5);  /* 5 retries */
+    int fd = connect_with_retry(&ec, erlang_node, 10);
     if (fd < 0) {
-        fprintf(stderr, "Failed to connect to Erlang node after 5 retries: %s (errno: %d)\n", 
+        fprintf(stderr, "Failed to connect to Erlang node after 10 retries: %s (errno: %d)\n",
                 erlang_node, erl_errno);
         stop_maude();
         return 1;
