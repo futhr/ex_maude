@@ -45,6 +45,7 @@ defmodule ExMaude.Backend.CNode do
   @health_check_interval 5_000
   @connect_retries 10
   @connect_retry_delay 500
+  @node_name_slots 1_024
   # Grace period on top of the command timeout for the bridge's own
   # timeout reply ({Ref, {:error, :read_failed}}) to arrive before we
   # give up on the receive.
@@ -75,7 +76,29 @@ defmodule ExMaude.Backend.CNode do
 
   @impl ExMaude.Backend
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts)
+    startup_timeout = Keyword.get(opts, :startup_timeout_ms, @default_timeout)
+    preload_modules = Keyword.get(opts, :preload_modules, config_preload_modules())
+
+    case GenServer.start_link(__MODULE__, opts) do
+      {:ok, server} ->
+        result =
+          with :ok <- await_connection(server, startup_timeout),
+               :ok <- preload_modules(server, preload_modules) do
+            :ok
+          end
+
+        case result do
+          :ok ->
+            {:ok, server}
+
+          {:error, _} = error ->
+            safe_stop(server)
+            error
+        end
+
+      other ->
+        other
+    end
   end
 
   @impl ExMaude.Backend
@@ -149,7 +172,7 @@ defmodule ExMaude.Backend.CNode do
 
   @impl GenServer
   def handle_call({:execute, command, timeout}, _, %{connected: true} = state) do
-    case send_cnode_command(state.cnode_name, {:execute, command}, timeout) do
+    case send_cnode_command(state.cnode_name, {:execute, normalize_command(command)}, timeout) do
       {:ok, raw} ->
         result = Parser.parse_backend_response(raw)
         emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
@@ -433,8 +456,9 @@ defmodule ExMaude.Backend.CNode do
   @doc false
   # sobelow_skip ["DOS.BinToAtom"]
   defp generate_node_name do
-    # id is always a positive integer from :erlang.unique_integer - safe for atom creation
-    id = :erlang.unique_integer([:positive])
+    # Distribution node names are atoms. Reuse a bounded set of slots so
+    # worker restarts cannot grow the VM's atom table without limit.
+    id = rem(:erlang.unique_integer([:positive]), @node_name_slots)
     node_str = "maude_bridge_#{id}"
     # Extract hostname from current node (e.g., test@studio -> studio)
     hostname =
@@ -446,6 +470,53 @@ defmodule ExMaude.Backend.CNode do
     # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
     node_atom = :"maude_bridge_#{id}@#{hostname}"
     {node_str, node_atom}
+  end
+
+  defp await_connection(server, timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    await_connection_until(server, deadline)
+  end
+
+  defp await_connection_until(server, deadline) do
+    cond do
+      alive?(server) ->
+        :ok
+
+      not Process.alive?(server) ->
+        {:error, :cnode_start_failed}
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:error, :cnode_connection_timeout}
+
+      true ->
+        Process.sleep(25)
+        await_connection_until(server, deadline)
+    end
+  end
+
+  defp preload_modules(_server, []), do: :ok
+
+  defp preload_modules(server, [path | paths]) do
+    case load_file(server, path) do
+      :ok -> preload_modules(server, paths)
+      {:error, reason} -> {:error, {:preload_failed, path, reason}}
+    end
+  end
+
+  defp safe_stop(server) do
+    if Process.alive?(server), do: GenServer.stop(server, :normal)
+    :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp normalize_command(command) do
+    command = String.trim_trailing(command)
+    if String.ends_with?(command, "."), do: command, else: command <> " ."
+  end
+
+  defp config_preload_modules do
+    Application.get_env(:ex_maude, :preload_modules, [])
   end
 
   defp emit_telemetry(event, measurements) do

@@ -28,21 +28,27 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
     end
 
     describe "start_link/1" do
-      test "starts C-Node worker successfully" do
+      test "returns only after the C-Node worker is connected" do
         assert {:ok, pid} = CNode.start_link([])
         assert Process.alive?(pid)
+        assert CNode.alive?(pid)
+        assert {:ok, "3"} = CNode.execute(pid, "reduce in NAT : 1 + 2")
 
-        connected =
-          Enum.reduce_while(1..40, false, fn _, _ ->
-            if CNode.alive?(pid) do
-              {:halt, true}
-            else
-              Process.sleep(100)
-              {:cont, false}
-            end
-          end)
+        CNode.stop(pid)
+      end
 
-        assert connected, "C-Node failed to connect within 4 seconds"
+      test "loads configured modules before returning" do
+        path = Path.join(System.tmp_dir!(), "test_cnode_preload_#{:rand.uniform(10_000)}.maude")
+
+        File.write!(
+          path,
+          "fmod CNODE-PRELOAD is sort Answer . op answer : -> Answer . endfm"
+        )
+
+        on_exit(fn -> File.rm(path) end)
+
+        assert {:ok, pid} = CNode.start_link(preload_modules: [path])
+        assert {:ok, "answer"} = CNode.execute(pid, "reduce in CNODE-PRELOAD : answer")
 
         CNode.stop(pid)
       end
@@ -79,8 +85,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
       end
 
       test "executes simple reduce command", %{pid: pid} do
-        assert {:ok, result} = CNode.execute(pid, "reduce in NAT : 1 + 2 .")
-        assert result =~ "3"
+        assert {:ok, "3"} = CNode.execute(pid, "reduce in NAT : 1 + 2")
       end
 
       test "handles syntax errors gracefully", %{pid: pid} do
@@ -124,8 +129,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
         File.write!(path, "fmod TEST-CNODE is sort Foo . endfm")
         on_exit(fn -> File.rm(path) end)
 
-        result = CNode.load_file(pid, path)
-        assert result == :ok or match?({:ok, _}, result)
+        assert :ok = CNode.load_file(pid, path)
       end
 
       test "returns error for missing file", %{pid: pid} do
