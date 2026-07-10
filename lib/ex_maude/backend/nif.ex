@@ -214,11 +214,19 @@ defmodule ExMaude.Backend.NIF do
   @impl GenServer
   def init(opts) do
     maude_path = opts[:maude_path] || Binary.find() || "maude"
+    preload_modules = opts[:preload_modules] || config_preload_modules()
 
     case start_native(maude_path) do
       {:ok, handle} ->
-        emit_telemetry(:start, %{maude_path: maude_path})
-        {:ok, %__MODULE__{handle: handle, maude_path: maude_path}}
+        case preload_native_modules(handle, preload_modules) do
+          :ok ->
+            emit_telemetry(:start, %{maude_path: maude_path})
+            {:ok, %__MODULE__{handle: handle, maude_path: maude_path}}
+
+          {:error, reason} ->
+            Native.stop(handle)
+            {:stop, {:preload_failed, reason}}
+        end
 
       {:error, reason} ->
         {:stop, reason}
@@ -374,6 +382,22 @@ defmodule ExMaude.Backend.NIF do
     else
       command <> " ."
     end
+  end
+
+  defp preload_native_modules(_handle, []), do: :ok
+
+  defp preload_native_modules(handle, [path | paths]) do
+    with {:ok, raw} <-
+           run_native_execute(handle, normalize_command("load #{path}"), @default_timeout),
+         {:ok, _} <- Parser.parse_backend_response(raw) do
+      preload_native_modules(handle, paths)
+    else
+      {:error, reason} -> {:error, {path, reason}}
+    end
+  end
+
+  defp config_preload_modules do
+    Application.get_env(:ex_maude, :preload_modules, [])
   end
 
   defp emit_telemetry(event, measurements) do

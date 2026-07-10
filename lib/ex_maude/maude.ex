@@ -144,19 +144,10 @@ defmodule ExMaude.Maude do
   @spec load_file(Path.t()) :: :ok | {:error, Error.t()}
   def load_file(path) do
     if File.exists?(path) do
-      results =
-        Pool.broadcast(fn worker ->
-          Server.load_file(worker, path)
-        end)
-
-      if Enum.all?(results, &(&1 == :ok)) do
+      with {:ok, cached_path} <- cache_module(path),
+           :ok <- load_cached_file(cached_path) do
+        remember_preload(cached_path)
         :ok
-      else
-        # coveralls-ignore-start
-        # This branch requires a partial failure across pool workers
-        failures = Enum.reject(results, &(&1 == :ok))
-        {:error, Error.partial_load(failures)}
-        # coveralls-ignore-stop
       end
     else
       {:error, Error.file_not_found(path)}
@@ -200,6 +191,42 @@ defmodule ExMaude.Maude do
       {:error, Error.invalid_path("Generated path escapes temp directory")}
       # coveralls-ignore-stop
     end
+  end
+
+  defp load_cached_file(path) do
+    case Pool.broadcast(fn worker -> Server.load_file(worker, path) end) do
+      {:ok, results} ->
+        if Enum.all?(results, &(&1 == :ok)) do
+          :ok
+        else
+          failures = Enum.reject(results, &(&1 == :ok))
+          {:error, Error.partial_load(failures)}
+        end
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+    end
+  end
+
+  defp cache_module(path) do
+    with {:ok, source} <- File.read(path),
+         digest <- Base.encode16(:crypto.hash(:sha256, source), case: :lower),
+         cache_dir <- Path.join([System.tmp_dir!(), "ex_maude", "preloads"]),
+         :ok <- File.mkdir_p(cache_dir),
+         cached_path <- Path.join(cache_dir, digest <> ".maude"),
+         :ok <- File.write(cached_path, source, [:binary]) do
+      {:ok, cached_path}
+    else
+      {:error, reason} ->
+        {:error, Error.new(:load_error, "Could not cache Maude module: #{inspect(reason)}")}
+    end
+  end
+
+  defp remember_preload(path) do
+    :global.trans({__MODULE__, :preload_modules}, fn ->
+      modules = Application.get_env(:ex_maude, :preload_modules, [])
+      Application.put_env(:ex_maude, :preload_modules, Enum.uniq(modules ++ [path]))
+    end)
   end
 
   @doc """

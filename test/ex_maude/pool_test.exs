@@ -66,10 +66,27 @@ defmodule ExMaude.PoolTest do
   end
 
   describe "broadcast/1" do
-    test "function type requirement" do
-      # Broadcast requires a 1-arity function
-      fun = fn _ -> :ok end
-      assert is_function(fun, 1)
+    test "returns a structured error when the pool is not running" do
+      pool = :missing_ex_maude_pool
+
+      assert {:error, %Error{type: :pool_error, details: %{reason: :not_started}}} =
+               Pool.broadcast(fn _ -> :ok end, pool: pool)
+    end
+
+    test "uses the actual workers in a custom-sized pool" do
+      pool = :ex_maude_broadcast_test_pool
+
+      pool_config = [
+        name: {:local, pool},
+        worker_module: ExMaude.PoolTest.Worker,
+        size: 1,
+        max_overflow: 0
+      ]
+
+      start_supervised!({ExMaude.PoolTest.PoolOwner, {pool_config, []}})
+
+      assert {:ok, [worker]} = Pool.broadcast(& &1, pool: pool)
+      assert is_pid(worker)
     end
   end
 
@@ -164,11 +181,11 @@ defmodule ExMaude.PoolTest do
 
     @tag :integration
     test "broadcast executes on all workers" do
-      results =
-        Pool.broadcast(fn worker ->
-          assert is_pid(worker)
-          :ok
-        end)
+      assert {:ok, results} =
+               Pool.broadcast(fn worker ->
+                 assert is_pid(worker)
+                 :ok
+               end)
 
       assert is_list(results)
       assert Enum.all?(results, &(&1 == :ok))
@@ -176,10 +193,10 @@ defmodule ExMaude.PoolTest do
 
     @tag :integration
     test "broadcast returns results from all workers" do
-      results =
-        Pool.broadcast(fn worker ->
-          worker
-        end)
+      assert {:ok, results} =
+               Pool.broadcast(fn worker ->
+                 worker
+               end)
 
       assert is_list(results)
       assert results != []
@@ -481,37 +498,32 @@ defmodule ExMaude.PoolTest do
   describe "broadcast/1 with running pool" do
     @tag :integration
     test "broadcast executes on workers", %{maude_available: true} do
-      results = Pool.broadcast(fn _ -> :ok end)
+      assert {:ok, results} = Pool.broadcast(fn _ -> :ok end)
 
-      # Results should be a list with :ok for each worker
-      assert is_list(results)
       assert Enum.all?(results, &(&1 == :ok))
     end
 
     @tag :integration
     test "a slow worker yields an error without killing the caller",
          %{maude_available: true} do
-      results =
-        Pool.broadcast(
-          fn _ ->
-            Process.sleep(500)
-            :late
-          end,
-          timeout: 100
-        )
+      assert {:ok, results} =
+               Pool.broadcast(
+                 fn _ ->
+                   Process.sleep(500)
+                   :late
+                 end,
+                 timeout: 100
+               )
 
       # The caller survives; every slow call surfaces as a structured error.
-      assert is_list(results)
       assert Enum.all?(results, &match?({:error, %ExMaude.Error{type: :pool_error}}, &1))
     end
 
     @tag :integration
-    test "workers are returned to the pool after a timed-out broadcast",
+    test "a timed-out broadcast leaves the pool healthy",
          %{maude_available: true} do
       Pool.broadcast(fn _ -> Process.sleep(300) end, timeout: 100)
 
-      # Every checkout taken by the broadcast must be released — a leaked
-      # checkout would shrink the pool until exhaustion.
       available =
         Enum.reduce_while(1..50, 0, fn _, _ ->
           case Pool.status() do
@@ -579,6 +591,28 @@ defmodule ExMaude.PoolTest do
           Application.delete_env(:ex_maude, :backend)
         end
       end
+    end
+  end
+
+  defmodule Worker do
+    @moduledoc false
+    use GenServer
+
+    def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok)
+    @impl GenServer
+    def init(:ok), do: {:ok, :ok}
+  end
+
+  defmodule PoolOwner do
+    @moduledoc false
+    use GenServer
+
+    def start_link(args), do: GenServer.start_link(__MODULE__, args)
+
+    @impl GenServer
+    def init({pool_config, worker_opts}) do
+      {:ok, pool} = :poolboy.start_link(pool_config, worker_opts)
+      {:ok, pool}
     end
   end
 end

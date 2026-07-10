@@ -135,12 +135,11 @@ defmodule ExMaude.Pool do
   end
 
   @doc """
-  Broadcasts a function to all currently-available workers in the pool.
+  Broadcasts a function to every worker currently owned by the pool.
 
   Useful for operations that need to affect all Maude sessions, such as
-  loading a module. Workers that are checked out by other callers at that
-  moment are skipped by design — for module loading this is safe in
-  combination with worker `:preload_modules` configuration.
+  loading a module. Checked-out workers are included; any worker that cannot
+  perform the operation reports an error in its result slot.
 
   ## Examples
 
@@ -153,46 +152,31 @@ defmodule ExMaude.Pool do
     * `:timeout` - Per-worker time budget in ms (default: 30000). Should be
       at least as large as the command timeout used inside `fun`, so the
       worker's own command deadline fires first.
+    * `:pool` - Registered pool name (default: `:ex_maude_pool`).
 
-  A worker whose call exceeds the budget yields `{:error, _}` in the result
+  Returns `{:error, %ExMaude.Error{}}` if the pool is unavailable. A worker
+  whose call exits or exceeds the budget yields `{:error, _}` in the result
   list; the caller is never taken down.
   """
-  @spec broadcast((pid() -> result), keyword()) :: [result | {:error, Error.t()}]
+  @spec broadcast((pid() -> result), keyword()) ::
+          {:ok, [result | {:error, Error.t()}]} | {:error, Error.t()}
         when result: any()
   def broadcast(fun, opts \\ []) when is_function(fun, 1) do
     timeout = Keyword.get(opts, :timeout, 30_000)
-    pool_size = config_pool_size() + config_max_overflow()
+    pool = Keyword.get(opts, :pool, @pool_name)
 
-    # Checkout all workers (up to pool size + overflow)
-    workers =
-      for _ <- 1..pool_size do
-        try do
-          :poolboy.checkout(@pool_name, false)
-        catch
-          :exit, _ -> nil
-        end
-      end
-      |> Enum.reject(&is_nil/1)
-
-    # Run the function on every worker, then check each one back in from
-    # here. The checkin must NOT live inside the task: on_timeout kills the
-    # task brutally, skipping its after blocks, which would leak the
-    # checkout. Checking in a worker that died mid-call is a no-op for
-    # poolboy (it already replaced it on the EXIT).
-    results =
-      workers
-      |> Task.async_stream(fun, timeout: timeout, on_timeout: :kill_task, ordered: true)
-      |> Enum.zip(workers)
-      |> Enum.map(fn {result, worker} ->
-        :poolboy.checkin(@pool_name, worker)
-
-        case result do
+    with {:ok, workers} <- pool_workers(pool),
+         :ok <- ensure_workers_present(workers) do
+      results =
+        workers
+        |> Task.async_stream(fun, timeout: timeout, on_timeout: :kill_task, ordered: true)
+        |> Enum.map(fn
           {:ok, value} -> value
           {:exit, reason} -> {:error, Error.pool_error({:broadcast_failed, reason})}
-        end
-      end)
+        end)
 
-    results
+      {:ok, results}
+    end
   end
 
   @doc """
@@ -270,4 +254,25 @@ defmodule ExMaude.Pool do
   defp config_backend do
     Application.get_env(:ex_maude, :backend, :port)
   end
+
+  # Poolboy does not expose worker enumeration as a public function, but its
+  # server supports this query specifically for pool-wide operations. Using
+  # the supervisor's actual children avoids guessing from application config
+  # and includes both checked-out and overflow workers.
+  defp pool_workers(pool) do
+    workers =
+      pool
+      |> GenServer.call(:get_all_workers)
+      |> Enum.flat_map(fn
+        {_, pid, _, _} when is_pid(pid) -> [pid]
+        _ -> []
+      end)
+
+    {:ok, workers}
+  catch
+    :exit, _ -> {:error, Error.pool_error(:not_started)}
+  end
+
+  defp ensure_workers_present([]), do: {:error, Error.pool_error(:no_workers)}
+  defp ensure_workers_present(_workers), do: :ok
 end

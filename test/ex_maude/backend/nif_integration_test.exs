@@ -29,6 +29,22 @@ defmodule ExMaude.Backend.NIFIntegrationTest do
       NIF.stop(pid)
     end
 
+    test "loads configured modules before returning" do
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "test_nif_preload_#{:erlang.unique_integer([:positive])}.maude"
+        )
+
+      File.write!(path, "fmod NIF-PRELOAD is sort Answer . op answer : -> Answer . endfm")
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, pid} = NIF.start_link(preload_modules: [path])
+      assert {:ok, "answer"} = NIF.execute(pid, "reduce in NIF-PRELOAD : answer")
+
+      NIF.stop(pid)
+    end
+
     test "fails fast with invalid maude path" do
       Process.flag(:trap_exit, true)
       result = NIF.start_link(maude_path: "/nonexistent/maude")

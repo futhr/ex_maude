@@ -163,6 +163,29 @@ defmodule ExMaude.IntegrationTest do
       {:ok, output} = ExMaude.execute("show module LOADED-TEST .")
       assert String.contains?(output, "LOADED-TEST")
     end
+
+    test "loaded modules survive pool worker replacement", %{maude_available: true} do
+      path =
+        create_temp_module("fmod RELOADED-TEST is sort Answer . op answer : -> Answer . endfm")
+
+      assert :ok = ExMaude.load_file(path)
+
+      worker = ExMaude.Pool.checkout()
+      ref = Process.monitor(worker)
+      Process.exit(worker, :kill)
+      assert_receive {:DOWN, ^ref, :process, ^worker, :killed}, 1_000
+
+      assert Enum.reduce_while(1..50, false, fn _, _ ->
+               if ExMaude.Pool.status().available > 0 do
+                 {:halt, true}
+               else
+                 Process.sleep(20)
+                 {:cont, false}
+               end
+             end)
+
+      assert {:ok, "answer"} = ExMaude.reduce("RELOADED-TEST", "answer")
+    end
   end
 
   describe "load_module/1" do
