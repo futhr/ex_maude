@@ -60,7 +60,7 @@ EI_LIB := $(EI_DIR)/lib
 # Compiler settings
 # -D_REENTRANT is required for OTP 21+ to use __erl_errno_place() instead of __erl_errno symbol
 CC := cc
-CFLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations -O2 -D_REENTRANT -I$(EI_INCLUDE) -I$(ERTS_INCLUDE)
+CFLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations -O2 -D_REENTRANT -isystem $(EI_INCLUDE) -isystem $(ERTS_INCLUDE)
 LDFLAGS := -L$(EI_LIB) -lei -lpthread
 
 # Platform-specific settings

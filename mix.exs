@@ -143,6 +143,8 @@ defmodule ExMaude.MixProject do
         lib
         c_src/maude_bridge.c
         c_src/Makefile
+        c_src/.clang-format
+        c_src/.clang-tidy
         native/ex_maude_nif/src
         native/ex_maude_nif/Cargo.toml
         native/ex_maude_nif/Cargo.lock

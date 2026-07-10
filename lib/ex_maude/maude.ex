@@ -208,6 +208,10 @@ defmodule ExMaude.Maude do
     end
   end
 
+  # `path` was validated by load_file/1. The cache directory comes from the
+  # runtime and the filename is a SHA-256 digest, so neither destination
+  # component contains caller-controlled path segments.
+  # sobelow_skip ["Traversal.FileModule"]
   defp cache_module(path) do
     with {:ok, source} <- File.read(path),
          digest <- Base.encode16(:crypto.hash(:sha256, source), case: :lower),

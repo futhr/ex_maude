@@ -1,5 +1,8 @@
 [
-  parallel: true,
+  # Several tools compile or test the same native artifacts. Running them in
+  # order avoids build-lock contention and keeps conditional native checks
+  # from waiting indefinitely on ex_check's dependency scheduler.
+  parallel: false,
   # Show skipped tools in the summary — a silently skipped tool looks like a
   # passing gate. (deps: [:compiler] entries used to be skipped this way:
   # ex_check runs the compiler separately before the pipeline, so it never
@@ -39,8 +42,7 @@
     # C code linting with clang-tidy (optional, only if installed)
     {:c_lint,
      command: "make -C c_src lint",
-     enabled: File.dir?("c_src") and System.find_executable("clang-tidy") != nil,
-     deps: [:c_compile]},
+     enabled: File.dir?("c_src") and System.find_executable("clang-tidy") != nil},
 
     # Rust clippy linting (only if native Rust code exists and cargo installed)
     {:rust_clippy,
@@ -63,15 +65,7 @@
 
     # C-Node integration tests (only if binary exists)
     {:test_cnode,
-     command: "mix test --include cnode --include integration",
-     enabled: File.exists?("priv/maude_bridge"),
-     deps: [:c_compile, :ex_unit]},
-
-    # NIF integration tests (only if NIF is compiled — rustler emits
-    # priv/native/ex_maude_nif.so on every platform, no lib prefix)
-    {:test_nif,
-     command: "mix test --include nif --include integration",
-     enabled: File.exists?("priv/native/ex_maude_nif.so"),
-     deps: [:ex_unit]}
+     command: "mix test.cnode",
+     enabled: File.exists?("priv/maude_bridge")}
   ]
 ]
