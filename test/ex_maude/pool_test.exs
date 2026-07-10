@@ -598,7 +598,8 @@ defmodule ExMaude.PoolTest do
     @moduledoc false
     use GenServer
 
-    def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok)
+    @spec start_link(keyword()) :: GenServer.on_start()
+    def start_link(_), do: GenServer.start_link(__MODULE__, :ok)
     @impl GenServer
     def init(:ok), do: {:ok, :ok}
   end
@@ -607,6 +608,7 @@ defmodule ExMaude.PoolTest do
     @moduledoc false
     use GenServer
 
+    @spec start_link({keyword(), keyword()}) :: GenServer.on_start()
     def start_link(args), do: GenServer.start_link(__MODULE__, args)
 
     @impl GenServer

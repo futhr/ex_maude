@@ -225,7 +225,7 @@ defmodule ExMaude.Maude do
   defp remember_preload(path) do
     :global.trans({__MODULE__, :preload_modules}, fn ->
       modules = Application.get_env(:ex_maude, :preload_modules, [])
-      Application.put_env(:ex_maude, :preload_modules, Enum.uniq(modules ++ [path]))
+      Application.put_env(:ex_maude, :preload_modules, Enum.uniq(Enum.concat(modules, [path])))
     end)
   end
 

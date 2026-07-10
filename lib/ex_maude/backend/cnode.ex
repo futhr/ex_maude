@@ -82,9 +82,9 @@ defmodule ExMaude.Backend.CNode do
     case GenServer.start_link(__MODULE__, opts) do
       {:ok, server} ->
         result =
-          with :ok <- await_connection(server, startup_timeout),
-               :ok <- preload_modules(server, preload_modules) do
-            :ok
+          case await_connection(server, startup_timeout) do
+            :ok -> preload_modules(server, preload_modules)
+            {:error, _} = error -> error
           end
 
         case result do
@@ -494,7 +494,7 @@ defmodule ExMaude.Backend.CNode do
     end
   end
 
-  defp preload_modules(_server, []), do: :ok
+  defp preload_modules(_, []), do: :ok
 
   defp preload_modules(server, [path | paths]) do
     case load_file(server, path) do

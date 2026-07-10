@@ -384,7 +384,7 @@ defmodule ExMaude.Backend.NIF do
     end
   end
 
-  defp preload_native_modules(_handle, []), do: :ok
+  defp preload_native_modules(_, []), do: :ok
 
   defp preload_native_modules(handle, [path | paths]) do
     with {:ok, raw} <-

@@ -274,5 +274,5 @@ defmodule ExMaude.Pool do
   end
 
   defp ensure_workers_present([]), do: {:error, Error.pool_error(:no_workers)}
-  defp ensure_workers_present(_workers), do: :ok
+  defp ensure_workers_present(_), do: :ok
 end
