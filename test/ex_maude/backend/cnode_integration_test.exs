@@ -7,13 +7,13 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
   @moduletag :cnode
   @moduletag :integration
   @moduletag timeout: 60_000
-  @fake_drip Path.expand("../../support/fake_drip_maude.sh", __DIR__)
 
   # Check prerequisites at module load time
   @cnode_available Backend.available?(:cnode) and Node.alive?()
 
   if @cnode_available do
     alias ExMaude.Backend.CNode, warn: false
+    @fake_drip Path.expand("../../support/fake_drip_maude.sh", __DIR__)
 
     describe "struct" do
       test "has expected fields" do

@@ -80,7 +80,7 @@ defmodule ExMaude.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :inets, :ssl, :public_key],
+      extra_applications: [:logger],
       mod: {ExMaude.Application, []}
     ]
   end
@@ -106,15 +106,8 @@ defmodule ExMaude.MixProject do
   defp deps do
     [
       {:poolboy, "~> 1.5"},
-      {:nimble_parsec, "~> 1.4"},
       {:telemetry, "~> 1.2"},
       {:jason, "~> 1.4"},
-
-      # decimal < 3.1.0 has a DoS via unbounded exponent parsing
-      # (GHSA-rhv4-8758-jx7v). Declare it directly so the resolver enforces
-      # 3.1+ across transitive deps without `override: true` (Hex disallows
-      # overrides in published packages).
-      {:decimal, "~> 3.1"},
       # Native code compilation
       {:elixir_make, "~> 0.8", runtime: false},
       # NIF — precompiled binaries downloaded at install time
