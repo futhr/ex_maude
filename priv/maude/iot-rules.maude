@@ -193,6 +193,7 @@ endfm
 
 fmod CONFLICT-DETECTOR is
   protecting CONFLICT .
+  protecting CONVERSION .
 
   *** ============================================================
   *** ACTION CONFLICT DETECTION
@@ -228,9 +229,8 @@ fmod CONFLICT-DETECTOR is
 
   op detectStateConflict : Rule Rule -> ConflictSet .
   eq detectStateConflict(R1:Rule, R2:Rule) =
-    if eqThingId(target(R1:Rule), target(R2:Rule)) and
-       actionListsConflict(actions(R1:Rule), actions(R2:Rule))
-    then conflict(stateConflict, R1:Rule, R2:Rule, "Same thing, conflicting state changes")
+    if actionListsConflict(actions(R1:Rule), actions(R2:Rule))
+    then conflict(stateConflict, R1:Rule, R2:Rule, "Same action target and property, conflicting values")
     else noConflict
     fi .
 
@@ -270,28 +270,80 @@ fmod CONFLICT-DETECTOR is
   *** One rule's output triggers another rule (chaining)
   *** ============================================================
 
-  *** Check if an action could trigger a condition
-  op actionTriggers : Action Condition -> Bool .
-  *** setProp triggers propEq if property matches and value equals
-  eq actionTriggers(setProp(T:ThingId, P:String, V:PropertyValue),
-                    propEq(P2:String, V2:PropertyValue)) =
+  *** Numeric comparisons use the same string-backed number representation as
+  *** IOT-EXEC. Non-numeric values never satisfy numeric trigger conditions.
+  op cascadeAsFloat : String -> Float .
+  ceq cascadeAsFloat(SF:String) = float(SF:String)
+    if find(SF:String, ".", 0) =/= notFound .
+  eq cascadeAsFloat(SF:String) = float(rat(SF:String, 10)) [owise] .
+
+  ops cascadeGt cascadeLt cascadeGte cascadeLte : PropertyValue PropertyValue -> Bool .
+  eq cascadeGt(intVal(A1:String), intVal(B1:String)) =
+    cascadeAsFloat(A1:String) > cascadeAsFloat(B1:String) .
+  eq cascadeLt(intVal(A1:String), intVal(B1:String)) =
+    cascadeAsFloat(A1:String) < cascadeAsFloat(B1:String) .
+  eq cascadeGte(intVal(A1:String), intVal(B1:String)) =
+    cascadeAsFloat(A1:String) >= cascadeAsFloat(B1:String) .
+  eq cascadeLte(intVal(A1:String), intVal(B1:String)) =
+    cascadeAsFloat(A1:String) <= cascadeAsFloat(B1:String) .
+  eq cascadeGt(V1:PropertyValue, V2:PropertyValue) = false [owise] .
+  eq cascadeLt(V1:PropertyValue, V2:PropertyValue) = false [owise] .
+  eq cascadeGte(V1:PropertyValue, V2:PropertyValue) = false [owise] .
+  eq cascadeLte(V1:PropertyValue, V2:PropertyValue) = false [owise] .
+
+  *** Does assigning a property/environment value make a condition true?
+  ops propValueTriggers envValueTriggers : String PropertyValue Condition -> Bool .
+  eq propValueTriggers(P:String, V:PropertyValue, propEq(P2:String, V2:PropertyValue)) =
     P:String == P2:String and eqPropValue(V:PropertyValue, V2:PropertyValue) .
-  *** setEnv triggers envEq if property matches and value equals
-  eq actionTriggers(setEnv(P:String, V:PropertyValue),
-                    envEq(P2:String, V2:PropertyValue)) =
+  eq propValueTriggers(P:String, V:PropertyValue, propGt(P2:String, V2:PropertyValue)) =
+    P:String == P2:String and cascadeGt(V:PropertyValue, V2:PropertyValue) .
+  eq propValueTriggers(P:String, V:PropertyValue, propLt(P2:String, V2:PropertyValue)) =
+    P:String == P2:String and cascadeLt(V:PropertyValue, V2:PropertyValue) .
+  eq propValueTriggers(P:String, V:PropertyValue, propGte(P2:String, V2:PropertyValue)) =
+    P:String == P2:String and cascadeGte(V:PropertyValue, V2:PropertyValue) .
+  eq propValueTriggers(P:String, V:PropertyValue, propLte(P2:String, V2:PropertyValue)) =
+    P:String == P2:String and cascadeLte(V:PropertyValue, V2:PropertyValue) .
+  eq propValueTriggers(P:String, V:PropertyValue, and(C1:Condition, C2:Condition)) =
+    propValueTriggers(P:String, V:PropertyValue, C1:Condition) and
+    propValueTriggers(P:String, V:PropertyValue, C2:Condition) .
+  eq propValueTriggers(P:String, V:PropertyValue, or(C1:Condition, C2:Condition)) =
+    propValueTriggers(P:String, V:PropertyValue, C1:Condition) or
+    propValueTriggers(P:String, V:PropertyValue, C2:Condition) .
+  eq propValueTriggers(P:String, V:PropertyValue, C:Condition) = false [owise] .
+
+  eq envValueTriggers(P:String, V:PropertyValue, envEq(P2:String, V2:PropertyValue)) =
     P:String == P2:String and eqPropValue(V:PropertyValue, V2:PropertyValue) .
-  eq actionTriggers(A:Action, C:Condition) = false [owise] .
+  eq envValueTriggers(P:String, V:PropertyValue, envGt(P2:String, V2:PropertyValue)) =
+    P:String == P2:String and cascadeGt(V:PropertyValue, V2:PropertyValue) .
+  eq envValueTriggers(P:String, V:PropertyValue, envLt(P2:String, V2:PropertyValue)) =
+    P:String == P2:String and cascadeLt(V:PropertyValue, V2:PropertyValue) .
+  eq envValueTriggers(P:String, V:PropertyValue, and(C1:Condition, C2:Condition)) =
+    envValueTriggers(P:String, V:PropertyValue, C1:Condition) and
+    envValueTriggers(P:String, V:PropertyValue, C2:Condition) .
+  eq envValueTriggers(P:String, V:PropertyValue, or(C1:Condition, C2:Condition)) =
+    envValueTriggers(P:String, V:PropertyValue, C1:Condition) or
+    envValueTriggers(P:String, V:PropertyValue, C2:Condition) .
+  eq envValueTriggers(P:String, V:PropertyValue, C:Condition) = false [owise] .
+
+  *** Check both the changed value and the device whose property is observed.
+  op actionTriggers : Action Rule -> Bool .
+  eq actionTriggers(setProp(T:ThingId, P:String, V:PropertyValue), R:Rule) =
+    eqThingId(T:ThingId, target(R:Rule)) and
+    propValueTriggers(P:String, V:PropertyValue, trigger(R:Rule)) .
+  eq actionTriggers(setEnv(P:String, V:PropertyValue), R:Rule) =
+    envValueTriggers(P:String, V:PropertyValue, trigger(R:Rule)) .
+  eq actionTriggers(A:Action, R:Rule) = false [owise] .
 
   *** Check if any action in list could trigger condition
-  op actionListTriggers : ActionList Condition -> Bool .
-  eq actionListTriggers(nil, C:Condition) = false .
-  eq actionListTriggers(A:Action ; AL:ActionList, C:Condition) =
-    actionTriggers(A:Action, C:Condition) or actionListTriggers(AL:ActionList, C:Condition) .
+  op actionListTriggers : ActionList Rule -> Bool .
+  eq actionListTriggers(nil, R:Rule) = false .
+  eq actionListTriggers(A:Action ; AL:ActionList, R:Rule) =
+    actionTriggers(A:Action, R:Rule) or actionListTriggers(AL:ActionList, R:Rule) .
 
   *** Check if R1's actions could trigger R2
   op ruleTriggers : Rule Rule -> Bool .
   eq ruleTriggers(R1:Rule, R2:Rule) =
-    actionListTriggers(actions(R1:Rule), trigger(R2:Rule)) .
+    actionListTriggers(actions(R1:Rule), R2:Rule) .
 
   op detectStateCascade : Rule Rule -> ConflictSet .
   eq detectStateCascade(R1:Rule, R2:Rule) =
@@ -326,7 +378,7 @@ fmod CONFLICT-DETECTOR is
   op envTriggers : ActionList Condition -> Bool .
   eq envTriggers(nil, C:Condition) = false .
   eq envTriggers(setEnv(P:String, V:PropertyValue) ; AL:ActionList, C:Condition) =
-    actionTriggers(setEnv(P:String, V:PropertyValue), C:Condition) or
+    envValueTriggers(P:String, V:PropertyValue, C:Condition) or
     envTriggers(AL:ActionList, C:Condition) .
   eq envTriggers(A:Action ; AL:ActionList, C:Condition) =
     envTriggers(AL:ActionList, C:Condition) [owise] .
@@ -341,7 +393,9 @@ fmod CONFLICT-DETECTOR is
     detectStateConflict(R1:Rule, R2:Rule) |
     detectEnvConflict(R1:Rule, R2:Rule) |
     detectStateCascade(R1:Rule, R2:Rule) |
-    detectStateEnvCascade(R1:Rule, R2:Rule) .
+    detectStateCascade(R2:Rule, R1:Rule) |
+    detectStateEnvCascade(R1:Rule, R2:Rule) |
+    detectStateEnvCascade(R2:Rule, R1:Rule) .
 
   *** Detect all conflicts within a rule set
   op detectConflicts : RuleSet -> ConflictSet .

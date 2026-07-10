@@ -225,7 +225,7 @@ defmodule ExMaude.IoTTest do
         },
         %{
           id: "light-sound",
-          thing_id: "speaker-1",
+          thing_id: "light-1",
           trigger: {:prop_eq, "state", "on"},
           actions: [{:set_prop, "speaker-1", "playing", true}],
           priority: 1
@@ -236,6 +236,88 @@ defmodule ExMaude.IoTTest do
 
       cascade_conflicts = Enum.filter(conflicts, &(&1.type == :state_cascade))
       assert cascade_conflicts != []
+    end
+
+    test "detects conflicts by action target rather than rule target", %{maude_available: true} do
+      rules = [
+        %{
+          id: "sensor-a",
+          thing_id: "sensor-a",
+          trigger: {:always},
+          actions: [{:set_prop, "shared-light", "state", "on"}]
+        },
+        %{
+          id: "sensor-b",
+          thing_id: "sensor-b",
+          trigger: {:always},
+          actions: [{:set_prop, "shared-light", "state", "off"}]
+        }
+      ]
+
+      assert {:ok, conflicts} = IoT.detect_conflicts(rules)
+      assert Enum.any?(conflicts, &(&1.type == :state_conflict))
+    end
+
+    test "detects a numeric cascade in either rule order", %{maude_available: true} do
+      source = %{
+        id: "source",
+        thing_id: "sensor",
+        trigger: {:always},
+        actions: [{:set_prop, "actuator", "level", 10}]
+      }
+
+      sink = %{
+        id: "sink",
+        thing_id: "actuator",
+        trigger: {:prop_gt, "level", 5},
+        actions: [{:invoke, "actuator", "notify"}]
+      }
+
+      for rules <- [[source, sink], [sink, source]] do
+        assert {:ok, conflicts} = IoT.detect_conflicts(rules)
+        assert Enum.any?(conflicts, &(&1.type == :state_cascade))
+      end
+    end
+
+    test "does not cascade between different action and trigger devices", %{
+      maude_available: true
+    } do
+      rules = [
+        %{
+          id: "source",
+          thing_id: "sensor",
+          trigger: {:always},
+          actions: [{:set_prop, "light-a", "state", "on"}]
+        },
+        %{
+          id: "sink",
+          thing_id: "light-b",
+          trigger: {:prop_eq, "state", "on"},
+          actions: [{:invoke, "light-b", "notify"}]
+        }
+      ]
+
+      assert {:ok, conflicts} = IoT.detect_conflicts(rules)
+      refute Enum.any?(conflicts, &(&1.type == :state_cascade))
+    end
+
+    test "validates rules before encoding" do
+      assert {:error, %{"rule_0" => _}} = IoT.detect_conflicts([%{}])
+      assert {:error, %{"rule_0" => ["rule must be a map"]}} = IoT.detect_conflicts([:bad])
+    end
+
+    test "applies and validates the conflict type filter", %{maude_available: true} do
+      rules = [
+        %{id: "a", thing_id: "d", trigger: {:always}, actions: [{:set_env, "mode", "a"}]},
+        %{id: "b", thing_id: "d", trigger: {:always}, actions: [{:set_env, "mode", "b"}]}
+      ]
+
+      assert {:ok, conflicts} = IoT.detect_conflicts(rules, conflict_types: [:env_conflict])
+      assert conflicts != []
+      assert Enum.all?(conflicts, &(&1.type == :env_conflict))
+
+      assert {:error, %ExMaude.Error{type: :validation}} =
+               IoT.detect_conflicts(rules, conflict_types: [:invented])
     end
 
     test "returns empty list when no conflicts exist", %{maude_available: true} do
@@ -533,7 +615,7 @@ defmodule ExMaude.IoTTest do
         }
       ]
 
-      assert {:ok, :safe} =
+      assert {:ok, :unverified} =
                IoT.verify_safety(rules, {:thing_state, "light", "state", "error"},
                  initial_state: [{:thing_state, "light", "state", "off"}],
                  max_depth: 20
@@ -570,7 +652,7 @@ defmodule ExMaude.IoTTest do
         }
       ]
 
-      assert {:ok, :safe} =
+      assert {:ok, :unverified} =
                IoT.verify_safety(rules, {:thing_state, "agv", "alarm", "on"},
                  initial_state: [{:thing_state, "agv", "battery", 50}]
                )
@@ -589,9 +671,42 @@ defmodule ExMaude.IoTTest do
         }
       ]
 
-      assert {:ok, :live} =
+      assert {:ok, :unverified} =
                IoT.verify_liveness(rules, {:thing_state, "d", "state", "notified"},
                  initial_state: [{:thing_state, "d", "state", "off"}]
+               )
+    end
+
+    test "does not call a depth-limited prefix safe", %{maude_available: true} do
+      rules = [
+        %{
+          id: "step-1",
+          thing_id: "d",
+          trigger: {:prop_eq, "state", "initial"},
+          actions: [{:set_prop, "d", "state", "middle"}]
+        },
+        %{
+          id: "step-2",
+          thing_id: "d",
+          trigger: {:prop_eq, "state", "middle"},
+          actions: [{:set_prop, "d", "state", "bad"}]
+        }
+      ]
+
+      opts = [initial_state: [{:thing_state, "d", "state", "initial"}]]
+
+      assert {:ok, :unverified} =
+               IoT.verify_safety(
+                 rules,
+                 {:thing_state, "d", "state", "bad"},
+                 Keyword.put(opts, :max_depth, 1)
+               )
+
+      assert {:error, {:counterexample, [_ | _]}} =
+               IoT.verify_safety(
+                 rules,
+                 {:thing_state, "d", "state", "bad"},
+                 Keyword.put(opts, :max_depth, 2)
                )
     end
 
@@ -638,6 +753,16 @@ defmodule ExMaude.IoTTest do
 
       refute result == {:ok, :unverified},
              "an encoding bug must not masquerade as an inconclusive verification"
+    end
+
+    test "invalid verification inputs return validation errors" do
+      rules = [%{id: "r", thing_id: "d", trigger: {:always}, actions: []}]
+
+      assert {:error, %ExMaude.Error{type: :validation}} =
+               IoT.verify_safety(rules, {:thing_state, "d", "state", self()})
+
+      assert {:error, %ExMaude.Error{type: :validation}} =
+               IoT.verify_liveness(rules, {:env_state, "goal", true}, max_depth: 0)
     end
   end
 end

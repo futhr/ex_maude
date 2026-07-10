@@ -116,6 +116,9 @@ defmodule ExMaude.IoT.Validator do
       |> validate_required(rule, :thing_id, "thing_id")
       |> validate_required(rule, :trigger, "trigger")
       |> validate_required(rule, :actions, "actions")
+      |> validate_string_field(rule, :id, "id")
+      |> validate_string_field(rule, :thing_id, "thing_id")
+      |> validate_priority(rule[:priority])
       |> validate_trigger(rule[:trigger], 0)
       |> validate_actions(rule[:actions])
 
@@ -140,8 +143,17 @@ defmodule ExMaude.IoT.Validator do
       |> Enum.with_index()
       |> Enum.reduce(%{}, fn {rule, idx}, acc ->
         case validate_rule(rule) do
-          :ok -> acc
-          {:error, errs} -> Map.put(acc, Map.get(rule, :id, "rule_#{idx}"), errs)
+          :ok ->
+            acc
+
+          {:error, errs} ->
+            key =
+              case rule do
+                %{id: id} when is_binary(id) and id != "" -> id
+                _ -> "rule_#{idx}"
+              end
+
+            Map.put(acc, key, errs)
         end
       end)
 
@@ -150,6 +162,8 @@ defmodule ExMaude.IoT.Validator do
       _ -> {:error, errors}
     end
   end
+
+  def validate_rules(_), do: {:error, %{"rules" => ["rules must be a list"]}}
 
   # Private validation functions
 
@@ -161,6 +175,23 @@ defmodule ExMaude.IoT.Validator do
     end
   end
 
+  defp validate_string_field(errors, map, key, name) do
+    case Map.fetch(map, key) do
+      {:ok, value} when is_binary(value) and value != "" -> errors
+      {:ok, nil} -> errors
+      :error -> errors
+      {:ok, _} -> ["#{name} must be a non-empty string" | errors]
+    end
+  end
+
+  defp validate_priority(errors, nil), do: errors
+
+  defp validate_priority(errors, priority) when is_integer(priority) and priority >= 0,
+    do: errors
+
+  defp validate_priority(errors, _),
+    do: ["priority must be a non-negative integer" | errors]
+
   # Trigger validation with depth limiting to prevent infinite recursion
   defp validate_trigger(errors, _, depth) when depth > @max_trigger_depth do
     ["trigger nesting exceeds maximum depth of #{@max_trigger_depth}" | errors]
@@ -168,7 +199,8 @@ defmodule ExMaude.IoT.Validator do
 
   defp validate_trigger(errors, nil, _), do: errors
 
-  defp validate_trigger(errors, {:prop_eq, prop, _}, _) when is_binary(prop), do: errors
+  defp validate_trigger(errors, {:prop_eq, prop, value}, _) when is_binary(prop),
+    do: validate_value(errors, value)
 
   defp validate_trigger(errors, {:prop_gt, prop, v}, _)
        when is_binary(prop) and is_number(v),
@@ -186,7 +218,8 @@ defmodule ExMaude.IoT.Validator do
        when is_binary(prop) and is_number(v),
        do: errors
 
-  defp validate_trigger(errors, {:env_eq, prop, _}, _) when is_binary(prop), do: errors
+  defp validate_trigger(errors, {:env_eq, prop, value}, _) when is_binary(prop),
+    do: validate_value(errors, value)
 
   defp validate_trigger(errors, {:env_gt, prop, v}, _)
        when is_binary(prop) and is_number(v),
@@ -221,15 +254,23 @@ defmodule ExMaude.IoT.Validator do
 
   defp validate_actions(errors, _), do: ["actions must be a list" | errors]
 
-  defp validate_action({:set_prop, thing_id, prop, _}, errors)
+  defp validate_action({:set_prop, thing_id, prop, value}, errors)
        when is_binary(thing_id) and is_binary(prop),
-       do: errors
+       do: validate_value(errors, value)
 
-  defp validate_action({:set_env, prop, _}, errors) when is_binary(prop), do: errors
+  defp validate_action({:set_env, prop, value}, errors) when is_binary(prop),
+    do: validate_value(errors, value)
 
   defp validate_action({:invoke, thing_id, action}, errors)
        when is_binary(thing_id) and is_binary(action),
        do: errors
 
   defp validate_action(_, errors), do: ["invalid action format" | errors]
+
+  defp validate_value(errors, value)
+       when is_boolean(value) or is_number(value) or is_binary(value) or is_atom(value),
+       do: errors
+
+  defp validate_value(errors, _),
+    do: ["value must be a boolean, number, string, or atom" | errors]
 end

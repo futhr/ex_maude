@@ -71,6 +71,27 @@ defmodule ExMaude.IoT.ValidatorTest do
       assert {:error, errors} = Validator.validate_rule(rule)
       assert length(errors) == 4
     end
+
+    test "validates rule field types and priority range" do
+      rule = %{id: 1, thing_id: :device, trigger: {:always}, actions: [], priority: -1}
+
+      assert {:error, errors} = Validator.validate_rule(rule)
+      assert "id must be a non-empty string" in errors
+      assert "thing_id must be a non-empty string" in errors
+      assert "priority must be a non-negative integer" in errors
+    end
+
+    test "rejects values the encoder cannot represent" do
+      rule = %{
+        id: "r",
+        thing_id: "d",
+        trigger: {:prop_eq, "state", %{unsupported: true}},
+        actions: [{:set_env, "payload", self()}]
+      }
+
+      assert {:error, errors} = Validator.validate_rule(rule)
+      assert Enum.count(errors, &(&1 == "value must be a boolean, number, string, or atom")) == 2
+    end
   end
 
   describe "validate_rule/1 trigger validation" do
@@ -266,6 +287,14 @@ defmodule ExMaude.IoT.ValidatorTest do
 
       assert {:error, errors} = Validator.validate_rules(rules)
       assert Map.has_key?(errors, "rule_0")
+    end
+
+    test "reports non-map entries without raising" do
+      assert {:error, %{"rule_0" => ["rule must be a map"]}} = Validator.validate_rules([:bad])
+    end
+
+    test "rejects a non-list batch" do
+      assert {:error, %{"rules" => ["rules must be a list"]}} = Validator.validate_rules(%{})
     end
   end
 end

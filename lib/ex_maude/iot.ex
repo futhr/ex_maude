@@ -96,6 +96,7 @@ defmodule ExMaude.IoT do
         }
 
   @type conflict_type :: :state_conflict | :env_conflict | :state_cascade | :state_env_cascade
+  @conflict_types [:state_conflict, :env_conflict, :state_cascade, :state_env_cascade]
 
   @type conflict :: %{
           type: conflict_type(),
@@ -129,9 +130,9 @@ defmodule ExMaude.IoT do
     * `:conflict_types` - List of conflict types to check (default: all)
   """
   @spec detect_conflicts([rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
-  def detect_conflicts(rules, opts \\ []) when is_list(rules) do
+  def detect_conflicts(rules, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 10_000)
-    rule_count = length(rules)
+    rule_count = if is_list(rules), do: length(rules), else: 0
     start_time = System.monotonic_time()
 
     :telemetry.execute(
@@ -141,10 +142,12 @@ defmodule ExMaude.IoT do
     )
 
     result =
-      with :ok <- ensure_iot_module_loaded(),
+      with :ok <- Validator.validate_rules(rules),
+           :ok <- ensure_iot_module_loaded(),
            {:ok, maude_rules} <- Encoder.encode_rules(rules),
            {:ok, output} <- run_detection(maude_rules, timeout) do
-        {:ok, ConflictParser.parse_conflicts(output)}
+        conflicts = ConflictParser.parse_conflicts(output)
+        filter_conflicts(conflicts, Keyword.get(opts, :conflict_types))
       end
 
     duration = System.monotonic_time() - start_time
@@ -178,7 +181,8 @@ defmodule ExMaude.IoT do
   def detect_state_conflicts(rules, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 10_000)
 
-    with :ok <- ensure_iot_module_loaded(),
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- ensure_iot_module_loaded(),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command = "reduce in CONFLICT-DETECTOR : detectConflicts(#{maude_rules}) .",
          {:ok, output} <- Maude.execute(command, timeout: timeout) do
@@ -196,7 +200,8 @@ defmodule ExMaude.IoT do
   def detect_env_conflicts(rules, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 10_000)
 
-    with :ok <- ensure_iot_module_loaded(),
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- ensure_iot_module_loaded(),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command = "reduce in CONFLICT-DETECTOR : detectEnvConflicts(#{maude_rules}) .",
          {:ok, output} <- Maude.execute(command, timeout: timeout) do
@@ -213,7 +218,8 @@ defmodule ExMaude.IoT do
   def detect_cascade_conflicts(rules, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 10_000)
 
-    with :ok <- ensure_iot_module_loaded(),
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- ensure_iot_module_loaded(),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command = "reduce in CONFLICT-DETECTOR : detectCascades(#{maude_rules}) .",
          {:ok, output} <- Maude.execute(command, timeout: timeout) do
@@ -282,11 +288,10 @@ defmodule ExMaude.IoT do
 
   Returns:
 
-    * `{:ok, :safe}` - no bad world reachable within `max_depth`
     * `{:error, {:counterexample, solutions}}` - a reachable bad world (the
       `solutions` carry the matching state/substitution)
-    * `{:ok, :unverified}` - Maude unavailable or timed out — unable to decide
-      (absence of proof, not evidence of safety)
+    * `{:ok, :unverified}` - no counterexample was found within the bound, or
+      Maude was unavailable/timed out. A bounded prefix is not a safety proof.
     * `{:error, %ExMaude.Error{}}` - the verification itself failed (e.g.
       a rule that doesn't encode to valid Maude, or a missing module);
       surfaced as an error rather than `:unverified` because it indicates a
@@ -306,14 +311,15 @@ defmodule ExMaude.IoT do
       #=> {:error, {:counterexample, [_ | _]}}
   """
   @spec verify_safety([rule()], state_pred() | [state_pred()], world_opts()) ::
-          {:ok, :safe}
-          | {:ok, :unverified}
+          {:ok, :unverified}
           | {:error, {:counterexample, [map()]} | ExMaude.Error.t() | term()}
-  def verify_safety(rules, bad_state, opts \\ []) when is_list(rules) do
+  def verify_safety(rules, bad_state, opts \\ []) do
     max_depth = Keyword.get(opts, :max_depth, 50)
     timeout = Keyword.get(opts, :timeout, 30_000)
 
-    with :ok <- ensure_iot_module_loaded(),
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- validate_world_inputs(bad_state, opts),
+         :ok <- ensure_iot_module_loaded(),
          {:ok, init} <- build_world(rules, opts),
          pattern = bad_state_pattern(bad_state),
          {:ok, solutions} <-
@@ -324,7 +330,7 @@ defmodule ExMaude.IoT do
              timeout: timeout
            ) do
       case solutions do
-        [] -> {:ok, :safe}
+        [] -> {:ok, :unverified}
         [_ | _] -> {:error, {:counterexample, solutions}}
       end
     else
@@ -344,26 +350,27 @@ defmodule ExMaude.IoT do
 
   Returns:
 
-    * `{:ok, :live}` - every reachable terminal world satisfies `goal_state`
     * `{:error, :deadlock_possible}` - a reachable terminal world misses the goal
-    * `{:ok, :unverified}` - Maude unavailable or timed out — undecided
+    * `{:ok, :unverified}` - no counterexample was found within the bound, or
+      Maude was unavailable/timed out. This is not an unbounded liveness proof.
     * `{:error, %ExMaude.Error{}}` - the verification itself failed (invalid
       rule encoding, missing module, ...)
 
   ## Examples
 
       ExMaude.IoT.verify_liveness(rules, {:thing_state, "door", "state", "notified"})
-      #=> {:ok, :live}
+      #=> {:ok, :unverified}
   """
   @spec verify_liveness([rule()], state_pred(), world_opts()) ::
-          {:ok, :live}
-          | {:ok, :unverified}
+          {:ok, :unverified}
           | {:error, :deadlock_possible | ExMaude.Error.t() | term()}
-  def verify_liveness(rules, goal_state, opts \\ []) when is_list(rules) do
+  def verify_liveness(rules, goal_state, opts \\ []) do
     max_depth = Keyword.get(opts, :max_depth, 50)
     timeout = Keyword.get(opts, :timeout, 30_000)
 
-    with :ok <- ensure_iot_module_loaded(),
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- validate_world_inputs(goal_state, opts),
+         :ok <- ensure_iot_module_loaded(),
          {:ok, init} <- build_world(rules, opts),
          condition = goal_violation_condition(goal_state),
          {:ok, solutions} <-
@@ -375,7 +382,7 @@ defmodule ExMaude.IoT do
              timeout: timeout
            ) do
       case solutions do
-        [] -> {:ok, :live}
+        [] -> {:ok, :unverified}
         [_ | _] -> {:error, :deadlock_possible}
       end
     else
@@ -395,9 +402,10 @@ defmodule ExMaude.IoT do
   defp verification_failure(err), do: {:error, err}
 
   defp build_world(rules, opts) do
-    {:ok, rule_set} = Encoder.encode_rules(rules)
-    state = build_state(Keyword.get(opts, :initial_state, []))
-    {:ok, "world(#{state}, #{rule_set})"}
+    with {:ok, rule_set} <- Encoder.encode_rules(rules) do
+      state = build_state(Keyword.get(opts, :initial_state, []))
+      {:ok, "world(#{state}, #{rule_set})"}
+    end
   end
 
   defp build_state([]), do: "emptyS"
@@ -427,6 +435,52 @@ defmodule ExMaude.IoT do
     ~s|holdsFor(#{term}, thing(""), S:WState) =/= true|
   end
 
+  defp validate_world_inputs(predicate, opts) do
+    initial_state = Keyword.get(opts, :initial_state, [])
+    max_depth = Keyword.get(opts, :max_depth, 50)
+    timeout = Keyword.get(opts, :timeout, 30_000)
+
+    cond do
+      not (is_integer(max_depth) and max_depth > 0) ->
+        validation_error("max_depth must be a positive integer")
+
+      not (is_integer(timeout) and timeout > 0) ->
+        validation_error("timeout must be a positive integer")
+
+      not is_list(initial_state) ->
+        validation_error("initial_state must be a list of state predicates")
+
+      not Enum.all?(initial_state, &valid_state_pred?/1) ->
+        validation_error("initial_state contains an invalid state predicate")
+
+      not Enum.all?(List.wrap(predicate), &valid_state_pred?/1) ->
+        validation_error("verification target contains an invalid state predicate")
+
+      true ->
+        :ok
+    end
+  end
+
+  defp valid_state_pred?({:thing_state, thing_id, property, value}) do
+    non_empty_string?(thing_id) and non_empty_string?(property) and encodable_value?(value)
+  end
+
+  defp valid_state_pred?({:env_state, key, value}) do
+    non_empty_string?(key) and encodable_value?(value)
+  end
+
+  defp valid_state_pred?(_), do: false
+
+  defp non_empty_string?(value), do: is_binary(value) and value != ""
+
+  defp encodable_value?(value) do
+    is_boolean(value) or is_number(value) or is_binary(value) or is_atom(value)
+  end
+
+  defp validation_error(message) do
+    {:error, ExMaude.Error.new(:validation, message)}
+  end
+
   defp ensure_iot_module_loaded do
     path = ExMaude.iot_rules_path()
 
@@ -441,4 +495,16 @@ defmodule ExMaude.IoT do
     command = "reduce in CONFLICT-DETECTOR : detectAllConflicts(#{maude_rules}) ."
     Maude.execute(command, timeout: timeout)
   end
+
+  defp filter_conflicts(conflicts, nil), do: {:ok, conflicts}
+
+  defp filter_conflicts(conflicts, types) when is_list(types) do
+    if Enum.all?(types, &(&1 in @conflict_types)) do
+      {:ok, Enum.filter(conflicts, &(&1.type in types))}
+    else
+      validation_error("conflict_types contains an unsupported conflict type")
+    end
+  end
+
+  defp filter_conflicts(_, _), do: validation_error("conflict_types must be a list")
 end
