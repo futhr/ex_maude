@@ -4,10 +4,9 @@
  * A C-Node process that manages a Maude subprocess and communicates
  * with the Erlang/Elixir VM using Erlang distribution protocol.
  *
- * This provides:
- * - Binary Erlang term protocol (no text parsing overhead)
- * - Full process isolation (C-Node crash doesn't affect BEAM)
- * - Lower latency than Port + PTY wrapper
+ * The distribution envelope is binary, while commands and responses remain
+ * Maude text and are parsed by the Elixir layer. The bridge and Maude both run
+ * outside the BEAM.
  *
  * Usage:
  *   ./maude_bridge <node_name> <cookie> <maude_path> <erlang_node>

@@ -3,9 +3,9 @@ defmodule ExMaude.Backend.NIF do
   NIF-based backend for ExMaude using Rustler.
 
   Manages a Maude subprocess from Rust, communicating via stdin/stdout pipes
-  through a dedicated reader thread. Offers the lowest latency of the three
-  backends because there's no Elixir port overhead and no distribution
-  round-trip — but, like any NIF, it shares the BEAM's OS process.
+  through dedicated reader threads. It avoids an Erlang Port or distribution
+  hop, but should be benchmarked with the caller's own workload. Like any NIF,
+  the native extension shares the BEAM's OS process.
 
   ## Features
 

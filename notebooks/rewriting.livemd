@@ -157,11 +157,11 @@ as a plain string:
 IO.puts("Term: #{term}")
 ```
 
-To parse the term into structured form (with sort), use `ExMaude.Term.parse/1`:
+If the sort is known, construct an `ExMaude.Term` from the returned value:
 
 ```elixir
-{:ok, output} = ExMaude.execute("reduce in NAT : 10 + 20 + 30 .")
-{:ok, term} = ExMaude.Term.parse(output)
+{:ok, value} = ExMaude.reduce("NAT", "10 + 20 + 30")
+term = ExMaude.Term.new(value, "Nat")
 IO.puts("Value: #{term.value}, Sort: #{term.sort}")
 ```
 

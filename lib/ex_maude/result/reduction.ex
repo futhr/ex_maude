@@ -2,14 +2,9 @@ defmodule ExMaude.Result.Reduction do
   @moduledoc """
   Result of a Maude reduce operation.
 
-  A reduction result contains the normalized term along with performance
-  metrics like the number of rewrites applied and execution time.
-
-  ## Structure
-
-    * `:term` - The resulting `ExMaude.Term` after reduction
-    * `:rewrites` - Number of rewrite steps applied
-    * `:time_ms` - Time taken in milliseconds
+  This struct is useful when an application has raw, verbose Maude output and
+  wants the normalized term together with rewrite and timing statistics.
+  `ExMaude.reduce/3` itself returns only the normalized term string.
 
   ## Maude Output Format
 
@@ -19,30 +14,19 @@ defmodule ExMaude.Result.Reduction do
       rewrites: 3 in 0ms cpu (0ms real) (~ rewrites/second)
       result Nat: 6
 
-  Key patterns parsed:
-
-  | Pattern | Description |
-  |---------|-------------|
-  | `rewrites: N` | Number of rewrite steps applied |
-  | `in Nms` | Execution time in milliseconds |
-  | `result Sort: Term` | The resulting term with its sort |
-
   ## Examples
 
-      {:ok, output} = ExMaude.execute("reduce in NAT : 1 + 2 + 3 .")
+      output = "rewrites: 3 in 1ms cpu (1ms real)\\nresult Nat: 6"
       {:ok, result} = ExMaude.Result.Reduction.parse(output)
-      result.term.value   #=> "6"
-      result.rewrites     #=> 3
+      result.term.value
+      # => "6"
+      result.rewrites
+      # => 3
 
       # Create manually
       term = ExMaude.Term.new("6", "Nat")
       result = ExMaude.Result.Reduction.new(term, rewrites: 3, time_ms: 1)
 
-  ## See Also
-
-    * `ExMaude.Result.Search` - For search operation results
-    * `ExMaude.Term` - For term representation
-    * `ExMaude.Maude.reduce/3` - To perform reductions
   """
 
   alias ExMaude.Term
@@ -64,6 +48,7 @@ defmodule ExMaude.Result.Reduction do
       term = ExMaude.Term.new("6", "Nat")
       result = ExMaude.Result.Reduction.new(term, rewrites: 3, time_ms: 1)
   """
+
   @spec new(Term.t(), keyword()) :: t()
   def new(%Term{} = term, opts \\ []) do
     %__MODULE__{

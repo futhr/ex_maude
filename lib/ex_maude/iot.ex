@@ -1,10 +1,10 @@
 defmodule ExMaude.IoT do
   @moduledoc """
-  IoT rule conflict detection using Maude formal verification.
+  IoT rule conflict detection using a Maude equational model.
 
-  This module provides an Elixir API for detecting conflicts in IoT automation
-  rules using Maude's formal verification capabilities. It implements the four
-  conflict types identified in the AutoIoT paper (arxiv.org/abs/2411.10665):
+  This module evaluates IoT automation rules with the bundled Maude model. Its
+  four checks are inspired by conflict categories in the AutoIoT paper
+  (arxiv.org/abs/2411.10665):
 
   ## Conflict Types
 
@@ -108,9 +108,9 @@ defmodule ExMaude.IoT do
   @doc """
   Detects all conflicts in a set of IoT rules.
 
-  Analyzes the given rules for all four conflict types using Maude formal
-  verification. Returns a list of detected conflicts, or an empty list if
-  no conflicts are found.
+  Evaluates the given rules against all four checks in the bundled Maude
+  model. Returns a list of detected conflicts, or an empty list if none of
+  those checks match.
 
   ## Examples
 
@@ -279,8 +279,7 @@ defmodule ExMaude.IoT do
         ]
 
   @doc """
-  Bounded safety check: proves no execution of `rules` reaches a world matching
-  `bad_state`.
+  Searches a bounded execution prefix for a world matching `bad_state`.
 
   Explores the rule-firing transition system (the `IOT-EXEC` Maude module) from
   the initial state with `=>*` reachability search, looking for a reachable

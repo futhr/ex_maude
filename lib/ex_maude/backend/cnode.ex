@@ -8,8 +8,7 @@ defmodule ExMaude.Backend.CNode do
   ## Features
 
     * Full process isolation - C-Node crash doesn't affect the BEAM
-    * Binary Erlang term protocol - no Erlang Port framing overhead
-    * Lower latency than the Port backend
+    * Ref-tagged Erlang distribution messages around Maude text commands
 
   ## Trade-offs
 

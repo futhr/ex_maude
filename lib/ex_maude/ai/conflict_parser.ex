@@ -33,26 +33,20 @@ defmodule ExMaude.AI.ConflictParser do
   | `toolCallConflict` | `:tool_call_conflict` |
   | `capabilityShadowing` | `:capability_shadowing` |
   | `packToolCompositionMismatch` | `:pack_tool_composition_mismatch` |
-  | `budgetCascade` | `:budget_cascade` |
-  | `costCeilingInfeasibility` | `:cost_ceiling_infeasibility` |
   | `sovereigntyViolation` | `:sovereignty_violation` |
   | `authorityEscalation` | `:authority_escalation` |
   | `approvalGateBypass` | `:approval_gate_bypass` |
   | `agentLoopCascade` | `:agent_loop_cascade` |
-  | `providerRoutingInfeasibility` | `:provider_routing_infeasibility` |
   """
 
   @type conflict_type ::
           :tool_call_conflict
           | :capability_shadowing
           | :pack_tool_composition_mismatch
-          | :budget_cascade
-          | :cost_ceiling_infeasibility
           | :sovereignty_violation
           | :authority_escalation
           | :approval_gate_bypass
           | :agent_loop_cascade
-          | :provider_routing_infeasibility
           | :unknown_conflict
 
   @type conflict :: %{
@@ -237,12 +231,9 @@ defmodule ExMaude.AI.ConflictParser do
   defp parse_conflict_type("toolCallConflict"), do: :tool_call_conflict
   defp parse_conflict_type("capabilityShadowing"), do: :capability_shadowing
   defp parse_conflict_type("packToolCompositionMismatch"), do: :pack_tool_composition_mismatch
-  defp parse_conflict_type("budgetCascade"), do: :budget_cascade
-  defp parse_conflict_type("costCeilingInfeasibility"), do: :cost_ceiling_infeasibility
   defp parse_conflict_type("sovereigntyViolation"), do: :sovereignty_violation
   defp parse_conflict_type("authorityEscalation"), do: :authority_escalation
   defp parse_conflict_type("approvalGateBypass"), do: :approval_gate_bypass
   defp parse_conflict_type("agentLoopCascade"), do: :agent_loop_cascade
-  defp parse_conflict_type("providerRoutingInfeasibility"), do: :provider_routing_infeasibility
   defp parse_conflict_type(_), do: :unknown_conflict
 end

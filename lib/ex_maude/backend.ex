@@ -6,9 +6,9 @@ defmodule ExMaude.Backend do
   interchangeably by the ExMaude API. This enables swapping
   between different communication strategies:
 
-    * `:port` - Erlang Port with PTY wrapper (default, safe)
-    * `:cnode` - C-Node with binary protocol (production)
-    * `:nif` - Native Implemented Function via Rustler (lowest latency)
+    * `:port` - Erlang Port over pipes (default)
+    * `:cnode` - C bridge over Erlang distribution
+    * `:nif` - Rustler NIF managing subprocess pipes
 
   ## Configuration
 

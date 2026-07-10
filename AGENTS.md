@@ -27,11 +27,11 @@ ExMaude.Backend.Port   ExMaude.Backend.CNode   ExMaude.Backend.NIF
 
 ### Backend Comparison
 
-| Backend | Transport | Latency | Status | Use Case |
-|---------|-----------|---------|--------|----------|
-| **Port** | Erlang Port over pipes | Higher | Stable | Default, pure Elixir, works everywhere |
-| **C-Node** | Erlang distribution to a C bridge | Medium | Stable | Structured binary protocol |
-| **NIF** | Rustler NIF driving the subprocess | Lowest | Stable | Hot paths; Rust runs in-BEAM |
+| Backend | Transport | Requirements |
+|---------|-----------|--------------|
+| **Port** | Erlang Port over pipes | Default; requires only a Maude executable |
+| **C-Node** | Erlang distribution to a C bridge | Requires `epmd` and the compiled bridge |
+| **NIF** | Rustler NIF driving subprocess pipes | Requires a supported precompiled NIF or Rust toolchain |
 
 All three backends run Maude as a separate OS process — a Maude crash never
 takes down the BEAM.
@@ -44,7 +44,7 @@ ExMaude (Main API)
     ├── ExMaude.Backend         Backend behaviour and selection
     │   ├── Backend.Port        Pipe-based Port communication
     │   ├── Backend.CNode       Erlang C-Node bridge
-    │   └── Backend.NIF         Rustler NIF (lowest latency)
+    │   └── Backend.NIF         Rustler NIF subprocess driver
     │
     ├── ExMaude.Binary          Maude binary management & platform detection
     ├── ExMaude.Maude           High-level operations (reduce, rewrite, search)
@@ -89,7 +89,7 @@ ExMaude (Main API)
 | `lib/ex_maude/result/solution.ex` | Solution type |
 | `c_src/maude_bridge.c` | C-Node bridge source code |
 | `c_src/Makefile` | C-Node compilation |
-| `priv/maude/bin/` | Bundled Maude binaries |
+| `priv/maude/bin/` | Development-checkout Maude files; excluded from Hex |
 | `priv/maude/iot-rules.maude` | IoT conflict detection Maude module |
 
 ## Development Commands
@@ -171,11 +171,10 @@ All errors use `ExMaude.Error` struct with standardized types:
 |------|-------------|
 | `:timeout` | Operation timed out |
 | `:parse_error` | Maude syntax/parse error |
-| `:module_error` | Module not found/load error |
-| `:execution_error` | Maude execution error |
-| `:crash` | Process crashed |
+| `:module_not_found` | Module was not found |
+| `:load_error` | Module load failed on one or more workers |
+| `:maude_crash` | Maude process crashed |
 | `:file_not_found` | File does not exist |
-| `:partial_load` | Some workers failed to load |
 | `:pool_error` | Pool checkout failed |
 | `:invalid_path` | Path validation failed |
 | `:validation` | Rule validation failed |
@@ -185,7 +184,7 @@ All errors use `ExMaude.Error` struct with standardized types:
 ```elixir
 config :ex_maude,
   backend: :port,                      # :port | :cnode | :nif
-  maude_path: nil,                     # nil = auto-detect bundled binary
+  maude_path: nil,                     # nil = env, local install, or system PATH
   pool_size: 4,                        # Worker processes
   pool_max_overflow: 2,                # Extra workers under load
   timeout: 5_000,                      # Default command timeout

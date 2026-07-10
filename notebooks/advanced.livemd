@@ -61,7 +61,9 @@ ExMaude.reduce("COUNTER", "value(dec(counter(5)))")
 
 ## IoT Conflict Detection
 
-ExMaude includes a powerful IoT rule conflict detection system based on formal verification techniques from the [AutoIoT paper](https://arxiv.org/abs/2411.10665).
+ExMaude includes a compact IoT rule model inspired by conflict categories in
+the [AutoIoT paper](https://arxiv.org/abs/2411.10665). It is an ExMaude-specific
+model, not an implementation of the paper's full analysis.
 
 ### Conflict Types
 

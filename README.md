@@ -13,7 +13,7 @@
 ## Overview
 
 ExMaude provides a high-level Elixir API for interacting with [Maude](https://maude.cs.illinois.edu/),
-a powerful formal specification language based on rewriting logic. Use ExMaude for:
+a formal specification language based on rewriting logic. Use ExMaude for:
 
 - **Term Reduction** - Simplify expressions using equational logic
 - **State Space Search** - Explore reachable states in system models  
@@ -75,8 +75,8 @@ config :ex_maude, maude_path: "/usr/local/bin/maude"
 ## Quick Start
 
 ```elixir
-# Start the worker pool
-{:ok, _} = ExMaude.Pool.start_link()
+# In config/config.exs, enable the supervised pool:
+# config :ex_maude, start_pool: true
 
 # Reduce a term to normal form
 {:ok, "6"} = ExMaude.reduce("NAT", "1 + 2 + 3")
@@ -95,7 +95,7 @@ config :ex_maude, maude_path: "/usr/local/bin/maude"
 ```elixir
 config :ex_maude,
   backend: :port,                      # :port | :cnode | :nif
-  maude_path: nil,                     # nil = auto-detect bundled binary
+  maude_path: nil,                     # config/env/installed binary/PATH resolution
   pool_size: 4,                        # Number of worker processes
   pool_max_overflow: 2,                # Extra workers under load
   timeout: 5_000,                      # Default command timeout (ms)
@@ -108,7 +108,7 @@ config :ex_maude,
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `backend` | `atom()` | `:port` | Communication backend (`:port`, `:cnode`, `:nif`) |
-| `maude_path` | `String.t()` | `nil` | Path to Maude executable (nil = bundled) |
+| `maude_path` | `String.t()` | `nil` | Path to Maude; otherwise use `MAUDE_PATH`, an installed local binary, or `PATH` |
 | `pool_size` | `integer()` | `4` | Number of Maude worker processes |
 | `pool_max_overflow` | `integer()` | `2` | Extra workers allowed under load |
 | `timeout` | `integer()` | `5000` | Default command timeout in ms |
@@ -119,16 +119,20 @@ By default the Port backend talks to `maude -interactive` over plain pipes — t
 
 ### Backend Selection
 
-ExMaude bundles Maude binaries for common platforms. No installation step needed for most users.
+The Hex package does not contain Maude. Install it with `mix maude.install`,
+provide `MAUDE_PATH`, or keep `maude` on `PATH`.
 
 ```elixir
 # Check available backends
 ExMaude.Backend.available_backends()
 #=> [:port]  # plus :cnode if maude_bridge is compiled, :nif if the precompiled NIF loaded
 
-# Switch backend at runtime (for testing)
-Application.put_env(:ex_maude, :backend, :cnode)
+# Configure before the pool starts
+config :ex_maude, backend: :cnode
 ```
+
+Changing `:backend` does not replace workers already running in the pool.
+Restart the ExMaude supervision tree after changing it.
 
 ---
 
@@ -177,8 +181,10 @@ endfm
 
 ## IoT Rule Conflict Detection
 
-ExMaude includes a Maude module implementing formal conflict detection for IoT automation rules,
-based on the [AutoIoT paper](https://arxiv.org/abs/2411.10665).
+ExMaude includes a Maude model for four useful IoT conflict categories. Its
+rule schema is inspired by the categories discussed in the
+[AutoIoT paper](https://arxiv.org/abs/2411.10665), but it is a smaller custom
+model rather than an implementation of the paper's full system.
 
 ```elixir
 rules = [
@@ -216,10 +222,9 @@ See `ExMaude.IoT` for the full rule schema, trigger types, and action types.
 
 ## AI Rule Conflict Detection
 
-ExMaude includes a Maude module for verifying AI-generated automation rules over
-Agents, Capabilities, ToolInvocations, and richer predicates (capability ontology,
-budget intervals, sovereignty, authority levels, approval gates). Use it to catch
-unsafe agent policies before they ship.
+ExMaude includes a Maude module for checking a defined AI-rule schema over
+agents, capability grants, tool invocations, sovereignty, authority levels,
+and approval gates.
 
 ```elixir
 rules = [
@@ -261,9 +266,6 @@ rules = [
 | **Agent Loop Cascade** | pairwise | One rule's capability grants another rule's required capability |
 | **Sovereignty Violation** | single-rule | Tool invocation routes through a forbidden jurisdiction |
 | **Approval Gate Bypass** | single-rule | High-impact invocation reachable without an approval gate |
-| **Budget Cascade** | search-based | Chained rule firings exceed tenant budget (deferred to follow-up) |
-| **Cost Ceiling Infeasibility** | search-based | Tenant policy leaves empty cost-acceptable provider set (deferred) |
-| **Provider Routing Infeasibility** | search-based | Empty action space under tenant policy intersection (deferred) |
 
 ### When to choose AI rules over IoT rules
 
@@ -272,12 +274,11 @@ Use `ExMaude.IoT` for Things, Properties, and Actions in a single deployment
 ontologies, tool-invocation arguments, tenant scoping, sovereignty, authority levels,
 or approval gates. Both can coexist — the templates and APIs are independent.
 
-### Unverifiable predicates
+### Unsupported predicates
 
-`:contains` and `:matches` (regex / string search) are not decidable in Maude's
-equational fragment. The validator returns `{:error, "...unverifiable..."}` for
-these — route them to a separate string-match safety net (sandbox, regex matcher,
-LLM-as-judge) rather than encoding them into the Maude template.
+`:contains` and `:matches` are not implemented by `ai-rules.maude`. The
+validator rejects them explicitly. Evaluate string or regex predicates in the
+component that owns their matching semantics.
 
 See `ExMaude.AI` for the full rule schema, predicate vocabulary, and invocation types.
 
@@ -373,21 +374,21 @@ All three backends run Maude as a **separate OS process** — a Maude crash neve
 takes down the BEAM. They differ in transport and in how much native code runs
 inside the BEAM itself:
 
-| Backend | Transport | Latency | Use Case |
-|---------|-----------|---------|----------|
-| **Port** | Erlang Port over pipes | Higher | Default, pure Elixir, works everywhere |
-| **C-Node** | Erlang distribution to a C bridge | Medium | Structured binary protocol |
-| **NIF** | Rustler NIF driving the subprocess | Lowest | Hot paths; Rust runs in-BEAM (panics caught, a segfault would crash the VM) |
+| Backend | Transport | Notes |
+|---------|-----------|-------|
+| **Port** | Erlang Port over pipes | Default; no ExMaude native extension required |
+| **C-Node** | Erlang distribution to a C bridge | Requires `epmd` and the compiled bridge |
+| **NIF** | Rustler NIF driving subprocess pipes | Rust runs in-BEAM; a native crash can crash the VM |
 
 ### Module Overview
 
 ```
 ExMaude
     ├── ExMaude.Backend    Backend behaviour and selection
-    ├── ExMaude.Binary     Binary lookup, platform detection, bundled binaries
+    ├── ExMaude.Binary     Binary lookup and platform detection
     ├── ExMaude.Maude      High-level command builders (reduce, rewrite, search)
     ├── ExMaude.Pool       Poolboy worker pool management
-    ├── ExMaude.Server     Per-worker GenServer wrapping a backend session
+    ├── ExMaude.Server     Dispatches calls to each worker's backend
     ├── ExMaude.Parser     Output parsing utilities
     ├── ExMaude.Telemetry  Telemetry events and helpers
     ├── ExMaude.IoT        IoT rule conflict detection (Things, Properties, Actions)
@@ -409,8 +410,8 @@ mix docs  # Generate documentation
 
 ```bash
 mix bench              # Parser benchmarks
-mix bench.backends     # Backend benchmarks (Port backend only)
-mix bench.backends.all # Backend benchmarks (All backends: Port + C-Node)
+mix bench.backends     # Benchmark every backend available in this VM
+mix bench.backends.all # Start distribution, then benchmark available backends
 ```
 
 **C-Node Testing:**
@@ -426,26 +427,17 @@ mix test.cnode # Run C-Node integration tests
 
 ## Performance
 
-ExMaude includes comprehensive benchmarks to help you understand performance characteristics and choose the right backend for your workload.
+ExMaude includes local benchmarks for parser, pool, and backend behavior.
 
 ### Benchmark Results
 
 - **[bench/output/benchmarks.md](bench/output/benchmarks.md)** - Parser and Maude integration benchmarks
-- **[bench/output/backend_comparison.md](bench/output/backend_comparison.md)** - Port vs C-Node backend comparison
 
-### Key Takeaways
-
-| Backend | Latency | Use Case |
-|---------|---------|----------|
-| **Port** | ~107μs/op | Default, works everywhere, full isolation |
-| **C-Node** | ~100μs/op | Production, high-throughput workloads |
-| **NIF** | ~40μs/op | Hot paths, latency-critical workloads |
-
-> Latency figures are `reduce in NAT : 1 + 1` on Apple Silicon (M-series),
-> averaged over 200 warm iterations. Run the benchmarks locally for your
-> hardware.
-
-**Recommendation:** Start with Port backend, switch to C-Node if benchmarks show communication overhead is a bottleneck.
+Backend performance depends on the Maude model, response size, platform, and
+concurrency. `mix bench.backends` starts each available worker before timing
+and writes a local comparison to `bench/output/backend_comparison.md`. Start
+with Port and change backend only when a workload-specific benchmark supports
+the choice.
 
 ### Running Benchmarks
 

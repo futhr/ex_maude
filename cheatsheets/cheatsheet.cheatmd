@@ -91,7 +91,7 @@ A trailing ` .` is appended automatically when missing.
 ```elixir
 config :ex_maude,
   backend: :port,        # :port | :cnode | :nif
-  maude_path: nil,       # nil = bundled binary, then system PATH
+  maude_path: nil,       # nil = env, local install, or system PATH
   pool_size: 4,
   pool_max_overflow: 2,
   timeout: 5_000,        # default command timeout (ms)
@@ -105,11 +105,14 @@ config :ex_maude,
 All three run Maude as a separate OS process — a Maude crash never takes
 down the BEAM.
 
-| Backend  | Transport                  | Latency |
-| -------- | -------------------------- | ------- |
-| `:port`  | Erlang Port over pipes     | higher  |
-| `:cnode` | Distribution + C bridge    | medium  |
-| `:nif`   | Rustler-managed subprocess | lowest  |
+| Backend  | Transport                  | Requirement |
+| -------- | -------------------------- | ----------- |
+| `:port`  | Erlang Port over pipes     | Maude executable |
+| `:cnode` | Distribution + C bridge    | compiled bridge and distributed node |
+| `:nif`   | Rustler-managed subprocess | supported NIF binary or Rust toolchain |
+
+Measure the available backends with `mix bench.backends`; transport alone does
+not determine application latency.
 
 ### Timeout semantics
 

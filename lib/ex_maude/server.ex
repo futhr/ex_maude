@@ -21,7 +21,7 @@ defmodule ExMaude.Server do
 
   The following options can be passed to `start_link/1`:
 
-    * `:maude_path` - Path to Maude executable (default: bundled or from config)
+    * `:maude_path` - Path to Maude executable (default: resolved by `ExMaude.Binary`)
     * `:preload_modules` - List of Maude files to load on startup
     * `:timeout` - Default command timeout in ms (default: 5000)
 
@@ -29,7 +29,7 @@ defmodule ExMaude.Server do
 
       config :ex_maude,
         backend: :port,              # :port | :cnode | :nif
-        maude_path: nil,             # nil = auto-detect bundled binary
+        maude_path: nil,             # nil = env, local install, or system PATH
         use_pty: false               # PTY wrapper opt-in (Port backend only)
 
   """

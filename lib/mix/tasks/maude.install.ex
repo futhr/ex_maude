@@ -80,9 +80,6 @@ defmodule Mix.Tasks.Maude.Install do
   @api_timeout 30_000
   @max_download_size 100 * 1024 * 1024
 
-  # coveralls-ignore-start
-  # Mix task - tested via integration tests with :network tag
-
   @impl Mix.Task
   def run(args) do
     {opts, _, invalid} =
@@ -136,13 +133,13 @@ defmodule Mix.Tasks.Maude.Install do
     platform = detect_platform()
     Mix.shell().info("Platform: #{platform}")
 
-    # Check bundled binary
+    # Check the project-local install
     bundled_path = ExMaude.Binary.bundled_path()
 
     if bundled_path do
-      Mix.shell().info("✓ Bundled binary: #{bundled_path}")
+      Mix.shell().info("✓ Local binary: #{bundled_path}")
     else
-      Mix.shell().info("✗ Bundled binary: not found for #{platform}")
+      Mix.shell().info("✗ Local binary: not found for #{platform}")
     end
 
     # Check system PATH
@@ -867,6 +864,4 @@ defmodule Mix.Tasks.Maude.Install do
       ]
     }
   end
-
-  # coveralls-ignore-stop
 end

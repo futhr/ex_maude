@@ -267,7 +267,7 @@ defmodule ExMaude.Maude do
   Returns the Maude interpreter version, e.g. `{:ok, "3.5.1"}`.
 
   Runs `maude --version` on the binary resolved by `ExMaude.Binary.find/0`
-  (configured path, then bundled binary, then system PATH). No pool or
+  (configured path, `MAUDE_PATH`, local install, then system PATH). No pool or
   worker is involved, so this works even with `start_pool: false`.
 
   ## Examples

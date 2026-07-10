@@ -75,7 +75,7 @@ end
 # GOOD: Check file exists or handle error
 case ExMaude.load_file(path) do
   :ok -> :loaded
-  {:error, {:file_not_found, _}} -> create_or_fail()
+  {:error, %ExMaude.Error{type: :file_not_found}} -> create_or_fail()
 end
 
 # GOOD: Load from string for dynamic modules
@@ -92,7 +92,7 @@ endfm
 
 ## IoT Conflict Detection
 
-ExMaude includes formal conflict detection for IoT automation rules.
+ExMaude includes an equational conflict model for IoT automation rules.
 
 ### Using the High-Level API
 
@@ -211,26 +211,26 @@ ExMaude.Pool.transaction(fn worker ->
 end)
 
 # GOOD: Broadcast to all workers for module loading
-ExMaude.Pool.broadcast(fn worker ->
+{:ok, results} = ExMaude.Pool.broadcast(fn worker ->
   ExMaude.Server.load_file(worker, path)
 end)
 ```
 
 ## Backend Selection
 
-ExMaude ships three production-ready backends:
+ExMaude provides three backends with different deployment requirements:
 
 ```elixir
 config :ex_maude, backend: :port    # default — text I/O, full process isolation
-config :ex_maude, backend: :cnode   # binary protocol, full process isolation
-config :ex_maude, backend: :nif     # Rustler NIF, lowest latency
+config :ex_maude, backend: :cnode   # C bridge over Erlang distribution
+config :ex_maude, backend: :nif     # Rustler NIF managing subprocess pipes
 ```
 
 | Backend | When to choose it |
 |---|---|
 | `:port` | Default. Safest. Works on any platform with a Maude binary. Maude crash never affects the BEAM. |
-| `:cnode` | High-throughput production. Binary Erlang-term protocol via `maude_bridge`. Full process isolation. Requires the C bridge to be compiled (`mix compile` triggers this when `c_src/` is present). |
-| `:nif` | Latency-critical hot paths. Native code drives the Maude subprocess directly via stdin/stdout pipes. Shares the BEAM's OS process (a segfault in the NIF — though Rustler catches Rust panics — crashes the VM). |
+| `:cnode` | Uses a C bridge and Erlang distribution. Requires `epmd` and the compiled bridge; benchmark it against Port for the target workload. |
+| `:nif` | Native code drives the Maude subprocess through pipes. A native crash can crash the VM even though Maude itself remains a subprocess. |
 
 Precompiled NIF binaries are published on Hex for macOS aarch64/x86_64, Linux gnu/musl × aarch64/x86_64, and Windows gnu/msvc. On platforms outside that list, force a local build:
 
@@ -344,7 +344,7 @@ template.
 {:capability_required, "name"}
 {:capability_granted, "name"}
 
-# Quantitative (interval-based, sound symbolic reasoning)
+# Interval-valued predicate encoding (no budget conflict detector yet)
 {:budget_within, "scope", {:interval, lo, hi}}
 
 # Authority levels
@@ -386,9 +386,6 @@ template.
 | `:approval_gate_bypass` | equational, single-rule |
 | `:authority_escalation` | equational, pairwise |
 | `:agent_loop_cascade` | equational, pairwise |
-| `:budget_cascade` | search-based (deferred to follow-up release) |
-| `:cost_ceiling_infeasibility` | search-based (deferred) |
-| `:provider_routing_infeasibility` | search-based (deferred) |
 
 ### Example
 
@@ -420,14 +417,11 @@ tool-invocation argument structure, tenant scoping, sovereignty,
 authority levels, or approval gates. Both can ship in the same
 application — the templates and APIs are independent.
 
-### Unverifiable predicates
+### Unsupported predicates
 
-`:contains` and `:matches` (regex / string-search) are not
-decidable in Maude's equational fragment. The validator returns
-`{:error, "...unverifiable..."}` for these. Route them to a
-separate string-match safety net (sandbox, regex matcher,
-LLM-as-judge) rather than trying to encode them into the Maude
-template.
+`:contains` and `:matches` are decidable operations, but this Maude template
+does not implement them. The validator returns an unsupported-predicate error;
+evaluate them in the component that defines the intended string/regex semantics.
 
 ## Links
 

@@ -239,18 +239,15 @@ defmodule ExMaude.AI.ConflictParserTest do
       assert [] = ConflictParser.parse_conflicts(output)
     end
 
-    test "preserves all ten conflict types via the type mapper" do
+    test "preserves all seven conflict types via the type mapper" do
       mappings = [
         {"toolCallConflict", :tool_call_conflict},
         {"capabilityShadowing", :capability_shadowing},
         {"packToolCompositionMismatch", :pack_tool_composition_mismatch},
-        {"budgetCascade", :budget_cascade},
-        {"costCeilingInfeasibility", :cost_ceiling_infeasibility},
         {"sovereigntyViolation", :sovereignty_violation},
         {"authorityEscalation", :authority_escalation},
         {"approvalGateBypass", :approval_gate_bypass},
-        {"agentLoopCascade", :agent_loop_cascade},
-        {"providerRoutingInfeasibility", :provider_routing_infeasibility}
+        {"agentLoopCascade", :agent_loop_cascade}
       ]
 
       for {maude_constructor, atom} <- mappings do

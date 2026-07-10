@@ -155,6 +155,7 @@ defmodule ExMaude.MixProject do
         mix.exs
         README.md
         LICENSE
+        THIRD_PARTY_NOTICES.md
         CHANGELOG.md
         usage-rules.md
         notebooks
@@ -180,14 +181,14 @@ defmodule ExMaude.MixProject do
         "CONTRIBUTING.md": [title: "Contributing"],
         "AGENTS.md": [title: "AI Agents"],
         "usage-rules.md": [title: "Usage Rules"],
+        "THIRD_PARTY_NOTICES.md": [title: "Third-party Notices"],
         "bench/output/benchmarks.md": [title: "Benchmark Results"],
-        "bench/output/backend_comparison.md": [title: "Backend Comparison"],
         LICENSE: [title: "License"]
       ],
       groups_for_extras: [
         "Getting Started": ~r/README|cheatsheet/,
         "Interactive Tutorials": ~r/notebooks\//,
-        Reference: ~r/CHANGELOG|CONTRIBUTING|AGENTS|usage-rules|LICENSE/,
+        Reference: ~r/CHANGELOG|CONTRIBUTING|AGENTS|usage-rules|LICENSE|THIRD_PARTY/,
         Performance: ~r/bench\/output/
       ],
       groups_for_modules: [
@@ -213,7 +214,8 @@ defmodule ExMaude.MixProject do
           ExMaude.Backend.Port,
           ExMaude.Backend.CNode,
           ExMaude.Backend.NIF,
-          ExMaude.Binary
+          ExMaude.Binary,
+          ExMaude.Config
         ],
         Observability: [ExMaude.Telemetry],
         Errors: [ExMaude.Error]
@@ -247,9 +249,9 @@ defmodule ExMaude.MixProject do
       ci: ["setup", "lint", "cover"],
       # Benchmarks
       bench: ["run bench/run.exs"],
-      # Port backend only
+      # Every backend available in the current VM
       "bench.backends": ["run bench/backends_bench.exs"],
-      # All backends (requires C-Node)
+      # Start distribution so the C-Node backend can be included
       "bench.backends.all": ["cmd ./bin/bench_backends_all.sh"],
       "bench.all": ["bench", "bench.backends"],
       # C-Node specific tests (requires distribution)

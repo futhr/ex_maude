@@ -48,7 +48,7 @@ same application — the templates and APIs are independent.
 {:capability_required, "name"}
 {:capability_granted, "name"}
 
-# Quantitative (interval-based, sound symbolic reasoning)
+# Quantitative (interval encoding)
 {:budget_within, "scope", {:interval, 0, 50_000}}
 
 # Authority levels
@@ -213,11 +213,10 @@ ExMaude.AI.validate_rule(%{
 ExMaude.AI.validate_rule(%{id: "broken"})
 ```
 
-The validator also surfaces a contract for *unverifiable* predicates that the
-equational fragment of Maude cannot decide:
+The validator rejects predicates that the current Maude model does not encode:
 
 ```elixir
-# Regex / string-search predicates are explicitly unverifiable
+# Regex / string-search predicates are unsupported
 ExMaude.AI.Validator.validate_predicate({:contains, "subject", "needle"})
 ```
 
@@ -225,8 +224,8 @@ ExMaude.AI.Validator.validate_predicate({:contains, "subject", "needle"})
 ExMaude.AI.Validator.validate_predicate({:matches, "subject", ~r/x/})
 ```
 
-Route these to a separate string-match safety net (sandbox, regex matcher,
-LLM-as-judge) rather than trying to encode them into the Maude template.
+Evaluate these with application code or a dedicated regular-expression engine
+before passing rules to ExMaude.
 
 ## Conflict-Type Cheatsheet
 
@@ -243,10 +242,6 @@ ExMaude.AI.ConflictParser
 | `agentLoopCascade` | `:agent_loop_cascade` | pairwise |
 | `sovereigntyViolation` | `:sovereignty_violation` | single-rule |
 | `approvalGateBypass` | `:approval_gate_bypass` | single-rule |
-| `budgetCascade` | `:budget_cascade` | search-based (deferred) |
-| `costCeilingInfeasibility` | `:cost_ceiling_infeasibility` | search-based (deferred) |
-| `providerRoutingInfeasibility` | `:provider_routing_infeasibility` | search-based (deferred) |
-
 `detect_pair_conflicts/2` runs only the pairwise checks;
 `detect_single_rule_conflicts/2` runs only the single-rule checks;
 `detect_conflicts/2` runs both.

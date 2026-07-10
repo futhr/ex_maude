@@ -1,10 +1,10 @@
 defmodule ExMaude.AI do
   @moduledoc """
-  AI rule conflict detection using Maude formal verification.
+  AI rule conflict detection using a Maude equational model.
 
-  Companion to `ExMaude.IoT`. Where `ExMaude.IoT` verifies physical-
+  Companion to `ExMaude.IoT`. Where `ExMaude.IoT` analyzes physical-
   IoT automation rules over Things, Properties, and Actions, this
-  module verifies AI-generated automation rules over Agents,
+  module analyzes AI-generated automation rules over Agents,
   Capabilities, ToolInvocations, and richer predicates (capability,
   budget, jurisdiction, authority, approval).
 
@@ -28,9 +28,6 @@ defmodule ExMaude.AI do
        without traversing an approval gate
     7. `:agent_loop_cascade` — one rule's capability grants another
        rule's required capability (cascade edge)
-
-  Budget, cost-ceiling, and provider-routing terms are reserved in the
-  bundled Maude model, but no public detector currently implements them.
 
   ## Usage
 

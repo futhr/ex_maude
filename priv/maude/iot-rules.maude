@@ -1,8 +1,7 @@
 *** IoT Rule Conflict Detection Module for Orvane Platform
 *** Based on AutoIoT paper (arxiv.org/abs/2411.10665)
 ***
-*** This module implements formal verification of IoT automation rules,
-*** detecting four types of conflicts:
+*** This module defines equational checks for four IoT rule conflict types:
 ***
 ***   1. State Conflict: Two rules target the same device property with
 ***      incompatible values (e.g., light on vs off)
@@ -452,7 +451,7 @@ endfm
 *** Adds a rewrite theory on top of the (equational) CONFLICT-DETECTOR
 *** so Maude's `search` command can explore the reachable states of a
 *** rule set. Used by ExMaude.IoT.verify_safety / verify_liveness for
-*** bounded, LTL-style verification:
+*** bounded reachability checks:
 ***   * safety   -> search [=>*] for a reachable "bad" world
 ***   * liveness -> search [=>!] for a terminal world missing a goal
 *** ============================================================

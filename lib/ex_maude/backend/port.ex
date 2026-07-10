@@ -14,8 +14,7 @@ defmodule ExMaude.Backend.Port do
 
   ## Trade-offs
 
-    * Higher latency than the NIF backend due to port messaging and text
-      parsing
+    * Port messaging and text parsing occur for every command
     * Regex-based error detection
     * Larger memory footprint per worker
 

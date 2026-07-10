@@ -3,12 +3,10 @@
 *** Companion to iot-rules.maude. Where iot-rules.maude verifies IoT
 *** automation rules over W3C-WoT Things, Properties, and Actions, this
 *** module verifies AI-generated rules over Agents, Capabilities,
-*** ToolInvocations, and Predicates. Detects ten conflict types
+*** ToolInvocations, and Predicates. Detects seven conflict types
 *** including: tool-call conflict, capability shadowing, pack-tool
-*** composition mismatch, budget cascade, cost-ceiling intersection
-*** infeasibility, sovereignty violation, authority escalation,
-*** approval-gate bypass, agent-loop cascade, provider-routing
-*** infeasibility.
+*** composition mismatch, sovereignty violation, authority escalation,
+*** approval-gate bypass, and agent-loop cascade.
 
 *** ============================================================
 *** AGENT-ID: tenant-scoped agent identifier
@@ -115,7 +113,7 @@ fmod PREDICATE-VALUE is
   op intVal : String -> PredicateValue [ctor] .
   op boolVal : Bool -> PredicateValue [ctor] .
 
-  *** Numeric interval for budget arithmetic (sound symbolic reasoning)
+  *** Numeric interval representation for budget arithmetic
   op intervalVal : Nat Nat -> PredicateValue [ctor] .
 
   *** Jurisdiction wrap for sovereignty predicates
@@ -136,7 +134,7 @@ fmod PREDICATE-VALUE is
   eq eqPredValue(null, null) = true .
   eq eqPredValue(V1:PredicateValue, V2:PredicateValue) = false [owise] .
 
-  *** Interval arithmetic — sound symbolic reasoning for budget cascades
+  *** Interval arithmetic helpers
   *** intervalAdd: [a,b] + [c,d] = [a+c, b+d]
   op intervalAdd : PredicateValue PredicateValue -> PredicateValue .
   eq intervalAdd(intervalVal(L1:Nat, U1:Nat), intervalVal(L2:Nat, U2:Nat)) =
@@ -373,7 +371,7 @@ fmod AI-RULE is
 endfm
 
 *** ============================================================
-*** AI-CONFLICT: ten conflict types
+*** AI-CONFLICT: seven conflict types
 *** ============================================================
 
 fmod AI-CONFLICT is
@@ -384,24 +382,20 @@ fmod AI-CONFLICT is
   sort AIConflictSet .
   subsort AIConflict < AIConflictSet .
 
-  *** Ten conflict types (4 carry over, 6 new)
+  *** Supported conflict types
   ops toolCallConflict
       capabilityShadowing
       packToolCompositionMismatch
-      budgetCascade
-      costCeilingInfeasibility
       sovereigntyViolation
       authorityEscalation
       approvalGateBypass
-      agentLoopCascade
-      providerRoutingInfeasibility : -> AIConflictType [ctor] .
+      agentLoopCascade : -> AIConflictType [ctor] .
 
   *** Pairwise-conflict constructor (R1 and R2 conflict)
   op aiConflict : AIConflictType AIRule AIRule String -> AIConflict [ctor] .
 
   *** Single-rule-conflict constructor (a rule violates a global
-  *** constraint independent of other rules — sovereignty,
-  *** routing-feasibility)
+  *** constraint independent of other rules)
   op aiConflictSingle : AIConflictType AIRule String -> AIConflict [ctor] .
 
   op noAIConflict : -> AIConflictSet [ctor] .

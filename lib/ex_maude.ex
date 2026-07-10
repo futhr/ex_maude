@@ -14,8 +14,7 @@ defmodule ExMaude do
 
   ## Quick Start
 
-      # Start the application (automatic with supervision tree)
-      {:ok, _} = Application.ensure_all_started(:ex_maude)
+      # Configure `config :ex_maude, start_pool: true` before application boot.
 
       # Reduce a term
       {:ok, result} = ExMaude.reduce("NAT", "1 + 2 + 3")
@@ -31,7 +30,7 @@ defmodule ExMaude do
 
       config :ex_maude,
         backend: :port,                # :port | :cnode | :nif
-        maude_path: nil,               # nil = auto-detect bundled binary
+        maude_path: nil,               # config/env/installed binary/PATH
         pool_size: 4,                  # Worker processes
         pool_max_overflow: 2,          # Extra workers under load
         timeout: 5_000,                # Default command timeout
@@ -64,11 +63,11 @@ defmodule ExMaude do
   never takes down the BEAM. They differ in transport and in how much
   native code runs inside the BEAM itself:
 
-  | Backend | Transport | Latency | Use Case |
-  |---------|-----------|---------|----------|
-  | `:port` | Erlang Port over pipes | Higher | Default, pure Elixir, works everywhere |
-  | `:cnode` | Erlang distribution to a C bridge | Medium | Structured binary protocol; needs epmd and the compiled bridge |
-  | `:nif` | Rustler NIF driving the subprocess | Lowest | Hot paths; the Rust layer runs inside the BEAM (panics are caught, a segfault would crash the VM) |
+  | Backend | Transport | Notes |
+  |---------|-----------|-------|
+  | `:port` | Erlang Port over pipes | Default; no ExMaude native extension required |
+  | `:cnode` | Erlang distribution to a C bridge | Needs epmd and the compiled bridge |
+  | `:nif` | Rustler NIF driving subprocess pipes | Rust runs inside the BEAM; a native crash can crash the VM |
 
   """
 
@@ -227,11 +226,8 @@ defmodule ExMaude do
   @doc """
   Returns the path to the bundled AI rules Maude module.
 
-  AI rules extend the IoT rules vocabulary with capability ontology,
-  tool-invocation arguments, budget arithmetic via interval reasoning,
-  sovereignty constraints, authority levels, and approval gates. Used
-  by `ExMaude.AI` for verifying AI-generated automation rules and
-  multi-tenant agent policies.
+  The AI rule model covers tool-invocation arguments, capability grants,
+  sovereignty constraints, authority levels, and approval gates.
   """
   @spec ai_rules_path() :: Path.t()
   def ai_rules_path do

@@ -113,14 +113,14 @@ defmodule Mix.Tasks.Maude.InstallTest do
       assert output =~ ~r/darwin-|linux-/
     end
 
-    test "shows bundled binary status" do
+    test "shows project-local binary status" do
       output =
         capture_io(fn ->
           Mix.Tasks.Maude.Install.run(["--check"])
         end)
 
       # Should show either found or not found
-      assert output =~ "Bundled binary:"
+      assert output =~ "Local binary:"
     end
 
     test "shows system PATH status" do

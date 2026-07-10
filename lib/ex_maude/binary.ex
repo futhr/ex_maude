@@ -26,7 +26,7 @@ defmodule ExMaude.Binary do
       ExMaude.Binary.path()
       #=> "/path/to/ex_maude/priv/maude/bin/maude-darwin-arm64"
 
-      # Check if bundled binary is available
+      # Check if a local binary is available
       ExMaude.Binary.bundled?()
       #=> true
 
@@ -41,7 +41,7 @@ defmodule ExMaude.Binary do
   @doc """
   Returns the path to the Maude binary.
 
-  Follows the fallback chain: config → bundled → system → error.
+  Follows the fallback chain: config → environment → local → system → error.
 
   ## Examples
 
