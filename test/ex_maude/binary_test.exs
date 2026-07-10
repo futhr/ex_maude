@@ -151,6 +151,7 @@ defmodule ExMaude.BinaryTest do
   describe "configuration precedence" do
     setup do
       original = Application.get_env(:ex_maude, :maude_path)
+      original_env = System.get_env("MAUDE_PATH")
 
       on_exit(fn ->
         if original do
@@ -158,9 +159,23 @@ defmodule ExMaude.BinaryTest do
         else
           Application.delete_env(:ex_maude, :maude_path)
         end
+
+        if original_env,
+          do: System.put_env("MAUDE_PATH", original_env),
+          else: System.delete_env("MAUDE_PATH")
       end)
 
       {:ok, original: original}
+    end
+
+    test "MAUDE_PATH is used when application config is absent" do
+      path = System.find_executable("maude") || Binary.bundled_path()
+
+      if path do
+        Application.delete_env(:ex_maude, :maude_path)
+        System.put_env("MAUDE_PATH", path)
+        assert Binary.find() == Path.expand(path)
+      end
     end
 
     test "configured path takes precedence" do

@@ -40,7 +40,7 @@ defmodule ExMaude.Backend.NIF do
   use GenServer
   require Logger
 
-  alias ExMaude.{Binary, Error, Parser}
+  alias ExMaude.{Binary, Config, Error, Parser, Telemetry}
 
   @default_timeout 30_000
 
@@ -165,7 +165,7 @@ defmodule ExMaude.Backend.NIF do
   @spec execute(GenServer.server(), String.t(), keyword()) ::
           {:ok, String.t()} | {:error, term()}
   def execute(server, command, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(@default_timeout))
 
     try do
       GenServer.call(server, {:execute, command, timeout}, timeout + 1_000)
@@ -190,10 +190,11 @@ defmodule ExMaude.Backend.NIF do
   """
   @spec load_file(GenServer.server(), Path.t()) :: :ok | {:error, term()}
   def load_file(server, path) do
-    GenServer.call(server, {:load_file, path, @default_timeout}, @default_timeout + 1_000)
+    timeout = Config.timeout(@default_timeout)
+    GenServer.call(server, {:load_file, path, timeout}, timeout + 1_000)
   catch
     :exit, {:timeout, _} ->
-      {:error, Error.timeout(@default_timeout)}
+      {:error, Error.timeout(Config.timeout(@default_timeout))}
 
     :exit, {{:shutdown, reason}, _} ->
       {:error, Error.pool_error({:worker_stopped, reason})}
@@ -400,8 +401,10 @@ defmodule ExMaude.Backend.NIF do
   defp preload_native_modules(_, []), do: :ok
 
   defp preload_native_modules(handle, [path | paths]) do
+    timeout = Config.timeout(@default_timeout)
+
     with {:ok, raw} <-
-           run_native_execute(handle, normalize_command("load #{path}"), @default_timeout),
+           run_native_execute(handle, normalize_command("load #{path}"), timeout),
          {:ok, _} <- Parser.parse_backend_response(raw) do
       preload_native_modules(handle, paths)
     else
@@ -414,10 +417,6 @@ defmodule ExMaude.Backend.NIF do
   end
 
   defp emit_telemetry(event, measurements) do
-    :telemetry.execute(
-      [:ex_maude, :server, event],
-      Map.merge(measurements, %{time: System.system_time()}),
-      %{pid: self(), backend: :nif}
-    )
+    Telemetry.server_event(event, measurements, %{pid: self(), backend: :nif})
   end
 end

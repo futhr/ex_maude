@@ -36,19 +36,20 @@ defmodule ExMaude.Telemetry do
   ### Server (Worker) Events
 
   Emitted by the backend workers (Port, C-Node, NIF) around the lifecycle of
-  each Maude OS process. All carry `%{time: integer}` plus the measurements
-  below, with metadata `%{pid: pid, backend: :port | :cnode | :nif}`.
+  each Maude OS process. All carry `%{system_time: integer}` plus the numeric
+  measurements below, with metadata `%{pid: pid, backend: :port | :cnode | :nif}`.
 
   `[:ex_maude, :server, :start]`
-  - Measurements: `%{maude_path: String.t}`
+  - Metadata also includes `%{maude_path: String.t}`
   - Emitted when a worker's Maude process is ready. Also fires when the pool
     replaces a worker after a timeout or crash.
 
   `[:ex_maude, :server, :command_start]`
-  - Measurements: `%{command: String.t}` (truncated to 100 bytes)
+  - Metadata also includes `%{command: String.t}` (truncated to 100 bytes)
 
   `[:ex_maude, :server, :command_complete]`
-  - Measurements: `%{success: boolean, response_size: integer}`
+  - Measurements: `%{response_size: integer}` when available
+  - Metadata also includes `%{result: :ok | :error}`
 
   `[:ex_maude, :server, :timeout]`
   - Measurements: `%{timeout_ms: integer}` (Port also reports `buffer_size`)
@@ -210,6 +211,34 @@ defmodule ExMaude.Telemetry do
       [:ex_maude, :ai, :detect_conflicts, :stop]
     ]
   end
+
+  @server_measurement_keys [:duration, :response_size, :timeout_ms, :buffer_size, :exit_status]
+
+  @doc false
+  @spec server_event(atom(), map(), map()) :: :ok
+  def server_event(event, attributes, metadata)
+      when is_atom(event) and is_map(attributes) and is_map(metadata) do
+    {measurements, context} = Map.split(attributes, @server_measurement_keys)
+
+    metadata =
+      context
+      |> normalize_server_context()
+      |> Map.merge(metadata)
+
+    :telemetry.execute(
+      [:ex_maude, :server, event],
+      Map.put(measurements, :system_time, System.system_time()),
+      metadata
+    )
+  end
+
+  defp normalize_server_context(%{success: success} = context) when is_boolean(success) do
+    context
+    |> Map.delete(:success)
+    |> Map.put(:result, if(success, do: :ok, else: :error))
+  end
+
+  defp normalize_server_context(context), do: context
 
   @doc """
   Executes a function and emits start/stop/exception telemetry events.

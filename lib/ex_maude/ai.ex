@@ -77,7 +77,7 @@ defmodule ExMaude.AI do
   """
 
   alias ExMaude.AI.{ConflictParser, Encoder, Validator}
-  alias ExMaude.Maude
+  alias ExMaude.{Config, Maude}
 
   @type tenant_id :: String.t()
   @type agent_id :: {tenant_id(), String.t()}
@@ -150,7 +150,7 @@ defmodule ExMaude.AI do
   """
   @spec detect_conflicts([ai_rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
   def detect_conflicts(rules, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 10_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
     jurisdictions = Keyword.get(opts, :jurisdictions, [])
     rule_count = if is_list(rules), do: length(rules), else: 0
     start_time = System.monotonic_time()
@@ -196,7 +196,7 @@ defmodule ExMaude.AI do
   """
   @spec detect_pair_conflicts([ai_rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
   def detect_pair_conflicts(rules, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 10_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
 
     with :ok <- Validator.validate_rules(rules),
          :ok <- ensure_ai_module_loaded(),
@@ -218,7 +218,7 @@ defmodule ExMaude.AI do
   @spec detect_single_rule_conflicts([ai_rule()], keyword()) ::
           {:ok, [conflict()]} | {:error, term()}
   def detect_single_rule_conflicts(rules, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 10_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
     jurisdictions = Keyword.get(opts, :jurisdictions, [])
 
     with :ok <- Validator.validate_rules(rules),

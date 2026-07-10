@@ -14,10 +14,11 @@ defmodule ExMaude.Binary do
   Binary resolution follows this priority:
 
   1. `Application.get_env(:ex_maude, :maude_path)` - Explicit config
-  2. `priv/maude/bin/maude-{platform}` or `priv/maude/bin/maude` - Local
+  2. `MAUDE_PATH` - Environment override
+  3. `priv/maude/bin/maude-{platform}` or `priv/maude/bin/maude` - Local
      binary (development checkout or `mix maude.install`)
-  3. `System.find_executable("maude")` - System PATH
-  4. Raises error with install instructions
+  4. `System.find_executable("maude")` - System PATH
+  5. Raises error with install instructions
 
   ## Examples
 
@@ -172,11 +173,14 @@ defmodule ExMaude.Binary do
   end
 
   defp configured_path do
-    case Application.get_env(:ex_maude, :maude_path) do
-      nil -> nil
-      path when is_binary(path) -> validate_path(path)
-    end
+    application_path = Application.get_env(:ex_maude, :maude_path)
+    environment_path = System.get_env("MAUDE_PATH")
+
+    validate_configured_path(application_path) || validate_configured_path(environment_path)
   end
+
+  defp validate_configured_path(path) when is_binary(path), do: validate_path(path)
+  defp validate_configured_path(_), do: nil
 
   defp system_path do
     case System.find_executable("maude") do
@@ -211,8 +215,9 @@ defmodule ExMaude.Binary do
 
     ExMaude looks for Maude in the following order:
     1. config :ex_maude, :maude_path
-    2. Bundled binary at priv/maude/bin/maude-#{platform()}
-    3. System PATH
+    2. MAUDE_PATH environment variable
+    3. Bundled binary at priv/maude/bin/maude-#{platform()}
+    4. System PATH
 
     To install Maude:
       mix maude.install

@@ -33,7 +33,7 @@ defmodule ExMaude.Maude do
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
 
-  alias ExMaude.{Error, Parser, Pool, Server, Telemetry}
+  alias ExMaude.{Config, Error, Parser, Pool, Server, Telemetry}
 
   @default_timeout_ms 5_000
   @search_timeout_ms 30_000
@@ -120,7 +120,7 @@ defmodule ExMaude.Maude do
           {:ok, list(map())} | {:error, term()}
   def search(module, initial, pattern, opts \\ []) do
     Telemetry.span([:ex_maude, :command], %{operation: :search, module: module}, fn ->
-      timeout = Keyword.get(opts, :timeout, @search_timeout_ms)
+      timeout = Keyword.get(opts, :timeout, Config.timeout(@search_timeout_ms))
       command = build_search_command(module, initial, pattern, opts)
 
       case do_execute(command, timeout: timeout) do
@@ -251,7 +251,7 @@ defmodule ExMaude.Maude do
 
   # Bypass the telemetry span so the calling function can wrap it instead.
   defp do_execute(command, opts) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(@default_timeout_ms))
 
     # The +1s keeps the checkout wait from expiring before a worker whose
     # in-flight command is about to hit its own deadline frees up.

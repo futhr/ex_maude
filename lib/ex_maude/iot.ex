@@ -63,8 +63,8 @@ defmodule ExMaude.IoT do
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
 
+  alias ExMaude.{Config, Maude}
   alias ExMaude.IoT.{ConflictParser, Encoder, Validator}
-  alias ExMaude.Maude
 
   @type thing_id :: String.t()
 
@@ -131,7 +131,7 @@ defmodule ExMaude.IoT do
   """
   @spec detect_conflicts([rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
   def detect_conflicts(rules, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 10_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
     rule_count = if is_list(rules), do: length(rules), else: 0
     start_time = System.monotonic_time()
 
@@ -179,7 +179,7 @@ defmodule ExMaude.IoT do
   """
   @spec detect_state_conflicts([rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
   def detect_state_conflicts(rules, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 10_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
 
     with :ok <- Validator.validate_rules(rules),
          :ok <- ensure_iot_module_loaded(),
@@ -198,7 +198,7 @@ defmodule ExMaude.IoT do
   """
   @spec detect_env_conflicts([rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
   def detect_env_conflicts(rules, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 10_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
 
     with :ok <- Validator.validate_rules(rules),
          :ok <- ensure_iot_module_loaded(),
@@ -216,7 +216,7 @@ defmodule ExMaude.IoT do
   """
   @spec detect_cascade_conflicts([rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
   def detect_cascade_conflicts(rules, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 10_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
 
     with :ok <- Validator.validate_rules(rules),
          :ok <- ensure_iot_module_loaded(),
@@ -315,7 +315,7 @@ defmodule ExMaude.IoT do
           | {:error, {:counterexample, [map()]} | ExMaude.Error.t() | term()}
   def verify_safety(rules, bad_state, opts \\ []) do
     max_depth = Keyword.get(opts, :max_depth, 50)
-    timeout = Keyword.get(opts, :timeout, 30_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(30_000))
 
     with :ok <- Validator.validate_rules(rules),
          :ok <- validate_world_inputs(bad_state, opts),
@@ -366,7 +366,7 @@ defmodule ExMaude.IoT do
           | {:error, :deadlock_possible | ExMaude.Error.t() | term()}
   def verify_liveness(rules, goal_state, opts \\ []) do
     max_depth = Keyword.get(opts, :max_depth, 50)
-    timeout = Keyword.get(opts, :timeout, 30_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(30_000))
 
     with :ok <- Validator.validate_rules(rules),
          :ok <- validate_world_inputs(goal_state, opts),
@@ -438,7 +438,7 @@ defmodule ExMaude.IoT do
   defp validate_world_inputs(predicate, opts) do
     initial_state = Keyword.get(opts, :initial_state, [])
     max_depth = Keyword.get(opts, :max_depth, 50)
-    timeout = Keyword.get(opts, :timeout, 30_000)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(30_000))
 
     cond do
       not (is_integer(max_depth) and max_depth > 0) ->

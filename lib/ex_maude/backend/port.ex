@@ -40,7 +40,7 @@ defmodule ExMaude.Backend.Port do
   use GenServer
   require Logger
 
-  alias ExMaude.{Binary, Error}
+  alias ExMaude.{Binary, Config, Error, Telemetry}
 
   @default_timeout_ms 5_000
   @startup_timeout_ms 10_000
@@ -83,7 +83,7 @@ defmodule ExMaude.Backend.Port do
 
   @impl ExMaude.Backend
   def execute(server, command, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(@default_timeout_ms))
 
     try do
       GenServer.call(server, {:execute, command, timeout}, timeout + 1_000)
@@ -451,11 +451,7 @@ defmodule ExMaude.Backend.Port do
   defp truncate(string, _), do: string
 
   defp emit_telemetry(event, measurements) do
-    :telemetry.execute(
-      [:ex_maude, :server, event],
-      Map.merge(measurements, %{time: System.system_time()}),
-      %{pid: self(), backend: :port}
-    )
+    Telemetry.server_event(event, measurements, %{pid: self(), backend: :port})
   end
 
   # coveralls-ignore-stop

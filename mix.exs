@@ -61,10 +61,14 @@ defmodule ExMaude.MixProject do
   defp erl_interface_available? do
     case System.cmd(
            "erl",
-           ["-noshell", "-eval", "code:lib_dir(erl_interface), halt()."],
+           [
+             "-noshell",
+             "-eval",
+             "case code:lib_dir(erl_interface) of {error, _} -> halt(1); _ -> halt(0) end."
+           ],
            stderr_to_stdout: true
          ) do
-      {output, 0} -> not String.contains?(output, "error")
+      {_, 0} -> true
       _ -> false
     end
   rescue

@@ -194,6 +194,34 @@ defmodule ExMaude.TelemetryTest do
   end
 
   describe "Prometheus/OpenTelemetry compatibility" do
+    test "server events keep contextual values out of measurements" do
+      handler_id = "server-contract-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:ex_maude, :server, :command_complete],
+        fn _, measurements, metadata, _ -> send(test_pid, {measurements, metadata}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      Telemetry.server_event(
+        :command_complete,
+        %{success: true, response_size: 42, command: "reduce in NAT : 1 ."},
+        %{backend: :port, pid: self()}
+      )
+
+      assert_receive {measurements, metadata}
+      assert Enum.all?(measurements, fn {_, value} -> is_number(value) end)
+      assert measurements.response_size == 42
+      assert metadata.result == :ok
+      assert metadata.command == "reduce in NAT : 1 ."
+      refute Map.has_key?(measurements, :success)
+      refute Map.has_key?(measurements, :command)
+    end
+
     test "measurements use native time units" do
       # Verify the pattern used in span/3 matches what Prometheus expects
       start_time = System.monotonic_time()

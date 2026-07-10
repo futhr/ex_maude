@@ -242,9 +242,61 @@ defmodule ExMaude.ServerTest do
       assert Server.default_timeout() == 5000
     end
 
+    test "uses the configured application timeout" do
+      previous = Application.get_env(:ex_maude, :timeout)
+      Application.put_env(:ex_maude, :timeout, 1_234)
+
+      on_exit(fn ->
+        if previous,
+          do: Application.put_env(:ex_maude, :timeout, previous),
+          else: Application.delete_env(:ex_maude, :timeout)
+      end)
+
+      assert Server.default_timeout() == 1_234
+    end
+
+    test "configured timeout reaches backend commands without an explicit option" do
+      previous = Application.get_env(:ex_maude, :timeout)
+      Application.put_env(:ex_maude, :timeout, 60)
+      fake_maude = Path.expand("../support/fake_maude.sh", __DIR__)
+
+      on_exit(fn ->
+        if previous,
+          do: Application.put_env(:ex_maude, :timeout, previous),
+          else: Application.delete_env(:ex_maude, :timeout)
+      end)
+
+      worker =
+        start_supervised!(
+          {ExMaude.Backend.Port, maude_path: fake_maude, use_pty: false},
+          restart: :temporary
+        )
+
+      assert {:error, %ExMaude.Error{type: :timeout, details: %{timeout_ms: 60}}} =
+               ExMaude.Backend.Port.execute(worker, "hang")
+    end
+
     test "empty preload_modules is valid" do
       opts = [preload_modules: []]
       assert Keyword.get(opts, :preload_modules) == []
+    end
+
+    test "an existing worker keeps its backend when application config changes" do
+      fake_maude = Path.expand("../support/fake_maude.sh", __DIR__)
+      previous = Application.get_env(:ex_maude, :backend)
+      {:ok, worker} = ExMaude.Backend.Port.start_link(maude_path: fake_maude, use_pty: false)
+
+      on_exit(fn ->
+        if Process.alive?(worker), do: ExMaude.Backend.Port.stop(worker)
+
+        if previous,
+          do: Application.put_env(:ex_maude, :backend, previous),
+          else: Application.delete_env(:ex_maude, :backend)
+      end)
+
+      Application.put_env(:ex_maude, :backend, :nif)
+      assert :ok = Server.load_file(worker, "/tmp/example.maude")
+      assert Server.alive?(worker)
     end
   end
 

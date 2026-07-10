@@ -27,7 +27,6 @@ defmodule Mix.Tasks.Maude.Install do
     * macOS ARM64 (Apple Silicon)
     * macOS x86_64 (Intel)
     * Linux x86_64
-    * Linux ARM64
 
   ## Examples
 
@@ -54,9 +53,10 @@ defmodule Mix.Tasks.Maude.Install do
   At runtime the binary resolution follows this priority:
 
     1. `config :ex_maude, :maude_path` - Explicit configuration
-    2. Binary in ExMaude's `priv/maude/bin/` (installed by this task; the
+    2. `MAUDE_PATH` environment variable
+    3. Binary in ExMaude's `priv/maude/bin/` (installed by this task; the
        git checkout also carries platform binaries there for development)
-    3. System PATH (`maude` command)
+    4. System PATH (`maude` command)
 
   ## Troubleshooting
 
@@ -446,24 +446,7 @@ defmodule Mix.Tasks.Maude.Install do
   end
 
   defp detect_platform do
-    arch =
-      case to_string(:erlang.system_info(:system_architecture)) do
-        "aarch64" <> _ -> "arm64"
-        "arm64" <> _ -> "arm64"
-        "x86_64" <> _ -> "x86_64"
-        "amd64" <> _ -> "x86_64"
-        other -> other
-      end
-
-    os =
-      case :os.type() do
-        {:unix, :darwin} -> "darwin"
-        {:unix, :linux} -> "linux"
-        {:win32, _} -> "windows"
-        {_, os} -> to_string(os)
-      end
-
-    "#{os}-#{arch}"
+    ExMaude.Binary.platform()
   end
 
   defp download_file(url, destination) do
@@ -871,13 +854,13 @@ defmodule Mix.Tasks.Maude.Install do
         ~r/darwin-arm64\.zip$/i,
         ~r/darwin64-arm\.zip$/i
       ],
-      "darwin-x86_64" => [
+      "darwin-x64" => [
         ~r/macos-x86_64\.zip$/i,
         ~r/macos\.zip$/i,
         ~r/darwin-x86_64\.zip$/i,
         ~r/darwin64\.zip$/i
       ],
-      "linux-x86_64" => [
+      "linux-x64" => [
         ~r/linux-x86_64\.zip$/i,
         ~r/linux\.zip$/i,
         ~r/linux64\.zip$/i

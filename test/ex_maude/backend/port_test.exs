@@ -210,9 +210,13 @@ defmodule ExMaude.Backend.PortTest do
       {:ok, pid} = Port.start_link([])
       Port.execute(pid, "reduce in NAT : 1 + 1 .")
 
-      assert_receive {:telemetry, [:ex_maude, :server, :command_complete], %{success: true},
-                      %{backend: :port}},
+      assert_receive {:telemetry, [:ex_maude, :server, :command_complete],
+                      %{response_size: response_size, system_time: system_time},
+                      %{backend: :port, result: :ok}},
                      5000
+
+      assert is_integer(response_size)
+      assert is_integer(system_time)
 
       Port.stop(pid)
       :telemetry.detach("test-port-command")

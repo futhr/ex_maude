@@ -34,7 +34,7 @@ defmodule ExMaude.Server do
 
   """
 
-  alias ExMaude.Backend
+  alias ExMaude.{Backend, Config}
 
   @default_timeout_ms 5_000
 
@@ -56,7 +56,7 @@ defmodule ExMaude.Server do
   @spec execute(GenServer.server(), String.t(), keyword()) ::
           {:ok, String.t()} | {:error, term()}
   def execute(server, command, opts \\ []) do
-    Backend.impl().execute(server, command, opts)
+    backend_for(server).execute(server, command, opts)
   end
 
   @doc """
@@ -64,7 +64,7 @@ defmodule ExMaude.Server do
   """
   @spec load_file(GenServer.server(), Path.t()) :: :ok | {:error, term()}
   def load_file(server, path) do
-    Backend.impl().load_file(server, path)
+    backend_for(server).load_file(server, path)
   end
 
   @doc """
@@ -72,7 +72,7 @@ defmodule ExMaude.Server do
   """
   @spec alive?(GenServer.server()) :: boolean()
   def alive?(server) do
-    Backend.impl().alive?(server)
+    backend_for(server).alive?(server)
   end
 
   @doc """
@@ -80,12 +80,28 @@ defmodule ExMaude.Server do
   """
   @spec stop(GenServer.server()) :: :ok
   def stop(server) do
-    Backend.impl().stop(server)
+    backend_for(server).stop(server)
   end
 
   @doc """
   Returns the default timeout in milliseconds.
   """
-  @spec default_timeout() :: 5000
-  def default_timeout, do: @default_timeout_ms
+  @spec default_timeout() :: pos_integer()
+  def default_timeout, do: Config.timeout(@default_timeout_ms)
+
+  defp backend_for(server) when is_pid(server) do
+    with {:dictionary, dictionary} <- Process.info(server, :dictionary),
+         {module, :init, 1} <- Keyword.get(dictionary, :"$initial_call"),
+         true <- module in backend_modules() do
+      module
+    else
+      _ -> Backend.impl()
+    end
+  end
+
+  defp backend_for(_), do: Backend.impl()
+
+  defp backend_modules do
+    [ExMaude.Backend.Port, ExMaude.Backend.CNode, ExMaude.Backend.NIF]
+  end
 end

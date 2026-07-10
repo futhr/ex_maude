@@ -38,7 +38,7 @@ defmodule ExMaude.Backend.CNode do
   use GenServer
   require Logger
 
-  alias ExMaude.{Binary, Error, Parser}
+  alias ExMaude.{Binary, Config, Error, Parser, Telemetry}
 
   @default_timeout 30_000
   @ping_timeout 2_000
@@ -81,7 +81,7 @@ defmodule ExMaude.Backend.CNode do
 
   @impl ExMaude.Backend
   def execute(server, command, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    timeout = Keyword.get(opts, :timeout, Config.timeout(@default_timeout))
 
     try do
       GenServer.call(server, {:execute, command, timeout}, timeout + 1_000)
@@ -98,14 +98,16 @@ defmodule ExMaude.Backend.CNode do
 
   @impl ExMaude.Backend
   def load_file(server, path) do
-    case GenServer.call(server, {:load_file, path, @default_timeout}, @default_timeout + 1_000) do
+    timeout = Config.timeout(@default_timeout)
+
+    case GenServer.call(server, {:load_file, path, timeout}, timeout + 1_000) do
       :ok -> :ok
       {:ok, _} -> :ok
       error -> error
     end
   catch
     :exit, {:timeout, _} ->
-      {:error, Error.timeout(@default_timeout)}
+      {:error, Error.timeout(Config.timeout(@default_timeout))}
 
     :exit, {{:shutdown, reason}, _} ->
       {:error, Error.pool_error({:worker_stopped, reason})}
@@ -480,7 +482,9 @@ defmodule ExMaude.Backend.CNode do
   defp preload_cnode_modules(_, []), do: :ok
 
   defp preload_cnode_modules(state, [path | paths]) do
-    case send_cnode_command(state.cnode_name, {:load_file, path}, @default_timeout) do
+    timeout = Config.timeout(@default_timeout)
+
+    case send_cnode_command(state.cnode_name, {:load_file, path}, timeout) do
       :ok ->
         preload_cnode_modules(state, paths)
 
@@ -539,11 +543,7 @@ defmodule ExMaude.Backend.CNode do
   end
 
   defp emit_telemetry(event, measurements) do
-    :telemetry.execute(
-      [:ex_maude, :server, event],
-      Map.merge(measurements, %{time: System.system_time()}),
-      %{pid: self(), backend: :cnode}
-    )
+    Telemetry.server_event(event, measurements, %{pid: self(), backend: :cnode})
   end
 
   # coveralls-ignore-stop

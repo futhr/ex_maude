@@ -84,7 +84,7 @@ defmodule Mix.Tasks.Maude.InstallTest do
         end)
 
       # Should detect a valid platform
-      assert output =~ ~r/darwin-arm64|darwin-x86_64|linux-x86_64/
+      assert output =~ ~r/darwin-arm64|darwin-x64|linux-x64|linux-arm64/
     end
   end
 
