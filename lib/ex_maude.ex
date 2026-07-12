@@ -14,7 +14,7 @@ defmodule ExMaude do
 
   ## Quick Start
 
-      # Configure `config :ex_maude, start_pool: true` before application boot.
+      # Add `ExMaude.Pool.child_spec/1` to your application's supervision tree.
 
       # Reduce a term
       {:ok, result} = ExMaude.reduce("NAT", "1 + 2 + 3")
@@ -34,7 +34,6 @@ defmodule ExMaude do
         pool_size: 4,                  # Worker processes
         pool_max_overflow: 2,          # Extra workers under load
         timeout: 5_000,                # Default command timeout
-        start_pool: false,             # Auto-start on application boot
         use_pty: false                 # PTY wrapper opt-in (Port backend only)
 
   ## Architecture

@@ -188,9 +188,12 @@ config :ex_maude,
   pool_size: 4,                        # Worker processes
   pool_max_overflow: 2,                # Extra workers under load
   timeout: 5_000,                      # Default command timeout
-  start_pool: false,                   # Auto-start on app start
   use_pty: false                       # PTY wrapper opt-in (Port backend)
 ```
+
+ExMaude starts no supervision tree automatically. Host applications add
+`ExMaude.Pool.child_spec/1` to their own tree and may use distinct `:name`
+values for independent pools.
 
 ### Backend Selection
 

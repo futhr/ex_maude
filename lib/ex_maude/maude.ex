@@ -263,7 +263,8 @@ defmodule ExMaude.Maude do
       fn worker ->
         Server.execute(worker, command, timeout: timeout)
       end,
-      checkout_timeout: timeout + 1_000
+      checkout_timeout: timeout + 1_000,
+      pool: Keyword.get(opts, :pool, :ex_maude_pool)
     )
   end
 
@@ -272,7 +273,7 @@ defmodule ExMaude.Maude do
 
   Runs `maude --version` on the binary resolved by `ExMaude.Binary.find/0`
   (configured path, `MAUDE_PATH`, local install, then system PATH). No pool or
-  worker is involved, so this works even with `start_pool: false`.
+  worker is involved, so this works without starting a pool.
 
   ## Examples
 

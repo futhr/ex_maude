@@ -201,6 +201,11 @@ config :ex_maude,
 ## Pool Management
 
 ```elixir
+# GOOD: the host owns placement, lifecycle, and configuration
+children = [
+  ExMaude.Pool.child_spec(name: :verification_pool, pool_size: 4)
+]
+
 # GOOD: Let the pool manage workers automatically
 {:ok, result} = ExMaude.reduce("NAT", "1 + 2")
 
@@ -208,7 +213,7 @@ config :ex_maude,
 ExMaude.Pool.transaction(fn worker ->
   ExMaude.Server.load_file(worker, path)
   ExMaude.Server.execute(worker, "reduce in MY-MOD : term .")
-end)
+end, pool: :verification_pool)
 
 # GOOD: Broadcast to all workers for module loading
 {:ok, results} = ExMaude.Pool.broadcast(fn worker ->

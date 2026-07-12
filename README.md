@@ -75,8 +75,10 @@ config :ex_maude, maude_path: "/usr/local/bin/maude"
 ## Quick Start
 
 ```elixir
-# In config/config.exs, enable the supervised pool:
-# config :ex_maude, start_pool: true
+# In your application supervision tree:
+children = [
+  ExMaude.Pool.child_spec(pool_size: 4)
+]
 
 # Reduce a term to normal form
 {:ok, "6"} = ExMaude.reduce("NAT", "1 + 2 + 3")
@@ -99,7 +101,6 @@ config :ex_maude,
   pool_size: 4,                        # Number of worker processes
   pool_max_overflow: 2,                # Extra workers under load
   timeout: 5_000,                      # Default command timeout (ms)
-  start_pool: false,                   # Auto-start pool on application start
   use_pty: false                       # PTY wrapper opt-in (Port backend only)
 ```
 
@@ -112,8 +113,12 @@ config :ex_maude,
 | `pool_size` | `integer()` | `4` | Number of Maude worker processes |
 | `pool_max_overflow` | `integer()` | `2` | Extra workers allowed under load |
 | `timeout` | `integer()` | `5000` | Default command timeout in ms |
-| `start_pool` | `boolean()` | `false` | Auto-start pool on application boot |
 | `use_pty` | `boolean()` | `false` | Wrap Maude in a PTY instead of pipes with `-interactive` |
+
+ExMaude is a library application: it starts no processes automatically. Add
+`ExMaude.Pool.child_spec/1` wherever the pool belongs in your supervision tree.
+Pass `:name` when you need multiple independent pools, then select one with the
+`:pool` option accepted by `ExMaude.Pool` operations and `ExMaude.execute/2`.
 
 By default the Port backend talks to `maude -interactive` over plain pipes — the same mode the C-Node and NIF backends use, and it needs no extra tooling. Set `use_pty: true` to wrap Maude in a PTY (`script`/`unbuffer`) instead.
 

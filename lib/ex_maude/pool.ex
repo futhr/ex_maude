@@ -59,6 +59,7 @@ defmodule ExMaude.Pool do
 
   ## Options
 
+    * `:name` - Local pool name (default: `:ex_maude_pool`)
     * `:worker_module` - Override the backend module (default: `Backend.impl()`)
     * `:pool_size` - Number of workers (default: from config)
     * `:pool_max_overflow` - Extra workers under load (default: from config)
@@ -67,18 +68,19 @@ defmodule ExMaude.Pool do
   @spec child_spec(keyword()) ::
           {atom(), {:poolboy, :start_link, [any()]}, :permanent, 5000, :worker, [:poolboy]}
   def child_spec(opts \\ []) do
+    name = Keyword.get(opts, :name, @pool_name)
     worker_module = Keyword.get(opts, :worker_module, Backend.impl())
 
     pool_config = [
-      name: {:local, @pool_name},
+      name: {:local, name},
       worker_module: worker_module,
       size: Keyword.get(opts, :pool_size, config_pool_size()),
       max_overflow: Keyword.get(opts, :pool_max_overflow, config_max_overflow())
     ]
 
-    worker_opts = Keyword.drop(opts, [:pool_size, :pool_max_overflow, :worker_module])
+    worker_opts = Keyword.drop(opts, [:name, :pool_size, :pool_max_overflow, :worker_module])
 
-    :poolboy.child_spec(@pool_name, pool_config, worker_opts)
+    :poolboy.child_spec(name, pool_config, worker_opts)
   end
 
   @doc """
@@ -99,10 +101,13 @@ defmodule ExMaude.Pool do
       inside `fun` carries its own `:timeout`.
     * `:timeout` - Deprecated alias for `:checkout_timeout`, kept for
       backwards compatibility.
+    * `:pool` - Registered pool name (default: `:ex_maude_pool`).
   """
   @spec transaction((pid() -> result), keyword()) :: result | {:error, Error.t()}
         when result: any()
   def transaction(fun, opts \\ []) when is_function(fun, 1) do
+    pool = Keyword.get(opts, :pool, @pool_name)
+
     timeout =
       Keyword.get(opts, :checkout_timeout) ||
         Keyword.get(opts, :timeout, @checkout_timeout_ms)
@@ -119,7 +124,7 @@ defmodule ExMaude.Pool do
 
     {result_atom, result} =
       try do
-        value = :poolboy.transaction(@pool_name, fn worker -> fun.(worker) end, timeout)
+        value = :poolboy.transaction(pool, fn worker -> fun.(worker) end, timeout)
         {:ok, value}
       catch
         :exit, reason -> {:error, {:error, Error.pool_error(reason)}}
@@ -187,16 +192,18 @@ defmodule ExMaude.Pool do
       ExMaude.Pool.status()
       #=> %{size: 4, overflow: 0, available: 3, in_use: 1}
   """
-  @spec status() :: %{
+  @spec status(keyword()) :: %{
           size: non_neg_integer(),
           overflow: non_neg_integer(),
           available: non_neg_integer(),
           in_use: integer(),
           state: atom()
         }
-  def status do
+  def status(opts \\ []) do
+    pool = Keyword.get(opts, :pool, @pool_name)
+
     try do
-      {state_name, workers, overflow, monitors} = :poolboy.status(@pool_name)
+      {state_name, workers, overflow, monitors} = :poolboy.status(pool)
 
       # workers is the count of available workers in the pool
       # monitors is the count of checked-out workers being monitored
@@ -219,16 +226,17 @@ defmodule ExMaude.Pool do
   @doc """
   Checks out a worker from the pool.
 
-  Remember to check the worker back in with `checkin/1`.
+  Remember to check the worker back in with `checkin/2` using the same pool.
   Prefer `transaction/2` for automatic resource management.
   """
   @spec checkout(keyword()) :: pid() | :full | {:error, Error.t()}
   def checkout(opts \\ []) do
+    pool = Keyword.get(opts, :pool, @pool_name)
     timeout = Keyword.get(opts, :timeout, @checkout_timeout_ms)
     block = Keyword.get(opts, :block, true)
 
     try do
-      :poolboy.checkout(@pool_name, block, timeout)
+      :poolboy.checkout(pool, block, timeout)
     catch
       :exit, {:timeout, _} -> {:error, Error.pool_error(:timeout)}
       :exit, {:full, _} -> {:error, Error.pool_error(:full)}
@@ -238,9 +246,9 @@ defmodule ExMaude.Pool do
   @doc """
   Returns a worker to the pool.
   """
-  @spec checkin(pid()) :: :ok
-  def checkin(worker) do
-    :poolboy.checkin(@pool_name, worker)
+  @spec checkin(pid(), keyword()) :: :ok
+  def checkin(worker, opts \\ []) do
+    :poolboy.checkin(Keyword.get(opts, :pool, @pool_name), worker)
   end
 
   defp config_pool_size do

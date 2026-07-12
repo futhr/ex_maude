@@ -95,10 +95,12 @@ config :ex_maude,
   pool_size: 4,
   pool_max_overflow: 2,
   timeout: 5_000,        # default command timeout (ms)
-  start_pool: false,     # start workers with the application
   use_pty: false,        # Port backend: PTY wrapper opt-in
   preload_modules: []
 ```
+
+Add `ExMaude.Pool.child_spec/1` to the host supervision tree; the library
+starts no processes automatically.
 
 ### Backends
 

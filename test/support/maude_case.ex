@@ -6,7 +6,7 @@ defmodule ExMaude.MaudeCase do
   with a real Maude process. It handles:
 
   - Detecting if Maude is available on the system
-  - Starting the ExMaude application for integration tests
+  - Starting an explicit ExMaude pool for integration tests
   - Providing test context with Maude availability information
 
   ## Usage
@@ -51,13 +51,18 @@ defmodule ExMaude.MaudeCase do
         {:ok, maude_available: false, maude_path: nil, maude_version: nil}
 
       path ->
-        # Configure ExMaude to use the found Maude binary and start pool
+        # Start the caller-owned pool used by the high-level API.
         Application.put_env(:ex_maude, :maude_path, path)
-        Application.put_env(:ex_maude, :start_pool, true)
 
-        # Stop and restart the application to pick up new config
-        _ = Application.stop(:ex_maude)
-        {:ok, _} = Application.ensure_all_started(:ex_maude)
+        if Process.whereis(:ex_maude_pool) == nil do
+          start_supervised!(%{
+            id: :ex_maude_test_pool_supervisor,
+            start:
+              {Supervisor, :start_link,
+               [[ExMaude.Pool.child_spec(maude_path: path)], [strategy: :one_for_one]]},
+            type: :supervisor
+          })
+        end
 
         # Get Maude version
         version = get_maude_version(path)

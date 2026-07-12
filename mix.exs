@@ -79,10 +79,7 @@ defmodule ExMaude.MixProject do
   defp elixirc_paths(_), do: ["lib"]
 
   def application do
-    [
-      extra_applications: [:logger],
-      mod: {ExMaude.Application, []}
-    ]
+    [extra_applications: [:logger]]
   end
 
   def cli do
@@ -209,7 +206,6 @@ defmodule ExMaude.MixProject do
           ExMaude.AI.ConflictParser
         ],
         Runtime: [
-          ExMaude.Application,
           ExMaude.Pool,
           ExMaude.Server,
           ExMaude.Backend,

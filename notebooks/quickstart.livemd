@@ -8,9 +8,12 @@ Mix.install(
   config_path: :ex_maude,
   lockfile: :ex_maude,
   config: [
-    ex_maude: [start_pool: true, use_pty: false]
+    ex_maude: [use_pty: false]
   ]
 )
+
+{:ok, _pool_supervisor} =
+  Supervisor.start_link([ExMaude.Pool.child_spec()], strategy: :one_for_one)
 ```
 
 ## Introduction

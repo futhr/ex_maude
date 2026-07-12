@@ -30,6 +30,14 @@ defmodule ExMaude.PoolTest do
       assert spec != nil
     end
 
+    test "accepts a caller-owned pool name" do
+      {id, {:poolboy, :start_link, [pool_config, _]}, _, _, _, _} =
+        Pool.child_spec(name: :secondary_maude_pool)
+
+      assert id == :secondary_maude_pool
+      assert pool_config[:name] == {:local, :secondary_maude_pool}
+    end
+
     test "passes worker options through" do
       spec = Pool.child_spec(pool_size: 2, maude_path: "/custom/path")
       assert spec != nil
@@ -107,7 +115,7 @@ defmodule ExMaude.PoolTest do
     end
   end
 
-  describe "status/0" do
+  describe "status/1" do
     test "returns expected map keys when pool not running" do
       status = Pool.status()
 
@@ -119,6 +127,10 @@ defmodule ExMaude.PoolTest do
       assert Map.has_key?(status, :state)
     end
 
+    test "queries a caller-selected pool" do
+      assert Pool.status(pool: :missing_status_pool).state == :not_started
+    end
+
     test "returns valid state when pool is running" do
       status = Pool.status()
 
@@ -127,9 +139,10 @@ defmodule ExMaude.PoolTest do
     end
   end
 
-  describe "checkin/1" do
+  describe "checkin/2" do
     test "function exists" do
       assert function_exported?(Pool, :checkin, 1)
+      assert function_exported?(Pool, :checkin, 2)
     end
   end
 
