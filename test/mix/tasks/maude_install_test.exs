@@ -13,10 +13,12 @@ defmodule Mix.Tasks.Maude.InstallTest do
     end
 
     test "run/1 is exported" do
+      assert Code.ensure_loaded?(Mix.Tasks.Maude.Install)
       assert function_exported?(Mix.Tasks.Maude.Install, :run, 1)
     end
 
     test "has shortdoc" do
+      assert Code.ensure_loaded?(Mix.Tasks.Maude.Install)
       # Task has @shortdoc attribute
       assert Mix.Task.shortdoc(Mix.Tasks.Maude.Install) == "Installs Maude system binary"
     end
