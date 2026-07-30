@@ -70,6 +70,25 @@ defmodule ExMaude.Backend.NIFIntegrationTest do
       assert {:ok, "6"} = NIF.execute(pid, "reduce in NAT : 1 + 2 + 3 .")
     end
 
+    test "emits redacted command-start telemetry", %{pid: pid} do
+      test_pid = self()
+      handler = "nif-command-start-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler,
+        [:ex_maude, :server, :command_start],
+        fn _, measurements, metadata, _ -> send(test_pid, {measurements, metadata}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+      assert {:ok, "3"} = NIF.execute(pid, "reduce in NAT : 1 + 2")
+
+      assert_receive {%{command_bytes: bytes}, %{backend: :nif} = metadata}
+      assert bytes == byte_size("reduce in NAT : 1 + 2 .")
+      refute Map.has_key?(metadata, :command)
+    end
+
     test "handles multiple sequential commands", %{pid: pid} do
       for i <- 1..10 do
         assert {:ok, result} = NIF.execute(pid, "reduce in NAT : #{i} + #{i} .")
@@ -122,6 +141,19 @@ defmodule ExMaude.Backend.NIFIntegrationTest do
         Path.join(System.tmp_dir!(), "test_nif_#{:erlang.unique_integer([:positive])}.maude")
 
       File.write!(path, "fmod TEST-NIF is sort Foo . endfm")
+      on_exit(fn -> File.rm(path) end)
+
+      assert :ok = NIF.load_file(pid, path)
+    end
+
+    test "loads a file whose path contains spaces", %{pid: pid} do
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "test nif #{:erlang.unique_integer([:positive])}.maude"
+        )
+
+      File.write!(path, "fmod TEST-NIF-SPACED-PATH is sort Foo . endfm")
       on_exit(fn -> File.rm(path) end)
 
       assert :ok = NIF.load_file(pid, path)

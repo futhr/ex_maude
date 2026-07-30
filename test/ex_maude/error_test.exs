@@ -47,6 +47,13 @@ defmodule ExMaude.ErrorTest do
       assert String.contains?(error.message, "FOO")
     end
 
+    test "detects Maude's no-module diagnostic" do
+      error = Error.from_output("<standard input>, line 1: no module NAMED-ONLY.")
+
+      assert error.type == :module_not_found
+      assert error.message == "Module not found: NAMED-ONLY"
+    end
+
     test "detects syntax errors" do
       output = "Syntax error at line 5"
       error = Error.from_output(output)

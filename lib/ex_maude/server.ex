@@ -30,7 +30,8 @@ defmodule ExMaude.Server do
       config :ex_maude,
         backend: :port,              # :port | :cnode | :nif
         maude_path: nil,             # nil = env, local install, or system PATH
-        use_pty: false               # PTY wrapper opt-in (Port backend only)
+        use_pty: false,              # PTY wrapper opt-in (Port backend only)
+        telemetry_include_commands: false
 
   """
 

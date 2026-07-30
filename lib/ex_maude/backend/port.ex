@@ -39,7 +39,7 @@ defmodule ExMaude.Backend.Port do
   use GenServer
   require Logger
 
-  alias ExMaude.{Binary, Config, Error, Telemetry}
+  alias ExMaude.{Binary, Command, Config, Error, Preloads, Telemetry}
 
   @default_timeout_ms 5_000
   @startup_timeout_ms 10_000
@@ -99,7 +99,7 @@ defmodule ExMaude.Backend.Port do
 
   @impl ExMaude.Backend
   def load_file(server, path) do
-    case execute(server, "load #{path}") do
+    case execute(server, Command.load_file(path)) do
       {:ok, _} -> :ok
       error -> error
     end
@@ -122,7 +122,8 @@ defmodule ExMaude.Backend.Port do
   @impl GenServer
   def init(opts) do
     maude_path = opts[:maude_path] || find_maude_path()
-    preload_modules = opts[:preload_modules] || config_preload_modules()
+    pool = Keyword.get(opts, :pool, :ex_maude_pool)
+    preload_modules = Preloads.for_pool(pool, opts[:preload_modules])
     startup_timeout = opts[:startup_timeout_ms] || @startup_timeout_ms
 
     case start_maude_port(maude_path, opts) do
@@ -153,12 +154,12 @@ defmodule ExMaude.Backend.Port do
 
   @impl GenServer
   def handle_call({:execute, command, timeout}, from, %{pending: nil} = state) do
-    command = ensure_command_format(command)
+    command = Command.port_command(command)
     Port.command(state.port, command)
     ref = make_ref()
     timer = Process.send_after(self(), {:command_timeout, ref}, timeout)
 
-    emit_telemetry(:command_start, %{command: truncate(command, 100)})
+    Telemetry.command_started(:port, command)
 
     pending = %{from: from, ref: ref, timer: timer, timeout: timeout}
     {:noreply, %{state | pending: pending, buffer: ""}}
@@ -403,7 +404,7 @@ defmodule ExMaude.Backend.Port do
 
   defp preload_modules(state, [path | rest], startup_timeout) do
     if File.exists?(path) do
-      Port.command(state.port, "load #{path}\n")
+      Port.command(state.port, Command.port_command(Command.load_file(path)))
 
       case wait_for_ready(state, startup_timeout) do
         {:ok, state} -> preload_modules(state, rest, startup_timeout)
@@ -413,19 +414,6 @@ defmodule ExMaude.Backend.Port do
       Logger.warning("Preload module not found: #{path}")
       preload_modules(state, rest, startup_timeout)
     end
-  end
-
-  defp ensure_command_format(command) do
-    command = String.trim(command)
-
-    command =
-      if String.ends_with?(command, ".") do
-        command
-      else
-        command <> " ."
-      end
-
-    command <> "\n"
   end
 
   defp response_complete?(buffer), do: String.contains?(buffer, @prompt_marker)
@@ -438,16 +426,6 @@ defmodule ExMaude.Backend.Port do
   end
 
   defp port_alive?(port), do: Port.info(port) != nil
-
-  defp config_preload_modules do
-    Application.get_env(:ex_maude, :preload_modules, [])
-  end
-
-  defp truncate(string, max_length) when byte_size(string) > max_length do
-    String.slice(string, 0, max_length) <> "..."
-  end
-
-  defp truncate(string, _), do: string
 
   defp emit_telemetry(event, measurements) do
     Telemetry.server_event(event, measurements, %{pid: self(), backend: :port})

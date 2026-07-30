@@ -357,6 +357,30 @@ defmodule ExMaude.AI.ValidatorTest do
       assert msg =~ "invoke_tool args"
     end
 
+    test "rejects argument keys the encoder cannot stringify" do
+      assert {:error, msg} =
+               Validator.validate_invocation(
+                 {:invoke_tool, "x", %{{:tuple, :key} => "value"}, "cap", :eu}
+               )
+
+      assert msg =~ "unsupported argument key"
+    end
+
+    test "rejects invalid UTF-8 before encoding" do
+      invalid = <<255>>
+
+      assert {:error, _} =
+               Validator.validate_rule(%{
+                 id: invalid,
+                 agent_id: {"tenant", "agent"},
+                 trigger: {:always},
+                 invocations: []
+               })
+
+      assert {:error, _} =
+               Validator.validate_invocation({:invoke_tool, "x", %{"k" => invalid}, "cap", :eu})
+    end
+
     test "accepts invoke_tool with diverse arg map values" do
       args = %{
         "s" => {:str, "x"},

@@ -3,8 +3,7 @@ defmodule ExMaude.MaudeTest do
 
   use ExMaude.MaudeCase
 
-  alias ExMaude.Error
-  alias ExMaude.Maude
+  alias ExMaude.{Command, Error, Maude, Pool}
 
   doctest ExMaude.Maude
 
@@ -23,10 +22,14 @@ defmodule ExMaude.MaudeTest do
 
     test "load_file/1 is exported" do
       assert function_exported?(Maude, :load_file, 1)
+      assert function_exported?(Maude, :load_file, 2)
+      assert function_exported?(ExMaude, :load_file, 2)
     end
 
     test "load_module/1 is exported" do
       assert function_exported?(Maude, :load_module, 1)
+      assert function_exported?(Maude, :load_module, 2)
+      assert function_exported?(ExMaude, :load_module, 2)
     end
 
     test "execute/2 is exported" do
@@ -89,72 +92,47 @@ defmodule ExMaude.MaudeTest do
   describe "reduce/3 command building" do
     # Test the expected command format
     test "builds correct reduce command format" do
-      # Reduce command should be: "reduce in MODULE : TERM"
-      module = "NAT"
-      term = "1 + 2 + 3"
-      expected_pattern = "reduce in #{module} : #{term}"
-
-      assert String.contains?(expected_pattern, "reduce in")
-      assert String.contains?(expected_pattern, module)
-      assert String.contains?(expected_pattern, term)
+      assert Command.reduce("NAT", "1 + 2 + 3") == "reduce in NAT : 1 + 2 + 3"
     end
   end
 
   describe "rewrite/3 command building" do
     test "builds rewrite command without max_rewrites" do
-      module = "MY-MOD"
-      term = "initial"
-      expected = "rewrite in #{module} : #{term}"
-
-      assert String.contains?(expected, "rewrite in")
-      assert String.contains?(expected, module)
+      assert Command.rewrite("MY-MOD", "initial", []) == "rewrite in MY-MOD : initial"
     end
 
     test "builds rewrite command with max_rewrites" do
-      module = "MY-MOD"
-      max_rewrites = 100
-      expected = "rewrite [#{max_rewrites}] in #{module}"
-
-      assert String.contains?(expected, "[100]")
+      assert Command.rewrite("MY-MOD", "initial", max_rewrites: 100) ==
+               "rewrite [100] in MY-MOD : initial"
     end
   end
 
   describe "search/4 command building" do
     test "builds search command with defaults" do
-      module = "MY-MOD"
-      initial = "init"
-      pattern = "goal"
-      # Default: max_solutions=1, max_depth=100, arrow="=>*"
-      expected = "search [1, 100] in #{module} : #{initial} =>* #{pattern}"
-
-      assert String.contains?(expected, "search")
-      assert String.contains?(expected, "[1, 100]")
-      assert String.contains?(expected, "=>*")
+      assert Command.search("MY-MOD", "init", "goal", []) ==
+               "search [1, 100] in MY-MOD : init =>* goal"
     end
 
     test "supports different arrow operators" do
-      arrows = ["=>1", "=>+", "=>*", "=>!"]
-
-      for arrow <- arrows do
-        assert Regex.match?(~r/=>[1+*!]/, arrow)
+      for arrow <- ["=>1", "=>+", "=>*", "=>!"] do
+        assert Command.search("M", "a", "b", arrow: arrow) =~ " #{arrow} "
       end
     end
 
     test "supports condition clause" do
-      condition = "property(S)"
-      expected = "such that #{condition}"
-
-      assert String.contains?(expected, "such that")
+      assert Command.search("M", "a", "S:State", condition: "property(S)") =~
+               "such that property(S)"
     end
   end
 
   describe "parse/3 command building" do
     test "builds parse command" do
-      module = "NAT"
-      term = "1 + 2"
-      expected = "parse in #{module} : #{term}"
+      assert Command.parse("NAT", "1 + 2") == "parse in NAT : 1 + 2"
+    end
 
-      assert String.contains?(expected, "parse in")
+    test "quotes file paths as one Maude argument" do
+      assert Command.load_file(~s|/tmp/a "quoted" module.maude|) ==
+               ~s|load "/tmp/a \\"quoted\\" module.maude"|
     end
   end
 
@@ -299,35 +277,78 @@ defmodule ExMaude.MaudeTest do
       {:ok, solutions} = Maude.search("NAT", "0", "N:Nat", max_solutions: 1, max_depth: 1)
       assert is_list(solutions)
     end
+
+    @tag :integration
+    test "preserves the caller-selected pool", %{maude_available: true, maude_path: path} do
+      pool = :ex_maude_named_search_pool
+      start_named_pool(pool, path)
+
+      assert {:ok, solutions} =
+               Maude.search("NAT", "0", "N:Nat",
+                 max_solutions: 1,
+                 max_depth: 1,
+                 pool: pool
+               )
+
+      assert is_list(solutions)
+    end
+
+    @tag :integration
+    test "keeps dynamically loaded modules isolated by pool",
+         %{maude_available: true, maude_path: path} do
+      pool_a = :ex_maude_module_pool_a
+      pool_b = :ex_maude_module_pool_b
+      start_named_pool(pool_a, path)
+      start_named_pool(pool_b, path)
+
+      source = "fmod NAMED-ONLY is sort Answer . op answer : -> Answer . endfm"
+      assert :ok = Maude.load_module(source, pool: pool_a)
+      assert {:ok, "answer"} = Maude.reduce("NAMED-ONLY", "answer", pool: pool_a)
+
+      assert {:error, %Error{type: :module_not_found}} =
+               Maude.reduce("NAMED-ONLY", "answer", pool: pool_b)
+    end
+
+    @tag :integration
+    test "replays a named pool's modules after worker replacement",
+         %{maude_available: true, maude_path: path} do
+      pool = :ex_maude_replacement_pool
+      start_named_pool(pool, path)
+
+      source = "fmod REPLAYED is sort Answer . op answer : -> Answer . endfm"
+      assert :ok = Maude.load_module(source, pool: pool)
+
+      worker = Pool.checkout(pool: pool)
+      Pool.checkin(worker, pool: pool)
+      Process.exit(worker, :kill)
+
+      assert_eventually(fn ->
+        case Maude.reduce("REPLAYED", "answer", pool: pool) do
+          {:ok, "answer"} -> true
+          _ -> false
+        end
+      end)
+    end
   end
 
   describe "search/4 command building additional tests" do
     test "builds search with =>1 arrow" do
       # =>1 means exactly one step
-      arrow = "=>1"
-      expected = "=>1"
-      assert arrow == expected
+      assert Command.search("M", "a", "b", arrow: "=>1") =~ " =>1 "
     end
 
     test "builds search with =>+ arrow" do
       # =>+ means one or more steps
-      arrow = "=>+"
-      expected = "=>+"
-      assert arrow == expected
+      assert Command.search("M", "a", "b", arrow: "=>+") =~ " =>+ "
     end
 
     test "builds search with =>! arrow" do
       # =>! means search for normal forms
-      arrow = "=>!"
-      expected = "=>!"
-      assert arrow == expected
+      assert Command.search("M", "a", "b", arrow: "=>!") =~ " =>! "
     end
 
     test "max_depth and max_solutions format correctly" do
-      max_solutions = 5
-      max_depth = 50
-      expected_pattern = "[#{max_solutions}, #{max_depth}]"
-      assert expected_pattern == "[5, 50]"
+      assert Command.search("M", "a", "b", max_solutions: 5, max_depth: 50) =~ "[5, 50]"
     end
   end
 
@@ -348,36 +369,24 @@ defmodule ExMaude.MaudeTest do
 
   describe "reduce/3 additional tests" do
     test "command format is correct" do
-      module = "MY-MODULE"
-      term = "my-term"
-      expected = "reduce in #{module} : #{term}"
-      assert expected == "reduce in MY-MODULE : my-term"
+      assert Command.reduce("MY-MODULE", "my-term") == "reduce in MY-MODULE : my-term"
     end
   end
 
   describe "rewrite/3 additional tests" do
     test "command format without max_rewrites" do
-      module = "MOD"
-      term = "init"
-      expected = "rewrite in #{module} : #{term}"
-      assert expected == "rewrite in MOD : init"
+      assert Command.rewrite("MOD", "init", []) == "rewrite in MOD : init"
     end
 
     test "command format with max_rewrites" do
-      module = "MOD"
-      term = "init"
-      max = 100
-      expected = "rewrite [#{max}] in #{module} : #{term}"
-      assert expected == "rewrite [100] in MOD : init"
+      assert Command.rewrite("MOD", "init", max_rewrites: 100) ==
+               "rewrite [100] in MOD : init"
     end
   end
 
   describe "parse/3 additional tests" do
     test "command format is correct" do
-      module = "NAT"
-      term = "1 + 2"
-      expected = "parse in #{module} : #{term}"
-      assert expected == "parse in NAT : 1 + 2"
+      assert Command.parse("NAT", "1 + 2") == "parse in NAT : 1 + 2"
     end
   end
 
@@ -432,6 +441,38 @@ defmodule ExMaude.MaudeTest do
     test "invalid module returns error" do
       # This would require Maude to be running, so just test structure
       assert function_exported?(Maude, :reduce, 3)
+    end
+  end
+
+  defp start_named_pool(pool, maude_path) do
+    start_supervised!(%{
+      id: pool,
+      start:
+        {Supervisor, :start_link,
+         [
+           [
+             Pool.child_spec(
+               name: pool,
+               pool_size: 1,
+               pool_max_overflow: 0,
+               maude_path: maude_path
+             )
+           ],
+           [strategy: :one_for_one]
+         ]},
+      type: :supervisor
+    })
+  end
+
+  defp assert_eventually(fun, attempts \\ 50)
+  defp assert_eventually(fun, 0), do: assert(fun.())
+
+  defp assert_eventually(fun, attempts) do
+    if fun.() do
+      :ok
+    else
+      Process.sleep(20)
+      assert_eventually(fun, attempts - 1)
     end
   end
 end

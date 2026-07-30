@@ -34,7 +34,9 @@ defmodule ExMaude do
         pool_size: 4,                  # Worker processes
         pool_max_overflow: 2,          # Extra workers under load
         timeout: 5_000,                # Default command timeout
-        use_pty: false                 # PTY wrapper opt-in (Port backend only)
+        use_pty: false,                # PTY wrapper opt-in (Port backend only)
+        preload_modules: [],           # Modules loaded when workers start
+        telemetry_include_commands: false
 
   ## Architecture
 
@@ -132,9 +134,11 @@ defmodule ExMaude do
 
       ExMaude.load_file("/path/to/my-module.maude")
       #=> :ok
+
+  Pass `pool: name` to load into a caller-owned named pool.
   """
-  @spec load_file(Path.t()) :: :ok | {:error, ExMaude.Error.t()}
-  defdelegate load_file(path), to: ExMaude.Maude
+  @spec load_file(Path.t(), keyword()) :: :ok | {:error, ExMaude.Error.t()}
+  defdelegate load_file(path, opts \\ []), to: ExMaude.Maude
 
   @doc """
   Loads a Maude module from a string.
@@ -143,9 +147,11 @@ defmodule ExMaude do
 
       ExMaude.load_module("fmod MY-MOD is sort Foo . endfm")
       #=> :ok
+
+  Pass `pool: name` to load into a caller-owned named pool.
   """
-  @spec load_module(String.t()) :: :ok | {:error, ExMaude.Error.t()}
-  defdelegate load_module(source), to: ExMaude.Maude
+  @spec load_module(String.t(), keyword()) :: :ok | {:error, ExMaude.Error.t()}
+  defdelegate load_module(source, opts \\ []), to: ExMaude.Maude
 
   @doc """
   Executes a raw Maude command and returns the output.

@@ -166,8 +166,12 @@ defmodule ExMaude.Error do
 
   defp parse_error?(output), do: String.contains?(output, "No parse for term")
 
-  defp module_not_found?(output),
-    do: String.contains?(output, "module") and String.contains?(output, "not found")
+  defp module_not_found?(output) do
+    normalized = String.downcase(output)
+
+    String.contains?(normalized, "module") and
+      (String.contains?(normalized, "not found") or String.contains?(normalized, "no module"))
+  end
 
   defp syntax_error?(output),
     do: String.contains?(output, "syntax error") or String.contains?(output, "Syntax error")
@@ -331,7 +335,9 @@ defmodule ExMaude.Error do
   end
 
   defp extract_module_not_found(output) do
-    case Regex.run(~r/module\s+(\S+)\s+not found/i, output) do
+    case Regex.run(~r/(?:module\s+(\S+)\s+not found|no module\s+(\S+))/i, output) do
+      [_, module, ""] -> "Module not found: #{module}"
+      [_, "", module] -> "Module not found: #{String.trim_trailing(module, ".")}"
       [_, module] -> "Module not found: #{module}"
       nil -> "Module not found"
     end

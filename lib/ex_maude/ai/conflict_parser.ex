@@ -102,83 +102,22 @@ defmodule ExMaude.AI.ConflictParser do
   end
 
   defp parse_conflict_list(output) do
-    normalized =
-      output
-      |> String.replace(~r/\r?\n/, " ")
-      |> String.replace(~r/\s+/, " ")
-
-    pairwise = extract_balanced("aiConflict(", normalized)
-    single = extract_balanced("aiConflictSingle(", normalized)
+    pairwise = ExMaude.Balanced.extract(output, "aiConflict(")
+    single = ExMaude.Balanced.extract(output, "aiConflictSingle(")
 
     (Enum.map(pairwise, &parse_pairwise/1) ++ Enum.map(single, &parse_single/1))
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
   end
 
-  defp extract_balanced(marker, str) do
-    do_extract_balanced(marker, str, [])
-  end
-
-  defp do_extract_balanced(marker, str, acc) do
-    case :binary.match(str, marker) do
-      :nomatch ->
-        Enum.reverse(acc)
-
-      {start_pos, marker_len} ->
-        rest = binary_part(str, start_pos, byte_size(str) - start_pos)
-
-        case extract_balanced_parens(rest, 0, 0) do
-          {:ok, conflict_str, remaining} ->
-            do_extract_balanced(marker, remaining, [conflict_str | acc])
-
-          :error ->
-            skip_len = byte_size(str) - start_pos - marker_len
-
-            if skip_len > 0 do
-              remaining = binary_part(str, start_pos + marker_len, skip_len)
-              do_extract_balanced(marker, remaining, acc)
-            else
-              Enum.reverse(acc)
-            end
-        end
-    end
-  end
-
-  defp extract_balanced_parens(str, depth, pos) when pos < byte_size(str) do
-    char = binary_part(str, pos, 1)
-
-    cond do
-      char == "(" ->
-        extract_balanced_parens(str, depth + 1, pos + 1)
-
-      char == ")" and depth == 1 ->
-        conflict_str = binary_part(str, 0, pos + 1)
-        remaining_len = byte_size(str) - pos - 1
-
-        remaining =
-          if remaining_len > 0 do
-            binary_part(str, pos + 1, remaining_len)
-          else
-            ""
-          end
-
-        {:ok, conflict_str, remaining}
-
-      char == ")" ->
-        extract_balanced_parens(str, depth - 1, pos + 1)
-
-      true ->
-        extract_balanced_parens(str, depth, pos + 1)
-    end
-  end
-
-  defp extract_balanced_parens(_, _, _), do: :error
-
   defp parse_pairwise(conflict_str) do
-    type_match = Regex.run(~r/aiConflict\((\w+),/, conflict_str)
+    type_match = Regex.run(~r/aiConflict\(\s*(\w+)\s*,/s, conflict_str)
 
     rule_ids =
-      Regex.scan(~r/aiRule\(\s*"([^"]+)"/, conflict_str) |> Enum.map(fn [_, id] -> id end)
+      ExMaude.Syntax.captured_strings(
+        ~r/aiRule\(\s*"((?:\\.|[^"\\])*)"/s,
+        conflict_str
+      )
 
     reason = extract_reason(conflict_str)
 
@@ -197,10 +136,13 @@ defmodule ExMaude.AI.ConflictParser do
   end
 
   defp parse_single(conflict_str) do
-    type_match = Regex.run(~r/aiConflictSingle\((\w+),/, conflict_str)
+    type_match = Regex.run(~r/aiConflictSingle\(\s*(\w+)\s*,/s, conflict_str)
 
     rule_ids =
-      Regex.scan(~r/aiRule\(\s*"([^"]+)"/, conflict_str) |> Enum.map(fn [_, id] -> id end)
+      ExMaude.Syntax.captured_strings(
+        ~r/aiRule\(\s*"((?:\\.|[^"\\])*)"/s,
+        conflict_str
+      )
 
     reason = extract_reason(conflict_str)
 
@@ -219,13 +161,9 @@ defmodule ExMaude.AI.ConflictParser do
   end
 
   defp extract_reason(conflict_str) do
-    ~r/"([^"]+)"/
-    |> Regex.scan(conflict_str)
-    |> Enum.map(fn [_, s] -> s end)
-    |> Enum.reverse()
-    |> Enum.find(fn s ->
-      String.contains?(s, " ")
-    end)
+    conflict_str
+    |> ExMaude.Syntax.quoted_strings()
+    |> List.last()
   end
 
   defp parse_conflict_type("toolCallConflict"), do: :tool_call_conflict

@@ -229,14 +229,24 @@ defmodule ExMaude.AI.ConflictParserTest do
       assert conflict.reason == reason
     end
 
-    test "skips reason strings without a space (they are quoted identifiers)" do
-      # The parser uses the heuristic "longest right-most quoted string that
-      # contains a space" to pick the reason. If all quoted strings are
-      # single tokens, no reason can be inferred and the conflict is dropped.
+    test "accepts a single-token reason" do
       output =
         ~s|result AIConflictSet: aiConflict(toolCallConflict, aiRule("r1", agent(tenant("a"), "x"), alwaysP, nilInvocation, noCap, 0, 1), aiRule("r2", agent(tenant("a"), "x"), alwaysP, nilInvocation, noCap, 0, 1), "no-spaces-here")|
 
-      assert [] = ConflictParser.parse_conflicts(output)
+      assert [%{reason: "no-spaces-here"}] = ConflictParser.parse_conflicts(output)
+    end
+
+    test "preserves escaped quotes, backslashes, and parentheses in rule IDs" do
+      output =
+        ~S|result AIConflictSet: aiConflict(toolCallConflict, aiRule("r1\")", agent(tenant("a"), "x"), alwaysP, nilInvocation, noCap, 0, 1), aiRule("r2\\(", agent(tenant("a"), "x"), alwaysP, nilInvocation, noCap, 0, 1), "reason \"quoted\"")|
+
+      assert [
+               %{
+                 rule1: ~s|r1")|,
+                 rule2: ~s|r2\\(|,
+                 reason: ~s|reason "quoted"|
+               }
+             ] = ConflictParser.parse_conflicts(output)
     end
 
     test "preserves all seven conflict types via the type mapper" do

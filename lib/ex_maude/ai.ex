@@ -140,6 +140,7 @@ defmodule ExMaude.AI do
       explicit allowed set to enable)
     * `:timeout` — Maude command timeout in milliseconds (default
       10_000)
+    * `:pool` — registered caller-owned pool (default `:ex_maude_pool`)
 
   ## Examples
 
@@ -161,10 +162,10 @@ defmodule ExMaude.AI do
     result =
       with :ok <- Validator.validate_rules(rules),
            :ok <- Validator.validate_jurisdictions(jurisdictions),
-           :ok <- ensure_ai_module_loaded(),
+           :ok <- ensure_ai_module_loaded(opts),
            {:ok, maude_rules} <- Encoder.encode_rules(rules),
            jurisdiction_set = Encoder.encode_jurisdiction_set(jurisdictions),
-           {:ok, output} <- run_detection(maude_rules, jurisdiction_set, timeout) do
+           {:ok, output} <- run_detection(maude_rules, jurisdiction_set, timeout, opts) do
         {:ok, ConflictParser.parse_conflicts(output)}
       end
 
@@ -196,11 +197,11 @@ defmodule ExMaude.AI do
     timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
 
     with :ok <- Validator.validate_rules(rules),
-         :ok <- ensure_ai_module_loaded(),
+         :ok <- ensure_ai_module_loaded(opts),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command =
            "reduce in AI-CONFLICT-DETECTOR : detectAllPairConflicts(#{maude_rules}) .",
-         {:ok, output} <- Maude.execute(command, timeout: timeout) do
+         {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
       {:ok, ConflictParser.parse_conflicts(output)}
     end
   end
@@ -220,12 +221,12 @@ defmodule ExMaude.AI do
 
     with :ok <- Validator.validate_rules(rules),
          :ok <- Validator.validate_jurisdictions(jurisdictions),
-         :ok <- ensure_ai_module_loaded(),
+         :ok <- ensure_ai_module_loaded(opts),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          jurisdiction_set = Encoder.encode_jurisdiction_set(jurisdictions),
          command =
            "reduce in AI-CONFLICT-DETECTOR : detectAllSingleRuleConflicts(#{maude_rules}, #{jurisdiction_set}) .",
-         {:ok, output} <- Maude.execute(command, timeout: timeout) do
+         {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
       {:ok, ConflictParser.parse_conflicts(output)}
     end
   end
@@ -246,20 +247,23 @@ defmodule ExMaude.AI do
   @spec validate_rules([ai_rule()]) :: :ok | {:error, %{String.t() => [String.t()]}}
   defdelegate validate_rules(rules), to: Validator
 
-  defp ensure_ai_module_loaded do
+  defp ensure_ai_module_loaded(opts) do
     path = ExMaude.ai_rules_path()
 
     if File.exists?(path) do
-      ExMaude.load_file(path)
+      ExMaude.load_file(path, pool: Keyword.get(opts, :pool, :ex_maude_pool))
     else
       {:error, {:module_not_found, path}}
     end
   end
 
-  defp run_detection(maude_rules, jurisdiction_set, timeout) do
+  defp run_detection(maude_rules, jurisdiction_set, timeout, opts) do
     command =
       "reduce in AI-CONFLICT-DETECTOR : detectAllConflicts(#{maude_rules}, #{jurisdiction_set}) ."
 
-    Maude.execute(command, timeout: timeout)
+    Maude.execute(command, maude_opts(opts, timeout))
   end
+
+  defp maude_opts(opts, timeout),
+    do: [timeout: timeout, pool: Keyword.get(opts, :pool, :ex_maude_pool)]
 end

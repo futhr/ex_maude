@@ -208,6 +208,19 @@ defmodule ExMaude.IoT.ConflictParserTest do
       assert conflict.rule2 == "rule_with_underscores"
     end
 
+    test "preserves quoted parentheses and single-token reasons" do
+      output =
+        ~S|result ConflictSet: conflict(stateConflict, rule("r1\")", thing("d1"), always, nil, 1), rule("r2\\(", thing("d1"), always, nil, 1), "collision")|
+
+      assert [
+               %{
+                 rule1: ~s|r1")|,
+                 rule2: ~s|r2\\(|,
+                 reason: "collision"
+               }
+             ] = ConflictParser.parse_conflicts(output)
+    end
+
     test "handles very long output" do
       # Generate a long conflict output
       rules_part = String.duplicate("x", 1000)

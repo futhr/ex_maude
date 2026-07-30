@@ -11,43 +11,50 @@ defmodule ExMaude.PoolTest do
   describe "child_spec/1" do
     test "returns valid child spec with defaults" do
       spec = Pool.child_spec([])
-      # Poolboy returns old tuple-based child spec
-      assert is_tuple(spec)
+      assert %{id: :ex_maude_pool, start: {:poolboy, :start_link, _}} = spec
+      assert Supervisor.child_spec(spec, []) == spec
     end
 
     test "accepts pool_size option" do
       spec = Pool.child_spec(pool_size: 8)
-      assert spec != nil
+      assert %{start: {:poolboy, :start_link, [pool_config, _]}} = spec
+      assert pool_config[:size] == 8
     end
 
     test "accepts pool_max_overflow option" do
       spec = Pool.child_spec(pool_max_overflow: 4)
-      assert spec != nil
+      assert %{start: {:poolboy, :start_link, [pool_config, _]}} = spec
+      assert pool_config[:max_overflow] == 4
     end
 
     test "accepts combined options" do
       spec = Pool.child_spec(pool_size: 8, pool_max_overflow: 4)
-      assert spec != nil
+      assert %{start: {:poolboy, :start_link, [pool_config, _]}} = spec
+      assert pool_config[:size] == 8
+      assert pool_config[:max_overflow] == 4
     end
 
     test "accepts a caller-owned pool name" do
-      {id, {:poolboy, :start_link, [pool_config, _]}, _, _, _, _} =
+      %{id: id, start: {:poolboy, :start_link, [pool_config, _]}} =
         Pool.child_spec(name: :secondary_maude_pool)
 
       assert id == :secondary_maude_pool
       assert pool_config[:name] == {:local, :secondary_maude_pool}
     end
 
+    test "rejects a non-atom pool name" do
+      assert_raise ArgumentError, fn -> Pool.child_spec(name: "invalid") end
+    end
+
     test "passes worker options through" do
       spec = Pool.child_spec(pool_size: 2, maude_path: "/custom/path")
-      assert spec != nil
+      assert %{start: {:poolboy, :start_link, [_, worker_opts]}} = spec
+      assert worker_opts[:maude_path] == "/custom/path"
     end
 
     test "child spec has correct structure" do
       spec = Pool.child_spec([])
-      # Poolboy child spec is a tuple {id, {module, function, args}, ...}
-      assert tuple_size(spec) >= 3
-      {id, {module, func, _}, _, _, _, _} = spec
+      %{id: id, start: {module, func, _}} = spec
       assert id == :ex_maude_pool
       assert module == :poolboy
       assert func == :start_link
@@ -99,6 +106,11 @@ defmodule ExMaude.PoolTest do
   end
 
   describe "checkout/1" do
+    test "returns a structured error when the pool is not running" do
+      assert {:error, %Error{type: :pool_error}} =
+               Pool.checkout(pool: :missing_checkout_pool, timeout: 10)
+    end
+
     test "accepts timeout option" do
       opts = [timeout: 10_000]
       assert Keyword.get(opts, :timeout) == 10_000
@@ -136,6 +148,22 @@ defmodule ExMaude.PoolTest do
 
       # Pool may be running or not depending on test context
       assert status.state in [:ready, :not_started]
+    end
+
+    test "reports the configured size of a named pool" do
+      pool = :ex_maude_status_test_pool
+
+      pool_config = [
+        name: {:local, pool},
+        worker_module: ExMaude.PoolTest.Worker,
+        size: 1,
+        max_overflow: 1
+      ]
+
+      start_supervised!({ExMaude.PoolTest.PoolOwner, {pool_config, []}})
+
+      assert %{size: 1, available: 1, in_use: 0, overflow: 0, state: :ready} =
+               Pool.status(pool: pool)
     end
   end
 
@@ -274,25 +302,24 @@ defmodule ExMaude.PoolTest do
   describe "child_spec/1 additional tests" do
     test "child spec id is :ex_maude_pool" do
       spec = Pool.child_spec([])
-      {id, _, _, _, _, _} = spec
-      assert id == :ex_maude_pool
+      assert spec.id == :ex_maude_pool
     end
 
     test "child spec uses poolboy module" do
       spec = Pool.child_spec([])
-      {_, {module, _, _}, _, _, _, _} = spec
+      {module, _, _} = spec.start
       assert module == :poolboy
     end
 
     test "child spec uses start_link function" do
       spec = Pool.child_spec([])
-      {_, {_, func, _}, _, _, _, _} = spec
+      {_, func, _} = spec.start
       assert func == :start_link
     end
 
     test "child spec includes worker module" do
       spec = Pool.child_spec([])
-      {_, {_, _, [pool_config, _]}, _, _, _, _} = spec
+      {_, _, [pool_config, _]} = spec.start
       # Pool uses Backend.impl() which defaults to Backend.Port
       assert Keyword.get(pool_config, :worker_module) == ExMaude.Backend.impl()
     end
@@ -416,17 +443,21 @@ defmodule ExMaude.PoolTest do
 
     test "custom pool size is used" do
       spec = Pool.child_spec(pool_size: 10)
-      assert spec != nil
+      assert %{start: {:poolboy, :start_link, [pool_config, _]}} = spec
+      assert pool_config[:size] == 10
     end
 
     test "custom max overflow is used" do
       spec = Pool.child_spec(pool_max_overflow: 5)
-      assert spec != nil
+      assert %{start: {:poolboy, :start_link, [pool_config, _]}} = spec
+      assert pool_config[:max_overflow] == 5
     end
 
     test "worker options are passed through" do
       spec = Pool.child_spec(maude_path: "/custom/maude", timeout: 10_000)
-      assert spec != nil
+      assert %{start: {:poolboy, :start_link, [_, worker_opts]}} = spec
+      assert worker_opts[:maude_path] == "/custom/maude"
+      assert worker_opts[:timeout] == 10_000
     end
   end
 
@@ -454,15 +485,14 @@ defmodule ExMaude.PoolTest do
   describe "pool_name configuration" do
     test "pool is named :ex_maude_pool" do
       spec = Pool.child_spec([])
-      {id, _, _, _, _, _} = spec
-      assert id == :ex_maude_pool
+      assert spec.id == :ex_maude_pool
     end
   end
 
   describe "worker module configuration" do
     test "uses Backend.impl() as worker" do
       spec = Pool.child_spec([])
-      {_, {_, _, [pool_config, _]}, _, _, _, _} = spec
+      {_, _, [pool_config, _]} = spec.start
       # Pool uses Backend.impl() which defaults to Backend.Port
       assert Keyword.get(pool_config, :worker_module) == ExMaude.Backend.impl()
     end
@@ -560,7 +590,7 @@ defmodule ExMaude.PoolTest do
       try do
         Application.put_env(:ex_maude, :pool_size, 10)
         spec = Pool.child_spec([])
-        {_, {_, _, [pool_config, _]}, _, _, _, _} = spec
+        {_, _, [pool_config, _]} = spec.start
         assert Keyword.get(pool_config, :size) == 10
       after
         if original do
@@ -577,7 +607,7 @@ defmodule ExMaude.PoolTest do
       try do
         Application.put_env(:ex_maude, :pool_max_overflow, 8)
         spec = Pool.child_spec([])
-        {_, {_, _, [pool_config, _]}, _, _, _, _} = spec
+        {_, _, [pool_config, _]} = spec.start
         assert Keyword.get(pool_config, :max_overflow) == 8
       after
         if original do

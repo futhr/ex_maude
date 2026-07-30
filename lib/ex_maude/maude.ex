@@ -33,7 +33,7 @@ defmodule ExMaude.Maude do
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
 
-  alias ExMaude.{Config, Error, Parser, Pool, Server, Telemetry}
+  alias ExMaude.{Command, Config, Error, Parser, Pool, Preloads, Server, Telemetry}
 
   @default_timeout_ms 5_000
   @search_timeout_ms 30_000
@@ -59,8 +59,7 @@ defmodule ExMaude.Maude do
   @spec reduce(String.t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def reduce(module, term, opts \\ []) do
     Telemetry.span([:ex_maude, :command], %{operation: :reduce, module: module}, fn ->
-      command = "reduce in #{module} : #{term}"
-      do_execute(command, opts)
+      do_execute(Command.reduce(module, term), opts)
     end)
   end
 
@@ -83,15 +82,8 @@ defmodule ExMaude.Maude do
   @spec rewrite(String.t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def rewrite(module, term, opts \\ []) do
     Telemetry.span([:ex_maude, :command], %{operation: :rewrite, module: module}, fn ->
-      do_execute(build_rewrite_command(module, term, opts), opts)
+      do_execute(Command.rewrite(module, term, opts), opts)
     end)
-  end
-
-  defp build_rewrite_command(module, term, opts) do
-    case Keyword.get(opts, :max_rewrites) do
-      nil -> "rewrite in #{module} : #{term}"
-      n -> "rewrite [#{n}] in #{module} : #{term}"
-    end
   end
 
   @doc """
@@ -121,9 +113,9 @@ defmodule ExMaude.Maude do
   def search(module, initial, pattern, opts \\ []) do
     Telemetry.span([:ex_maude, :command], %{operation: :search, module: module}, fn ->
       timeout = Keyword.get(opts, :timeout, Config.timeout(@search_timeout_ms))
-      command = build_search_command(module, initial, pattern, opts)
+      command = Command.search(module, initial, pattern, opts)
 
-      case do_execute(command, timeout: timeout) do
+      case do_execute(command, Keyword.put(opts, :timeout, timeout)) do
         {:ok, output} -> {:ok, Parser.parse_search_results(output)}
         error -> error
       end
@@ -140,18 +132,18 @@ defmodule ExMaude.Maude do
 
       ExMaude.Maude.load_file("/path/to/my-module.maude")
       #=> :ok
+
+  ## Options
+
+    * `:pool` - Registered pool name (default: `:ex_maude_pool`)
   """
-  @spec load_file(Path.t()) :: :ok | {:error, Error.t()}
-  def load_file(path) do
-    if File.exists?(path) do
-      with {:ok, cached_path} <- cache_module(path),
-           :ok <- load_cached_file(cached_path) do
-        remember_preload(cached_path)
-        :ok
-      end
-    else
-      {:error, Error.file_not_found(path)}
-    end
+  @spec load_file(Path.t(), keyword()) :: :ok | {:error, Error.t()}
+  def load_file(path, opts \\ []) do
+    Telemetry.span(
+      [:ex_maude, :command],
+      %{operation: :load_file, module: "file"},
+      fn -> do_load_file(path, opts) end
+    )
   end
 
   @doc """
@@ -164,10 +156,37 @@ defmodule ExMaude.Maude do
       source = "fmod MY-MOD is sort Foo . endfm"
       ExMaude.Maude.load_module(source)
       #=> :ok
+
+  ## Options
+
+    * `:pool` - Registered pool name (default: `:ex_maude_pool`)
   """
+  @spec load_module(String.t(), keyword()) :: :ok | {:error, term()}
+  def load_module(source, opts \\ []) do
+    Telemetry.span(
+      [:ex_maude, :command],
+      %{operation: :load_module, module: "source"},
+      fn -> do_load_module(source, opts) end
+    )
+  end
+
+  defp do_load_file(path, opts) do
+    if File.exists?(path) do
+      pool = Keyword.get(opts, :pool, :ex_maude_pool)
+
+      with {:ok, cached_path} <- cache_module(path),
+           :ok <- load_cached_file(cached_path, pool) do
+        Preloads.remember(pool, cached_path)
+      end
+    else
+      {:error, Error.file_not_found(path)}
+    end
+  end
+
+  # The path is generated entirely from the runtime temp directory and a
+  # unique integer, then checked again before either filesystem operation.
   # sobelow_skip ["Traversal.FileModule"]
-  @spec load_module(String.t()) :: :ok | {:error, term()}
-  def load_module(source) do
+  defp do_load_module(source, opts) do
     # The path is built from System.tmp_dir! and a unique integer (no user
     # input), then expanded and bounds-checked as defense in depth before
     # File.write!.
@@ -181,7 +200,7 @@ defmodule ExMaude.Maude do
     if String.starts_with?(expanded_path, expanded_tmp) do
       try do
         File.write!(expanded_path, source)
-        load_file(expanded_path)
+        do_load_file(expanded_path, opts)
       after
         File.rm(expanded_path)
       end
@@ -193,8 +212,8 @@ defmodule ExMaude.Maude do
     end
   end
 
-  defp load_cached_file(path) do
-    case Pool.broadcast(fn worker -> Server.load_file(worker, path) end) do
+  defp load_cached_file(path, pool) do
+    case Pool.broadcast(fn worker -> Server.load_file(worker, path) end, pool: pool) do
       {:ok, results} ->
         if Enum.all?(results, &(&1 == :ok)) do
           :ok
@@ -208,7 +227,7 @@ defmodule ExMaude.Maude do
     end
   end
 
-  # `path` was validated by load_file/1. The cache directory comes from the
+  # `path` was validated by load_file/2. The cache directory comes from the
   # runtime and the filename is a SHA-256 digest, so neither destination
   # component contains caller-controlled path segments.
   # sobelow_skip ["Traversal.FileModule"]
@@ -224,13 +243,6 @@ defmodule ExMaude.Maude do
       {:error, reason} ->
         {:error, Error.new(:load_error, "Could not cache Maude module: #{inspect(reason)}")}
     end
-  end
-
-  defp remember_preload(path) do
-    :global.trans({__MODULE__, :preload_modules}, fn ->
-      modules = Application.get_env(:ex_maude, :preload_modules, [])
-      Application.put_env(:ex_maude, :preload_modules, Enum.uniq(Enum.concat(modules, [path])))
-    end)
   end
 
   @doc """
@@ -322,8 +334,7 @@ defmodule ExMaude.Maude do
   @spec parse(String.t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def parse(module, term, opts \\ []) do
     Telemetry.span([:ex_maude, :command], %{operation: :parse, module: module}, fn ->
-      command = "parse in #{module} : #{term}"
-      do_execute(command, opts)
+      do_execute(Command.parse(module, term), opts)
     end)
   end
 
@@ -346,20 +357,5 @@ defmodule ExMaude.Maude do
   @spec list_modules(keyword()) :: {:ok, String.t()} | {:error, term()}
   def list_modules(opts \\ []) do
     execute("show modules .", opts)
-  end
-
-  defp build_search_command(module, initial, pattern, opts) do
-    max_depth = Keyword.get(opts, :max_depth, 100)
-    max_solutions = Keyword.get(opts, :max_solutions, 1)
-    arrow = Keyword.get(opts, :arrow, "=>*")
-    condition = Keyword.get(opts, :condition)
-
-    base = "search [#{max_solutions}, #{max_depth}] in #{module} : #{initial} #{arrow} #{pattern}"
-
-    if condition do
-      "#{base} such that #{condition}"
-    else
-      base
-    end
   end
 end

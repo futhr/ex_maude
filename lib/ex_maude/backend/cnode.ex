@@ -37,7 +37,7 @@ defmodule ExMaude.Backend.CNode do
   use GenServer
   require Logger
 
-  alias ExMaude.{Binary, Config, Error, Parser, Telemetry}
+  alias ExMaude.{Binary, Command, Config, Error, Parser, Preloads, Telemetry}
 
   @default_timeout 30_000
   @ping_timeout 2_000
@@ -49,6 +49,7 @@ defmodule ExMaude.Backend.CNode do
   # timeout reply ({Ref, {:error, :read_failed}}) to arrive before we
   # give up on the receive.
   @reply_grace 500
+  @max_cookie_bytes 255
 
   @typedoc """
   Internal state for the C-Node backend GenServer.
@@ -133,7 +134,8 @@ defmodule ExMaude.Backend.CNode do
     maude_path = opts[:maude_path] || Binary.find() || "maude"
     cookie = opts[:cookie] || get_cookie()
     startup_timeout = opts[:startup_timeout_ms] || @default_timeout
-    preload_modules = opts[:preload_modules] || config_preload_modules()
+    pool = Keyword.get(opts, :pool, :ex_maude_pool)
+    preload_modules = Preloads.for_pool(pool, opts[:preload_modules])
 
     state = %__MODULE__{
       maude_path: maude_path,
@@ -164,7 +166,10 @@ defmodule ExMaude.Backend.CNode do
 
   @impl GenServer
   def handle_call({:execute, command, timeout}, _, %{connected: true} = state) do
-    case send_cnode_command(state.cnode_name, {:execute, normalize_command(command)}, timeout) do
+    command = Command.normalize(command)
+    Telemetry.command_started(:cnode, command)
+
+    case send_cnode_command(state.cnode_name, {:execute, command}, timeout) do
       {:ok, raw} ->
         result = Parser.parse_backend_response(raw)
         emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
@@ -306,41 +311,54 @@ defmodule ExMaude.Backend.CNode do
         {:error, :node_not_distributed}
 
       true ->
-        # Generate both string (for args) and atom (for cnode_name) forms
+        # Generate both string (for args) and atom (for cnode_name) forms.
+        # The distribution cookie is deliberately not included in argv,
+        # where it would be visible to local process-listing tools.
         {node_name_str, cnode_name_atom} = generate_node_name()
         erlang_node = Atom.to_string(Node.self())
 
         args = [
           node_name_str,
-          state.cookie,
           state.maude_path,
           erlang_node
         ]
 
-        port =
-          Port.open(
-            {:spawn_executable, bridge_path},
-            [
-              :binary,
-              :exit_status,
-              :use_stdio,
-              :stderr_to_stdout,
-              {:args, args},
-              :stream
-            ]
-          )
+        with {:ok, cookie_frame} <- encode_cookie_handshake(state.cookie) do
+          port =
+            Port.open(
+              {:spawn_executable, bridge_path},
+              [
+                :binary,
+                :exit_status,
+                :use_stdio,
+                :stderr_to_stdout,
+                {:args, args},
+                :stream
+              ]
+            )
 
-        {:os_pid, os_pid} = Port.info(port, :os_pid)
+          true = Port.command(port, cookie_frame)
+          {:os_pid, os_pid} = Port.info(port, :os_pid)
 
-        {:ok,
-         %{
-           state
-           | port: port,
-             os_pid: os_pid,
-             cnode_name: cnode_name_atom
-         }}
+          {:ok,
+           %{
+             state
+             | port: port,
+               os_pid: os_pid,
+               cnode_name: cnode_name_atom
+           }}
+        end
     end
   end
+
+  @doc false
+  @spec encode_cookie_handshake(String.t()) :: {:ok, binary()} | {:error, :invalid_cookie}
+  def encode_cookie_handshake(cookie)
+      when is_binary(cookie) and byte_size(cookie) in 1..@max_cookie_bytes do
+    {:ok, <<byte_size(cookie)::unsigned-big-32, cookie::binary>>}
+  end
+
+  def encode_cookie_handshake(_), do: {:error, :invalid_cookie}
 
   # A timeout or bridge-level failure leaves the bridge's Maude session in
   # an indeterminate state — Maude cannot cancel an in-flight computation,
@@ -530,15 +548,6 @@ defmodule ExMaude.Backend.CNode do
       _ ->
         :ok
     end
-  end
-
-  defp normalize_command(command) do
-    command = String.trim_trailing(command)
-    if String.ends_with?(command, "."), do: command, else: command <> " ."
-  end
-
-  defp config_preload_modules do
-    Application.get_env(:ex_maude, :preload_modules, [])
   end
 
   defp emit_telemetry(event, measurements) do

@@ -128,6 +128,7 @@ defmodule ExMaude.IoT do
 
     * `:timeout` - Maximum time in milliseconds (default: 10000)
     * `:conflict_types` - List of conflict types to check (default: all)
+    * `:pool` - Registered caller-owned pool (default: `:ex_maude_pool`)
   """
   @spec detect_conflicts([rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
   def detect_conflicts(rules, opts \\ []) do
@@ -143,9 +144,9 @@ defmodule ExMaude.IoT do
 
     result =
       with :ok <- Validator.validate_rules(rules),
-           :ok <- ensure_iot_module_loaded(),
+           :ok <- ensure_iot_module_loaded(opts),
            {:ok, maude_rules} <- Encoder.encode_rules(rules),
-           {:ok, output} <- run_detection(maude_rules, timeout) do
+           {:ok, output} <- run_detection(maude_rules, timeout, opts) do
         conflicts = ConflictParser.parse_conflicts(output)
         filter_conflicts(conflicts, Keyword.get(opts, :conflict_types))
       end
@@ -182,10 +183,10 @@ defmodule ExMaude.IoT do
     timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
 
     with :ok <- Validator.validate_rules(rules),
-         :ok <- ensure_iot_module_loaded(),
+         :ok <- ensure_iot_module_loaded(opts),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command = "reduce in CONFLICT-DETECTOR : detectConflicts(#{maude_rules}) .",
-         {:ok, output} <- Maude.execute(command, timeout: timeout) do
+         {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
       {:ok, ConflictParser.parse_conflicts(output)}
     end
   end
@@ -201,10 +202,10 @@ defmodule ExMaude.IoT do
     timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
 
     with :ok <- Validator.validate_rules(rules),
-         :ok <- ensure_iot_module_loaded(),
+         :ok <- ensure_iot_module_loaded(opts),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command = "reduce in CONFLICT-DETECTOR : detectEnvConflicts(#{maude_rules}) .",
-         {:ok, output} <- Maude.execute(command, timeout: timeout) do
+         {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
       {:ok, ConflictParser.parse_conflicts(output)}
     end
   end
@@ -219,10 +220,10 @@ defmodule ExMaude.IoT do
     timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
 
     with :ok <- Validator.validate_rules(rules),
-         :ok <- ensure_iot_module_loaded(),
+         :ok <- ensure_iot_module_loaded(opts),
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command = "reduce in CONFLICT-DETECTOR : detectCascades(#{maude_rules}) .",
-         {:ok, output} <- Maude.execute(command, timeout: timeout) do
+         {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
       {:ok, ConflictParser.parse_conflicts(output)}
     end
   end
@@ -271,11 +272,13 @@ defmodule ExMaude.IoT do
     * `:max_depth` - bound on search depth (default `50`); unbounded searches
       that hit the bound return `{:ok, :unverified}` rather than blocking
     * `:timeout` - per-search timeout in ms (default `30_000`)
+    * `:pool` - registered caller-owned pool (default `:ex_maude_pool`)
   """
   @type world_opts :: [
           initial_state: [state_pred()],
           max_depth: pos_integer(),
-          timeout: timeout()
+          timeout: timeout(),
+          pool: atom()
         ]
 
   @doc """
@@ -318,7 +321,7 @@ defmodule ExMaude.IoT do
 
     with :ok <- Validator.validate_rules(rules),
          :ok <- validate_world_inputs(bad_state, opts),
-         :ok <- ensure_iot_module_loaded(),
+         :ok <- ensure_iot_module_loaded(opts),
          {:ok, init} <- build_world(rules, opts),
          pattern = bad_state_pattern(bad_state),
          {:ok, solutions} <-
@@ -326,7 +329,8 @@ defmodule ExMaude.IoT do
              arrow: "=>*",
              max_solutions: 1,
              max_depth: max_depth,
-             timeout: timeout
+             timeout: timeout,
+             pool: Keyword.get(opts, :pool, :ex_maude_pool)
            ) do
       case solutions do
         [] -> {:ok, :unverified}
@@ -369,7 +373,7 @@ defmodule ExMaude.IoT do
 
     with :ok <- Validator.validate_rules(rules),
          :ok <- validate_world_inputs(goal_state, opts),
-         :ok <- ensure_iot_module_loaded(),
+         :ok <- ensure_iot_module_loaded(opts),
          {:ok, init} <- build_world(rules, opts),
          condition = goal_violation_condition(goal_state),
          {:ok, solutions} <-
@@ -378,7 +382,8 @@ defmodule ExMaude.IoT do
              condition: condition,
              max_solutions: 1,
              max_depth: max_depth,
-             timeout: timeout
+             timeout: timeout,
+             pool: Keyword.get(opts, :pool, :ex_maude_pool)
            ) do
       case solutions do
         [] -> {:ok, :unverified}
@@ -470,30 +475,34 @@ defmodule ExMaude.IoT do
 
   defp valid_state_pred?(_), do: false
 
-  defp non_empty_string?(value), do: is_binary(value) and value != ""
+  defp non_empty_string?(value), do: is_binary(value) and value != "" and String.valid?(value)
 
   defp encodable_value?(value) do
-    is_boolean(value) or is_number(value) or is_binary(value) or is_atom(value)
+    is_boolean(value) or is_number(value) or
+      (is_binary(value) and String.valid?(value)) or is_atom(value)
   end
 
   defp validation_error(message) do
     {:error, ExMaude.Error.new(:validation, message)}
   end
 
-  defp ensure_iot_module_loaded do
+  defp ensure_iot_module_loaded(opts) do
     path = ExMaude.iot_rules_path()
 
     if File.exists?(path) do
-      ExMaude.load_file(path)
+      ExMaude.load_file(path, pool: Keyword.get(opts, :pool, :ex_maude_pool))
     else
       {:error, {:module_not_found, path}}
     end
   end
 
-  defp run_detection(maude_rules, timeout) do
+  defp run_detection(maude_rules, timeout, opts) do
     command = "reduce in CONFLICT-DETECTOR : detectAllConflicts(#{maude_rules}) ."
-    Maude.execute(command, timeout: timeout)
+    Maude.execute(command, maude_opts(opts, timeout))
   end
+
+  defp maude_opts(opts, timeout),
+    do: [timeout: timeout, pool: Keyword.get(opts, :pool, :ex_maude_pool)]
 
   defp filter_conflicts(conflicts, nil), do: {:ok, conflicts}
 

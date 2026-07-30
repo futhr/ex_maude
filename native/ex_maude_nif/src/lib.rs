@@ -350,4 +350,22 @@ fn poison_error(what: &'static str) -> Error {
     Error::Term(Box::new((atoms::lock_poisoned(), what.to_string())))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::find_subslice;
+
+    #[test]
+    fn finds_prompt_at_each_boundary() {
+        assert_eq!(find_subslice(b"Maude>", b"Maude>"), Some(0));
+        assert_eq!(find_subslice(b"result\nMaude>", b"Maude>"), Some(7));
+        assert_eq!(find_subslice(b"Maude>trailing", b"Maude>"), Some(0));
+    }
+
+    #[test]
+    fn returns_none_for_partial_or_missing_prompt() {
+        assert_eq!(find_subslice(b"Maude", b"Maude>"), None);
+        assert_eq!(find_subslice(b"result only", b"Maude>"), None);
+    }
+}
+
 rustler::init!("Elixir.ExMaude.Backend.NIF.Native");

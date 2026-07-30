@@ -284,6 +284,33 @@ defmodule ExMaude.AITest do
       assert {:ok, []} = AI.detect_pair_conflicts(rules)
     end
 
+    test "loads and executes through the selected named pool", %{
+      maude_available: true,
+      maude_path: maude_path
+    } do
+      pool = :ai_named_pool
+
+      start_supervised!(
+        ExMaude.Pool.child_spec(
+          name: pool,
+          maude_path: maude_path,
+          pool_size: 1,
+          pool_max_overflow: 0
+        )
+      )
+
+      rules = [
+        %{
+          id: "named-pool-rule",
+          agent_id: {"acme", "agent"},
+          trigger: {:always},
+          invocations: []
+        }
+      ]
+
+      assert {:ok, []} = AI.detect_pair_conflicts(rules, pool: pool)
+    end
+
     test "skips single-rule sovereignty conflict", %{maude_available: true} do
       rules = [
         %{

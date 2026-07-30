@@ -56,6 +56,18 @@ defmodule ExMaude.Backend.CNodeTest do
     end
   end
 
+  describe "cookie handshake" do
+    test "encodes the cookie outside process arguments" do
+      assert {:ok, <<6::unsigned-big-32, "secret">>} =
+               CNode.encode_cookie_handshake("secret")
+    end
+
+    test "rejects empty and oversized cookies" do
+      assert {:error, :invalid_cookie} = CNode.encode_cookie_handshake("")
+      assert {:error, :invalid_cookie} = CNode.encode_cookie_handshake(String.duplicate("x", 256))
+    end
+  end
+
   describe "availability" do
     test "available? returns boolean" do
       result = Backend.available?(:cnode)

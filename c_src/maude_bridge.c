@@ -9,7 +9,11 @@
  * outside the BEAM.
  *
  * Usage:
- *   ./maude_bridge <node_name> <cookie> <maude_path> <erlang_node>
+ *   ./maude_bridge <node_name> <maude_path> <erlang_node>
+ *
+ * The Erlang distribution cookie is read from stdin as a four-byte,
+ * big-endian length followed by that many bytes. Keeping the cookie out of
+ * argv prevents it from being exposed by local process-listing tools.
  *
  * Protocol (v2 — every request carries a ref that is echoed back, so the
  * Elixir side can selectively receive its own reply and ignore stale ones):
@@ -44,15 +48,22 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf);
 static int read_until_prompt(char **output, size_t *capacity, int timeout_ms);
 static int send_command(const char *cmd, size_t len);
 static int write_all(int fd, const char *data, size_t len);
+static int read_exact(int fd, void *data, size_t len);
+static int read_cookie(char *cookie, size_t capacity);
+static char *build_load_command(const char *path, size_t length,
+                                size_t *command_length);
+static void clear_secret(void *data, size_t len);
 static int64_t monotonic_ms(void);
 static int reap_with_timeout(pid_t pid, int timeout_ms);
 static void encode_ok(ei_x_buff *response, const char *data, int data_len);
 static void encode_error(ei_x_buff *response, const char *reason);
 
 #define INITIAL_BUFSIZE 65536
+#define MAX_COMMAND_SIZE (16UL * 1024 * 1024)
 #define MAX_RESPONSE_SIZE (16UL * 1024 * 1024)
 #define PROMPT "Maude>"
 #define PROMPT_LEN 6
+#define MAX_COOKIE_SIZE 255
 
 /* Maude process state */
 typedef struct {
@@ -63,6 +74,80 @@ typedef struct {
 
 static MaudeProcess maude = {0};
 static volatile sig_atomic_t running = 1;
+
+static int read_exact(int fd, void *data, size_t len) {
+  size_t offset = 0;
+  char *buffer = data;
+
+  while (offset < len) {
+    ssize_t count = read(fd, buffer + offset, len - offset);
+
+    if (count > 0) {
+      offset += (size_t)count;
+    } else if (count < 0 && errno == EINTR) {
+      continue;
+    } else {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+static int read_cookie(char *cookie, size_t capacity) {
+  uint32_t encoded_length;
+
+  if (read_exact(STDIN_FILENO, &encoded_length, sizeof(encoded_length)) < 0) {
+    return -1;
+  }
+
+  uint32_t length = ntohl(encoded_length);
+  if (length == 0 || length > MAX_COOKIE_SIZE || length >= capacity) {
+    return -1;
+  }
+
+  if (read_exact(STDIN_FILENO, cookie, length) < 0) {
+    return -1;
+  }
+
+  cookie[length] = '\0';
+  return 0;
+}
+
+static char *build_load_command(const char *path, size_t length,
+                                size_t *command_length) {
+  if (length > (SIZE_MAX - 11) / 2)
+    return NULL;
+
+  size_t capacity = (length * 2) + 11;
+  char *command = malloc(capacity);
+  if (command == NULL)
+    return NULL;
+
+  size_t position = 0;
+  memcpy(command + position, "load \"", 6);
+  position += 6;
+
+  for (size_t index = 0; index < length; index++) {
+    if (path[index] == '\\' || path[index] == '"')
+      command[position++] = '\\';
+    command[position++] = path[index];
+  }
+
+  memcpy(command + position, "\" .", 3);
+  position += 3;
+  command[position] = '\0';
+  *command_length = position;
+  return command;
+}
+
+/* Use a volatile pointer so the compiler cannot optimize away the wipe. */
+static void clear_secret(void *data, size_t len) {
+  volatile unsigned char *cursor = data;
+  while (len-- > 0) {
+    *cursor++ = 0;
+  }
+}
 
 /* Signal handler for graceful shutdown */
 static void handle_signal(int sig) {
@@ -459,7 +544,12 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
       goto send_response;
     }
 
-    char *command = malloc(size + 1);
+    if (type != ERL_BINARY_EXT || size < 0 || (size_t)size > MAX_COMMAND_SIZE) {
+      encode_error(&response, "invalid_command");
+      goto send_response;
+    }
+
+    char *command = malloc((size_t)size + 1);
     if (!command) {
       encode_error(&response, "malloc_failed");
       goto send_response;
@@ -515,22 +605,25 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
   } else if (strcmp(cmd, "load_file") == 0) {
     /* Decode file path */
     int type, size;
-    ei_get_type(buf->buff, &index, &type, &size);
+    if (ei_get_type(buf->buff, &index, &type, &size) < 0 ||
+        type != ERL_BINARY_EXT || size < 0 || (size_t)size > MAX_COMMAND_SIZE) {
+      encode_error(&response, "invalid_path");
+      goto send_response;
+    }
 
-    char *path = malloc(size + 16); /* Extra for "load " prefix */
+    char *path = malloc((size_t)size + 1);
     if (!path) {
       encode_error(&response, "malloc_failed");
       goto send_response;
     }
 
-    strcpy(path, "load ");
     long bin_size;
-    if (ei_decode_binary(buf->buff, &index, path + 5, &bin_size) < 0) {
+    if (ei_decode_binary(buf->buff, &index, path, &bin_size) < 0) {
       free(path);
       encode_error(&response, "decode_path_failed");
       goto send_response;
     }
-    path[5 + bin_size] = '\0';
+    path[bin_size] = '\0';
 
     /* Decode per-command timeout */
     long timeout_ms = 30000;
@@ -538,13 +631,22 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
       timeout_ms = 30000;
     }
 
+    size_t command_length;
+    char *command = build_load_command(path, (size_t)bin_size, &command_length);
+    free(path);
+
+    if (command == NULL) {
+      encode_error(&response, "malloc_failed");
+      goto send_response;
+    }
+
     /* Send load command to Maude */
-    if (send_command(path, strlen(path)) < 0) {
-      free(path);
+    if (send_command(command, command_length) < 0) {
+      free(command);
       encode_error(&response, "load_send_failed");
       goto send_response;
     }
-    free(path);
+    free(command);
 
     /* Read response */
     char *output = NULL;
@@ -608,24 +710,23 @@ static int connect_with_retry(ei_cnode *ec, char *nodename, int max_retries) {
 
 /* Main entry point */
 int main(int argc, char **argv) {
-  if (argc < 5) {
-    fprintf(stderr,
-            "Usage: %s <node_name> <cookie> <maude_path> <erlang_node>\n",
+  if (argc < 4) {
+    fprintf(stderr, "Usage: %s <node_name> <maude_path> <erlang_node>\n",
             argv[0]);
     fprintf(stderr, "\n");
     fprintf(stderr, "Arguments:\n");
     fprintf(stderr,
             "  node_name    - Name for this C-Node (e.g., maude_bridge_1)\n");
-    fprintf(stderr, "  cookie       - Erlang distribution cookie\n");
     fprintf(stderr, "  maude_path   - Path to Maude executable\n");
     fprintf(stderr, "  erlang_node  - Full Erlang node name to connect to\n");
+    fprintf(stderr, "The Erlang distribution cookie is read from stdin.\n");
     return 1;
   }
 
   char *node_name = argv[1];
-  char *cookie = argv[2];
-  char *maude_path = argv[3];
-  char *erlang_node = argv[4];
+  char *maude_path = argv[2];
+  char *erlang_node = argv[3];
+  char cookie[MAX_COOKIE_SIZE + 1] = {0};
 
   /* Setup signal handlers */
   signal(SIGTERM, handle_signal);
@@ -659,6 +760,13 @@ int main(int argc, char **argv) {
   fprintf(stderr, "Maude ready\n");
   fflush(stderr);
 
+  if (read_cookie(cookie, sizeof(cookie)) < 0) {
+    fprintf(stderr, "Failed to read Erlang distribution cookie\n");
+    clear_secret(cookie, sizeof(cookie));
+    stop_maude();
+    return 1;
+  }
+
   /* Initialize C-Node */
   ei_cnode ec;
   char full_node_name[256];
@@ -674,9 +782,11 @@ int main(int argc, char **argv) {
 
   if (ei_connect_init(&ec, node_name, cookie, 0) < 0) {
     fprintf(stderr, "Failed to init C-Node connection\n");
+    clear_secret(cookie, sizeof(cookie));
     stop_maude();
     return 1;
   }
+  clear_secret(cookie, sizeof(cookie));
 
   /* Connect to Erlang node with retry logic */
   fprintf(stderr, "Connecting to Erlang node: %s (with retry)\n", erlang_node);

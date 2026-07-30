@@ -19,7 +19,8 @@ defmodule ExMaude.Telemetry do
 
   ### Command Events
 
-  Emitted for all Maude operations (reduce, rewrite, search, execute, etc.)
+  Emitted for high-level Maude operations (`reduce`, `rewrite`, `search`,
+  `execute`, `parse`, `load_file`, and `load_module`).
 
   `[:ex_maude, :command, :start]`
   - Measurements: `%{system_time: integer}`
@@ -45,7 +46,11 @@ defmodule ExMaude.Telemetry do
     replaces a worker after a timeout or crash.
 
   `[:ex_maude, :server, :command_start]`
-  - Metadata also includes `%{command: String.t}` (truncated to 100 bytes)
+  - Measurements: `%{command_bytes: integer}`
+  - Metadata includes command text only when
+    `config :ex_maude, telemetry_include_commands: true`; opted-in text is
+    truncated to 100 characters. Commands may contain sensitive application
+    data, so the secure default is `false`.
 
   `[:ex_maude, :server, :command_complete]`
   - Measurements: `%{response_size: integer}` when available
@@ -68,11 +73,11 @@ defmodule ExMaude.Telemetry do
 
   `[:ex_maude, :pool, :checkout, :start]`
   - Measurements: `%{system_time: integer}`
-  - Metadata: `%{}`
+  - Metadata: `%{backend: :port | :cnode | :nif}`
 
   `[:ex_maude, :pool, :checkout, :stop]`
   - Measurements: `%{duration: integer}`
-  - Metadata: `%{result: :ok | :error}`
+  - Metadata: `%{result: :ok | :error, backend: :port | :cnode | :nif}`
 
   ### IoT Events
 
@@ -212,7 +217,27 @@ defmodule ExMaude.Telemetry do
     ]
   end
 
-  @server_measurement_keys [:duration, :response_size, :timeout_ms, :buffer_size, :exit_status]
+  @server_measurement_keys [
+    :duration,
+    :response_size,
+    :command_bytes,
+    :timeout_ms,
+    :buffer_size,
+    :exit_status
+  ]
+
+  @doc false
+  @spec command_started(:port | :cnode | :nif, String.t()) :: :ok
+  def command_started(backend, command) do
+    attributes =
+      if Application.get_env(:ex_maude, :telemetry_include_commands, false) do
+        %{command_bytes: byte_size(command), command: truncate(command, 100)}
+      else
+        %{command_bytes: byte_size(command)}
+      end
+
+    server_event(:command_start, attributes, %{pid: self(), backend: backend})
+  end
 
   @doc false
   @spec server_event(atom(), map(), map()) :: :ok
@@ -240,17 +265,24 @@ defmodule ExMaude.Telemetry do
 
   defp normalize_server_context(context), do: context
 
+  defp truncate(command, max_characters) do
+    if String.length(command) > max_characters,
+      do: String.slice(command, 0, max_characters) <> "...",
+      else: command
+  end
+
   @doc """
   Executes a function and emits start/stop/exception telemetry events.
 
   This is used internally by ExMaude modules to instrument operations.
-  The function should return a tuple where the first element is `:ok` or `:error`.
+  Tuple results use their first element as the `:result` metadata value;
+  non-tuple results are recorded as `:ok`.
 
   ## Parameters
 
   - `event` - The event prefix (e.g., `[:ex_maude, :command]`)
   - `start_metadata` - Metadata to include in all events
-  - `fun` - Function to execute, must return `{:ok, _}` or `{:error, _}`
+  - `fun` - Function to execute
 
   ## Events Emitted
 
@@ -258,8 +290,7 @@ defmodule ExMaude.Telemetry do
   - `event ++ [:stop]` - After successful completion
   - `event ++ [:exception]` - If function raises or throws
   """
-  @spec span([atom(), ...], map(), (-> {:ok, term()} | {:error, term()})) ::
-          {:ok, term()} | {:error, term()}
+  @spec span([atom(), ...], map(), (-> result)) :: result when result: term()
   def span(event, start_metadata, fun) when is_list(event) and is_map(start_metadata) do
     # credo:disable-for-lines:3 Credo.Check.Refactor.AppendSingleItem
     start_event = event ++ [:start]

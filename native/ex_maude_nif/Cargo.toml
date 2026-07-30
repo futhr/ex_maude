@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Tobias Bohwalli <hi@futhr.io>"]
 description = "Rustler NIF for ExMaude - manages Maude subprocess"
+license = "MIT"
+repository = "https://github.com/futhr/ex_maude"
+rust-version = "1.91"
 
 [lib]
 name = "ex_maude_nif"

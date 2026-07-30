@@ -154,6 +154,18 @@ defmodule ExMaude.Backend.PortTest do
 
       Port.stop(pid)
     end
+
+    @tag :integration
+    @tag :tmp_dir
+    test "loads a file whose path contains spaces", %{maude_available: true, tmp_dir: tmp_dir} do
+      path = Path.join(tmp_dir, "module with spaces.maude")
+      File.write!(path, "fmod PORT-SPACED-PATH is sort Foo . endfm")
+      {:ok, pid} = Port.start_link([])
+
+      assert :ok = Port.load_file(pid, path)
+
+      Port.stop(pid)
+    end
   end
 
   describe "alive?/1 edge cases" do

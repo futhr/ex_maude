@@ -187,14 +187,7 @@ defmodule ExMaude.IoT.Encoder do
       ~s("say \\\\"hi\\\\"")
   """
   @spec encode_string(String.t() | atom()) :: String.t()
-  def encode_string(s) when is_binary(s) do
-    escaped =
-      s
-      |> String.replace("\\", "\\\\")
-      |> String.replace("\"", "\\\"")
-
-    ~s("#{escaped}")
-  end
+  def encode_string(s) when is_binary(s), do: ExMaude.Syntax.encode_string(s)
 
   def encode_string(s) when is_atom(s), do: encode_string(Atom.to_string(s))
 

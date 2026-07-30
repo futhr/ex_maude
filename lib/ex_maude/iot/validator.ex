@@ -147,13 +147,7 @@ defmodule ExMaude.IoT.Validator do
             acc
 
           {:error, errs} ->
-            key =
-              case rule do
-                %{id: id} when is_binary(id) and id != "" -> id
-                _ -> "rule_#{idx}"
-              end
-
-            Map.put(acc, key, errs)
+            Map.put(acc, error_key(rule, idx), errs)
         end
       end)
 
@@ -177,10 +171,19 @@ defmodule ExMaude.IoT.Validator do
 
   defp validate_string_field(errors, map, key, name) do
     case Map.fetch(map, key) do
-      {:ok, value} when is_binary(value) and value != "" -> errors
-      {:ok, nil} -> errors
-      :error -> errors
-      {:ok, _} -> ["#{name} must be a non-empty string" | errors]
+      {:ok, value} when is_binary(value) ->
+        if valid_nonempty_string?(value),
+          do: errors,
+          else: ["#{name} must be a non-empty string" | errors]
+
+      {:ok, nil} ->
+        errors
+
+      :error ->
+        errors
+
+      {:ok, _} ->
+        ["#{name} must be a non-empty string" | errors]
     end
   end
 
@@ -199,35 +202,47 @@ defmodule ExMaude.IoT.Validator do
 
   defp validate_trigger(errors, nil, _), do: errors
 
-  defp validate_trigger(errors, {:prop_eq, prop, value}, _) when is_binary(prop),
-    do: validate_value(errors, value)
+  defp validate_trigger(errors, {:prop_eq, prop, value}, _) when is_binary(prop) do
+    if valid_string?(prop),
+      do: validate_value(errors, value),
+      else: ["invalid trigger format" | errors]
+  end
 
   defp validate_trigger(errors, {:prop_gt, prop, v}, _)
-       when is_binary(prop) and is_number(v),
-       do: errors
+       when is_binary(prop) and is_number(v) do
+    if valid_string?(prop), do: errors, else: ["invalid trigger format" | errors]
+  end
 
   defp validate_trigger(errors, {:prop_lt, prop, v}, _)
-       when is_binary(prop) and is_number(v),
-       do: errors
+       when is_binary(prop) and is_number(v) do
+    if valid_string?(prop), do: errors, else: ["invalid trigger format" | errors]
+  end
 
   defp validate_trigger(errors, {:prop_gte, prop, v}, _)
-       when is_binary(prop) and is_number(v),
-       do: errors
+       when is_binary(prop) and is_number(v) do
+    if valid_string?(prop), do: errors, else: ["invalid trigger format" | errors]
+  end
 
   defp validate_trigger(errors, {:prop_lte, prop, v}, _)
-       when is_binary(prop) and is_number(v),
-       do: errors
+       when is_binary(prop) and is_number(v) do
+    if valid_string?(prop), do: errors, else: ["invalid trigger format" | errors]
+  end
 
-  defp validate_trigger(errors, {:env_eq, prop, value}, _) when is_binary(prop),
-    do: validate_value(errors, value)
+  defp validate_trigger(errors, {:env_eq, prop, value}, _) when is_binary(prop) do
+    if valid_string?(prop),
+      do: validate_value(errors, value),
+      else: ["invalid trigger format" | errors]
+  end
 
   defp validate_trigger(errors, {:env_gt, prop, v}, _)
-       when is_binary(prop) and is_number(v),
-       do: errors
+       when is_binary(prop) and is_number(v) do
+    if valid_string?(prop), do: errors, else: ["invalid trigger format" | errors]
+  end
 
   defp validate_trigger(errors, {:env_lt, prop, v}, _)
-       when is_binary(prop) and is_number(v),
-       do: errors
+       when is_binary(prop) and is_number(v) do
+    if valid_string?(prop), do: errors, else: ["invalid trigger format" | errors]
+  end
 
   defp validate_trigger(errors, {:always}, _), do: errors
 
@@ -255,22 +270,46 @@ defmodule ExMaude.IoT.Validator do
   defp validate_actions(errors, _), do: ["actions must be a list" | errors]
 
   defp validate_action({:set_prop, thing_id, prop, value}, errors)
-       when is_binary(thing_id) and is_binary(prop),
-       do: validate_value(errors, value)
+       when is_binary(thing_id) and is_binary(prop) do
+    if valid_string?(thing_id) and valid_string?(prop),
+      do: validate_value(errors, value),
+      else: ["invalid action format" | errors]
+  end
 
-  defp validate_action({:set_env, prop, value}, errors) when is_binary(prop),
-    do: validate_value(errors, value)
+  defp validate_action({:set_env, prop, value}, errors) when is_binary(prop) do
+    if valid_string?(prop),
+      do: validate_value(errors, value),
+      else: ["invalid action format" | errors]
+  end
 
   defp validate_action({:invoke, thing_id, action}, errors)
-       when is_binary(thing_id) and is_binary(action),
-       do: errors
+       when is_binary(thing_id) and is_binary(action) do
+    if valid_string?(thing_id) and valid_string?(action),
+      do: errors,
+      else: ["invalid action format" | errors]
+  end
 
   defp validate_action(_, errors), do: ["invalid action format" | errors]
 
+  defp validate_value(errors, value) when is_binary(value) do
+    if valid_string?(value),
+      do: errors,
+      else: ["value must be a boolean, number, string, or atom" | errors]
+  end
+
   defp validate_value(errors, value)
-       when is_boolean(value) or is_number(value) or is_binary(value) or is_atom(value),
+       when is_boolean(value) or is_number(value) or is_atom(value),
        do: errors
 
   defp validate_value(errors, _),
     do: ["value must be a boolean, number, string, or atom" | errors]
+
+  defp error_key(%{id: id}, index) when is_binary(id) do
+    if valid_nonempty_string?(id), do: id, else: "rule_#{index}"
+  end
+
+  defp error_key(_, index), do: "rule_#{index}"
+
+  defp valid_nonempty_string?(value), do: valid_string?(value) and value != ""
+  defp valid_string?(value), do: String.valid?(value)
 end

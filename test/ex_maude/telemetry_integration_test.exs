@@ -74,6 +74,19 @@ defmodule ExMaude.TelemetryIntegrationTest do
     end
 
     @tag :integration
+    test "Port backend emits redacted server command telemetry", %{ref: ref} do
+      command = "reduce in NAT : 1 + 1 ."
+      {:ok, _} = ExMaude.Maude.execute(command)
+
+      assert_receive {^ref, [:ex_maude, :server, :command_start],
+                      %{command_bytes: command_bytes, system_time: _},
+                      %{backend: :port} = metadata}
+
+      assert command_bytes == byte_size(command <> "\n")
+      refute Map.has_key?(metadata, :command)
+    end
+
+    @tag :integration
     test "parse emits command telemetry", %{ref: ref} do
       {:ok, _} = ExMaude.Maude.parse("NAT", "1 + 2")
 

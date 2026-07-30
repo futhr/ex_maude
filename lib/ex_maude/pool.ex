@@ -65,10 +65,11 @@ defmodule ExMaude.Pool do
     * `:pool_max_overflow` - Extra workers under load (default: from config)
 
   """
-  @spec child_spec(keyword()) ::
-          {atom(), {:poolboy, :start_link, [any()]}, :permanent, 5000, :worker, [:poolboy]}
+  @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts \\ []) do
     name = Keyword.get(opts, :name, @pool_name)
+    unless is_atom(name), do: raise(ArgumentError, "pool :name must be an atom")
+
     worker_module = Keyword.get(opts, :worker_module, Backend.impl())
 
     pool_config = [
@@ -78,9 +79,22 @@ defmodule ExMaude.Pool do
       max_overflow: Keyword.get(opts, :pool_max_overflow, config_max_overflow())
     ]
 
-    worker_opts = Keyword.drop(opts, [:name, :pool_size, :pool_max_overflow, :worker_module])
+    worker_opts =
+      opts
+      |> Keyword.drop([:name, :pool_size, :pool_max_overflow, :worker_module])
+      |> Keyword.put_new(:pool, name)
 
-    :poolboy.child_spec(name, pool_config, worker_opts)
+    {id, start, restart, shutdown, type, modules} =
+      :poolboy.child_spec(name, pool_config, worker_opts)
+
+    %{
+      id: id,
+      start: start,
+      restart: restart,
+      shutdown: shutdown,
+      type: type,
+      modules: modules
+    }
   end
 
   @doc """
@@ -196,7 +210,7 @@ defmodule ExMaude.Pool do
           size: non_neg_integer(),
           overflow: non_neg_integer(),
           available: non_neg_integer(),
-          in_use: integer(),
+          in_use: non_neg_integer(),
           state: atom()
         }
   def status(opts \\ []) do
@@ -207,8 +221,9 @@ defmodule ExMaude.Pool do
 
       # workers is the count of available workers in the pool
       # monitors is the count of checked-out workers being monitored
-      # Size is the configured pool size
-      pool_size = config_pool_size()
+      # Overflow workers are included in both `monitors` while checked out
+      # and `overflow`; subtracting them yields the configured base size.
+      pool_size = workers + monitors - overflow
 
       %{
         size: pool_size,
@@ -240,6 +255,7 @@ defmodule ExMaude.Pool do
     catch
       :exit, {:timeout, _} -> {:error, Error.pool_error(:timeout)}
       :exit, {:full, _} -> {:error, Error.pool_error(:full)}
+      :exit, reason -> {:error, Error.pool_error(reason)}
     end
   end
 

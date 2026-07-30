@@ -56,10 +56,12 @@ defmodule ExMaudeTest do
 
     test "load_file/1 is defined" do
       assert function_exported?(ExMaude, :load_file, 1)
+      assert function_exported?(ExMaude, :load_file, 2)
     end
 
     test "load_module/1 is defined" do
       assert function_exported?(ExMaude, :load_module, 1)
+      assert function_exported?(ExMaude, :load_module, 2)
     end
 
     test "execute/2 is defined" do

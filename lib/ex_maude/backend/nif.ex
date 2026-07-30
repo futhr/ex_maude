@@ -40,7 +40,7 @@ defmodule ExMaude.Backend.NIF do
   use GenServer
   require Logger
 
-  alias ExMaude.{Binary, Config, Error, Parser, Telemetry}
+  alias ExMaude.{Binary, Command, Config, Error, Parser, Preloads, Telemetry}
 
   @default_timeout 30_000
 
@@ -57,14 +57,12 @@ defmodule ExMaude.Backend.NIF do
   defmodule Native do
     @moduledoc false
 
-    # Force-build from source when requested via env — or when a locally
-    # built artifact already exists. The latter keeps the dev loop
-    # self-healing: this module recompiles whenever a compile-time
-    # dependency (e.g. ExMaude.Error) changes, and without this clause a
-    # plain `mix compile` would silently bake in the no-NIF stubs until
-    # someone remembered to set EX_MAUDE_BUILD=1 again.
-    @force_build System.get_env("EX_MAUDE_BUILD") in ["1", "true"] or
-                   File.exists?("priv/native/ex_maude_nif.so")
+    # Source builds are opt-in. A path dependency may share this checkout
+    # (and its ignored build artifacts) with another project, while Rustler
+    # itself is intentionally optional and therefore not inherited by
+    # consumers. Letting an artifact force compilation would make consumer
+    # builds depend on unrelated local state.
+    @force_build System.get_env("EX_MAUDE_BUILD") in ["1", "true"]
     @checksum_file "checksum-Elixir.ExMaude.Backend.NIF.Native.exs"
     @has_precompiled (case File.read(@checksum_file) do
                         {:ok, content} ->
@@ -227,7 +225,8 @@ defmodule ExMaude.Backend.NIF do
   @impl GenServer
   def init(opts) do
     maude_path = opts[:maude_path] || Binary.find() || "maude"
-    preload_modules = opts[:preload_modules] || config_preload_modules()
+    pool = Keyword.get(opts, :pool, :ex_maude_pool)
+    preload_modules = Preloads.for_pool(pool, opts[:preload_modules])
     startup_timeout = opts[:startup_timeout_ms] || 10_000
 
     case start_native(maude_path, startup_timeout) do
@@ -249,7 +248,10 @@ defmodule ExMaude.Backend.NIF do
 
   @impl GenServer
   def handle_call({:execute, command, timeout}, _, %{handle: handle} = state) do
-    case run_native_execute(handle, normalize_command(command), timeout) do
+    command = Command.normalize(command)
+    Telemetry.command_started(:nif, command)
+
+    case run_native_execute(handle, command, timeout) do
       {:ok, raw} ->
         result = Parser.parse_backend_response(raw)
         emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
@@ -261,7 +263,7 @@ defmodule ExMaude.Backend.NIF do
   end
 
   def handle_call({:load_file, path, timeout}, _, %{handle: handle} = state) do
-    case run_native_execute(handle, normalize_command("load #{path}"), timeout) do
+    case run_native_execute(handle, Command.normalize(Command.load_file(path)), timeout) do
       {:ok, raw} ->
         result =
           case Parser.parse_backend_response(raw) do
@@ -384,36 +386,18 @@ defmodule ExMaude.Backend.NIF do
     )
   end
 
-  # Maude needs a trailing period to know the command is complete. Some
-  # callers (notably `ExMaude.Maude.reduce/3`) build commands without one;
-  # the `load` command does include one. Normalize here so the NIF doesn't
-  # block waiting for missing punctuation.
-  defp normalize_command(command) do
-    command = String.trim_trailing(command)
-
-    if String.ends_with?(command, ".") do
-      command
-    else
-      command <> " ."
-    end
-  end
-
   defp preload_native_modules(_, []), do: :ok
 
   defp preload_native_modules(handle, [path | paths]) do
     timeout = Config.timeout(@default_timeout)
 
     with {:ok, raw} <-
-           run_native_execute(handle, normalize_command("load #{path}"), timeout),
+           run_native_execute(handle, Command.normalize(Command.load_file(path)), timeout),
          {:ok, _} <- Parser.parse_backend_response(raw) do
       preload_native_modules(handle, paths)
     else
       {:error, reason} -> {:error, {path, reason}}
     end
-  end
-
-  defp config_preload_modules do
-    Application.get_env(:ex_maude, :preload_modules, [])
   end
 
   defp emit_telemetry(event, measurements) do

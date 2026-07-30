@@ -38,6 +38,20 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
         CNode.stop(pid)
       end
 
+      test "does not expose the distribution cookie in process arguments" do
+        assert {:ok, pid} = CNode.start_link([])
+        state = :sys.get_state(pid)
+        cookie = Node.get_cookie() |> Atom.to_string()
+
+        {command, 0} =
+          System.cmd("ps", ["-o", "command=", "-p", Integer.to_string(state.os_pid)],
+            stderr_to_stdout: true
+          )
+
+        refute command =~ cookie
+        CNode.stop(pid)
+      end
+
       test "loads configured modules before returning" do
         path = Path.join(System.tmp_dir!(), "test_cnode_preload_#{:rand.uniform(10_000)}.maude")
 
@@ -89,6 +103,25 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
         assert {:ok, "3"} = CNode.execute(pid, "reduce in NAT : 1 + 2")
       end
 
+      test "emits redacted command-start telemetry", %{pid: pid} do
+        test_pid = self()
+        handler = "cnode-command-start-#{System.unique_integer([:positive])}"
+
+        :telemetry.attach(
+          handler,
+          [:ex_maude, :server, :command_start],
+          fn _, measurements, metadata, _ -> send(test_pid, {measurements, metadata}) end,
+          nil
+        )
+
+        on_exit(fn -> :telemetry.detach(handler) end)
+        assert {:ok, "3"} = CNode.execute(pid, "reduce in NAT : 1 + 2")
+
+        assert_receive {%{command_bytes: bytes}, %{backend: :cnode} = metadata}
+        assert bytes == byte_size("reduce in NAT : 1 + 2 .")
+        refute Map.has_key?(metadata, :command)
+      end
+
       test "handles syntax errors gracefully", %{pid: pid} do
         # Incomplete commands may timeout as Maude waits for more input,
         # or return a warning. Both are acceptable behaviors.
@@ -138,6 +171,14 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
       test "loads valid Maude file", %{pid: pid} do
         path = Path.join(System.tmp_dir!(), "test_cnode_#{:rand.uniform(10000)}.maude")
         File.write!(path, "fmod TEST-CNODE is sort Foo . endfm")
+        on_exit(fn -> File.rm(path) end)
+
+        assert :ok = CNode.load_file(pid, path)
+      end
+
+      test "loads a file whose path contains spaces", %{pid: pid} do
+        path = Path.join(System.tmp_dir!(), "test cnode #{:rand.uniform(10000)}.maude")
+        File.write!(path, "fmod TEST-CNODE-SPACED-PATH is sort Foo . endfm")
         on_exit(fn -> File.rm(path) end)
 
         assert :ok = CNode.load_file(pid, path)

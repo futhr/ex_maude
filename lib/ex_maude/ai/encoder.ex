@@ -250,12 +250,5 @@ defmodule ExMaude.AI.Encoder do
 
   @doc false
   @spec encode_string(String.t()) :: String.t()
-  def encode_string(s) when is_binary(s) do
-    escaped =
-      s
-      |> String.replace("\\", "\\\\")
-      |> String.replace("\"", "\\\"")
-
-    ~s("#{escaped}")
-  end
+  def encode_string(s) when is_binary(s), do: ExMaude.Syntax.encode_string(s)
 end

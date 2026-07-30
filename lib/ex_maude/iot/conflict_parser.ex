@@ -121,96 +121,25 @@ defmodule ExMaude.IoT.ConflictParser do
 
   defp parse_conflict_list(output) do
     output
-    |> String.replace(~r/\r?\n/, " ")
-    |> String.replace(~r/\s+/, " ")
-    |> find_balanced_conflicts([])
+    |> ExMaude.Balanced.extract("conflict(")
     |> Enum.map(&parse_single_conflict/1)
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
   end
 
-  defp find_balanced_conflicts(str, acc) do
-    case :binary.match(str, "conflict(") do
-      :nomatch ->
-        Enum.reverse(acc)
-
-      {start_pos, _} ->
-        rest = binary_part(str, start_pos, byte_size(str) - start_pos)
-
-        case extract_balanced_parens(rest, 0, 0) do
-          {:ok, conflict_str, remaining} ->
-            find_balanced_conflicts(remaining, [conflict_str | acc])
-
-          :error ->
-            # Skip this match and continue
-            skip_len = byte_size(str) - start_pos - 9
-
-            if skip_len > 0 do
-              remaining = binary_part(str, start_pos + 9, skip_len)
-              find_balanced_conflicts(remaining, acc)
-            else
-              Enum.reverse(acc)
-            end
-        end
-    end
-  end
-
-  defp extract_balanced_parens(str, depth, pos) when pos < byte_size(str) do
-    char = binary_part(str, pos, 1)
-
-    cond do
-      char == "(" ->
-        extract_balanced_parens(str, depth + 1, pos + 1)
-
-      char == ")" and depth == 1 ->
-        # Found the matching close paren
-        conflict_str = binary_part(str, 0, pos + 1)
-        remaining_len = byte_size(str) - pos - 1
-
-        remaining =
-          if remaining_len > 0 do
-            binary_part(str, pos + 1, remaining_len)
-          else
-            ""
-          end
-
-        {:ok, conflict_str, remaining}
-
-      char == ")" ->
-        extract_balanced_parens(str, depth - 1, pos + 1)
-
-      true ->
-        extract_balanced_parens(str, depth, pos + 1)
-    end
-  end
-
-  defp extract_balanced_parens(_, _, _), do: :error
-
   defp parse_single_conflict(conflict_str) do
-    type_match = Regex.run(~r/conflict\((\w+),/, conflict_str)
+    type_match = Regex.run(~r/conflict\(\s*(\w+)\s*,/s, conflict_str)
 
-    # Maude output may have whitespace between `rule(` and the opening quote.
     rule_ids =
-      ~r/rule\(\s*"([^"]+)"/
-      |> Regex.scan(conflict_str)
-      |> Enum.map(fn [_, id] -> id end)
+      ExMaude.Syntax.captured_strings(
+        ~r/rule\(\s*"((?:\\.|[^"\\])*)"/s,
+        conflict_str
+      )
 
-    # The reason is the last quoted string that looks like a sentence.
-    all_quoted =
-      ~r/"([^"]+)"/
-      |> Regex.scan(conflict_str)
-      |> Enum.map(fn [_, str] -> str end)
-
-    # The reason is the last quoted string that looks like a sentence.
     reason =
-      all_quoted
-      |> Enum.reverse()
-      |> Enum.find(fn s ->
-        String.contains?(s, " ") or
-          String.ends_with?(s, "changes") or
-          String.ends_with?(s, "detected") or
-          String.ends_with?(s, "rule")
-      end)
+      conflict_str
+      |> ExMaude.Syntax.quoted_strings()
+      |> List.last()
 
     case {type_match, rule_ids, reason} do
       {[_, type], [rule1, rule2 | _], reason} when not is_nil(reason) ->

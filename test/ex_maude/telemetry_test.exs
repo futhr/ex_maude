@@ -194,6 +194,52 @@ defmodule ExMaude.TelemetryTest do
   end
 
   describe "Prometheus/OpenTelemetry compatibility" do
+    test "server command telemetry redacts command text by default" do
+      original = Application.get_env(:ex_maude, :telemetry_include_commands)
+      Application.put_env(:ex_maude, :telemetry_include_commands, false)
+      on_exit(fn -> restore_env(:telemetry_include_commands, original) end)
+
+      handler_id = "server-redaction-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:ex_maude, :server, :command_start],
+        fn _, measurements, metadata, _ -> send(test_pid, {measurements, metadata}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+      Telemetry.command_started(:port, "reduce in SECRET : token .")
+
+      assert_receive {%{command_bytes: 26}, metadata}
+      assert metadata.backend == :port
+      refute Map.has_key?(metadata, :command)
+    end
+
+    test "server command telemetry includes truncated text only when opted in" do
+      original = Application.get_env(:ex_maude, :telemetry_include_commands)
+      Application.put_env(:ex_maude, :telemetry_include_commands, true)
+      on_exit(fn -> restore_env(:telemetry_include_commands, original) end)
+
+      handler_id = "server-command-opt-in-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:ex_maude, :server, :command_start],
+        fn _, measurements, metadata, _ -> send(test_pid, {measurements, metadata}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+      command = String.duplicate("x", 101)
+      Telemetry.command_started(:nif, command)
+
+      assert_receive {%{command_bytes: 101}, %{command: redacted, backend: :nif}}
+      assert redacted == String.duplicate("x", 100) <> "..."
+    end
+
     test "server events keep contextual values out of measurements" do
       handler_id = "server-contract-#{System.unique_integer([:positive])}"
       test_pid = self()
@@ -265,6 +311,9 @@ defmodule ExMaude.TelemetryTest do
       end
     end
   end
+
+  defp restore_env(key, nil), do: Application.delete_env(:ex_maude, key)
+  defp restore_env(key, value), do: Application.put_env(:ex_maude, key, value)
 
   describe "span/3 additional edge cases" do
     setup do

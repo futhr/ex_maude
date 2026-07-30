@@ -240,6 +240,19 @@ defmodule ExMaude.IoT.ValidatorTest do
       assert {:error, errors} = Validator.validate_rule(Map.put(base, :actions, actions))
       assert "invalid action format" in errors
     end
+
+    test "rejects invalid UTF-8 before encoding", %{base: base} do
+      invalid = <<255>>
+
+      assert {:error, _} = Validator.validate_rule(Map.merge(base, %{id: invalid, actions: []}))
+
+      assert {:error, errors} =
+               Validator.validate_rule(
+                 Map.put(base, :actions, [{:set_prop, "device", "state", invalid}])
+               )
+
+      assert "value must be a boolean, number, string, or atom" in errors
+    end
   end
 
   describe "validate_rules/1" do

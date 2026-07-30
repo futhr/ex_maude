@@ -105,10 +105,15 @@ defmodule ExMaude.Bench do
       Application.put_env(:ex_maude, :maude_path, maude_path)
       # Disable PTY wrapper to avoid "openpty: Device not configured" errors
       Application.put_env(:ex_maude, :use_pty, false)
-      # Start the pool via the supervisor
-      {:ok, _} = Supervisor.start_child(ExMaude.Supervisor, ExMaude.Pool.child_spec([]))
-      Process.sleep(1000)
-      maude_benchmarks()
+
+      {:ok, supervisor} =
+        Supervisor.start_link([ExMaude.Pool.child_spec([])], strategy: :one_for_one)
+
+      try do
+        maude_benchmarks()
+      after
+        Supervisor.stop(supervisor)
+      end
     else
       IO.puts("WARNING: Maude not found. Install with: mix maude.install")
     end

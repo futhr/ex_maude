@@ -120,14 +120,19 @@ defmodule ExMaude.AI.Validator do
     end)
   end
 
-  defp validate_id(errors, %{id: id}) when is_binary(id) and id != "", do: errors
+  defp validate_id(errors, %{id: id}) when is_binary(id) do
+    if valid_nonempty_string?(id), do: errors, else: ["id must be a non-empty string" | errors]
+  end
+
   defp validate_id(errors, %{id: _}), do: ["id must be a non-empty string" | errors]
   defp validate_id(errors, _), do: errors
 
-  defp validate_agent_id(errors, %{agent_id: {tenant_id, agent_name}})
-       when is_binary(tenant_id) and tenant_id != "" and is_binary(agent_name) and
-              agent_name != "" do
-    errors
+  defp validate_agent_id(errors, %{agent_id: {tenant_id, agent_name}}) do
+    if valid_nonempty_string?(tenant_id) and valid_nonempty_string?(agent_name) do
+      errors
+    else
+      ["agent_id must be a {tenant_id, agent_name} tuple of non-empty strings" | errors]
+    end
   end
 
   defp validate_agent_id(errors, %{agent_id: _}) do
@@ -202,18 +207,28 @@ defmodule ExMaude.AI.Validator do
   def validate_predicate({:always}), do: :ok
 
   def validate_predicate({prop_op, key, value})
-      when prop_op in [:prop_eq, :prop_gt, :prop_lt, :prop_gte, :prop_lte] and is_binary(key) do
-    validate_value(value)
+      when prop_op in [:prop_eq, :prop_gt, :prop_lt, :prop_gte, :prop_lte] do
+    if valid_string?(key),
+      do: validate_value(value),
+      else: invalid_predicate({prop_op, key, value})
   end
 
-  def validate_predicate({:capability_required, name}) when is_binary(name) and name != "",
-    do: :ok
+  def validate_predicate({:capability_required, name}) do
+    if valid_nonempty_string?(name),
+      do: :ok,
+      else: invalid_predicate({:capability_required, name})
+  end
 
-  def validate_predicate({:capability_granted, name}) when is_binary(name) and name != "", do: :ok
+  def validate_predicate({:capability_granted, name}) do
+    if valid_nonempty_string?(name),
+      do: :ok,
+      else: invalid_predicate({:capability_granted, name})
+  end
 
-  def validate_predicate({:budget_within, scope, {:interval, lo, hi}})
-      when is_binary(scope) and is_integer(lo) and is_integer(hi) and lo >= 0 and hi >= lo do
-    :ok
+  def validate_predicate({:budget_within, scope, {:interval, lo, hi}} = predicate) do
+    if valid_string?(scope) and is_integer(lo) and is_integer(hi) and lo >= 0 and hi >= lo,
+      do: :ok,
+      else: invalid_predicate(predicate)
   end
 
   def validate_predicate({:authority_at_least, n}) when is_integer(n) and n >= 0, do: :ok
@@ -248,43 +263,61 @@ defmodule ExMaude.AI.Validator do
 
   @doc false
   @spec validate_invocation(term()) :: :ok | {:error, String.t()}
-  def validate_invocation({:invoke_tool, name, args, cap_required, jurisdiction})
-      when is_binary(name) and name != "" and is_map(args) and is_binary(cap_required) and
-             jurisdiction in @all_jurisdictions do
-    case validate_arg_map(args) do
-      :ok -> :ok
-      {:error, msg} -> {:error, "invoke_tool args: #{msg}"}
+  def validate_invocation({:invoke_tool, name, args, cap_required, jurisdiction} = invocation) do
+    if valid_nonempty_string?(name) and is_map(args) and
+         valid_nonempty_string?(cap_required) and jurisdiction in @all_jurisdictions do
+      case validate_arg_map(args) do
+        :ok -> :ok
+        {:error, msg} -> {:error, "invoke_tool args: #{msg}"}
+      end
+    else
+      {:error, "unsupported invocation shape: #{inspect(invocation)}"}
     end
   end
 
-  def validate_invocation({:require_approval, class}) when is_binary(class) and class != "",
-    do: :ok
+  def validate_invocation({:require_approval, class} = invocation) do
+    if valid_nonempty_string?(class),
+      do: :ok,
+      else: {:error, "unsupported invocation shape: #{inspect(invocation)}"}
+  end
 
   def validate_invocation(other), do: {:error, "unsupported invocation shape: #{inspect(other)}"}
 
   defp validate_arg_map(args) when is_map(args) do
     Enum.reduce_while(args, :ok, fn {k, v}, _ ->
-      case validate_value(v) do
-        :ok -> {:cont, :ok}
-        {:error, msg} -> {:halt, {:error, "key #{inspect(k)}: #{msg}"}}
+      if valid_arg_key?(k) do
+        case validate_value(v) do
+          :ok -> {:cont, :ok}
+          {:error, msg} -> {:halt, {:error, "key #{inspect(k)}: #{msg}"}}
+        end
+      else
+        {:halt, {:error, "unsupported argument key: #{inspect(k)}"}}
       end
     end)
   end
 
   @doc false
   @spec validate_capability(term()) :: :ok | {:error, String.t()}
-  def validate_capability({:cap, name, shape})
-      when is_binary(name) and is_binary(shape) and name != "" do
-    :ok
+  def validate_capability({:cap, name, shape} = capability) do
+    if valid_nonempty_string?(name) and valid_string?(shape),
+      do: :ok,
+      else: {:error, "unsupported capability shape: #{inspect(capability)}"}
   end
 
-  def validate_capability(name) when is_binary(name) and name != "", do: :ok
+  def validate_capability(name) when is_binary(name) do
+    if valid_nonempty_string?(name),
+      do: :ok,
+      else: {:error, "unsupported capability shape: #{inspect(name)}"}
+  end
 
   def validate_capability(other), do: {:error, "unsupported capability shape: #{inspect(other)}"}
 
   @doc false
   @spec validate_value(term()) :: :ok | {:error, String.t()}
-  def validate_value({:str, s}) when is_binary(s), do: :ok
+  def validate_value({:str, s}) when is_binary(s) do
+    if valid_string?(s), do: :ok, else: invalid_value({:str, s})
+  end
+
   def validate_value({:int, n}) when is_integer(n), do: :ok
   def validate_value({:bool, b}) when is_boolean(b), do: :ok
 
@@ -295,11 +328,14 @@ defmodule ExMaude.AI.Validator do
   def validate_value({:jurisdiction, j}) when j in @all_jurisdictions, do: :ok
   def validate_value(nil), do: :ok
 
-  def validate_value(s) when is_binary(s), do: :ok
+  def validate_value(s) when is_binary(s) do
+    if valid_string?(s), do: :ok, else: invalid_value(s)
+  end
+
   def validate_value(n) when is_integer(n), do: :ok
   def validate_value(b) when is_boolean(b), do: :ok
 
-  def validate_value(other), do: {:error, "unsupported value shape: #{inspect(other)}"}
+  def validate_value(other), do: invalid_value(other)
 
   @doc false
   @spec validate_jurisdictions(term()) :: :ok | {:error, ExMaude.Error.t()}
@@ -318,4 +354,15 @@ defmodule ExMaude.AI.Validator do
   def validate_jurisdictions(_) do
     {:error, ExMaude.Error.new(:validation, "jurisdictions must be a list")}
   end
+
+  defp valid_arg_key?(key) when is_atom(key), do: true
+  defp valid_arg_key?(key), do: valid_string?(key)
+
+  defp valid_nonempty_string?(value), do: valid_string?(value) and value != ""
+  defp valid_string?(value), do: is_binary(value) and String.valid?(value)
+
+  defp invalid_predicate(predicate),
+    do: {:error, "unsupported predicate shape: #{inspect(predicate)}"}
+
+  defp invalid_value(value), do: {:error, "unsupported value shape: #{inspect(value)}"}
 end
