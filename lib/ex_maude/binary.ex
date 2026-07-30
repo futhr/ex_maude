@@ -68,13 +68,16 @@ defmodule ExMaude.Binary do
   end
 
   @doc """
-  Returns the bundled Maude version.
+  Returns the version associated with checkout-local development assets.
+
+  Use `ExMaude.version/0` to query the interpreter that will actually run.
   """
   @spec version() :: String.t()
   def version, do: @version
 
   @doc """
-  Checks if a bundled Maude binary is available for the current platform.
+  Checks whether this installation contains a package-local Maude binary for
+  the current platform.
   """
   @spec bundled?() :: boolean()
   def bundled? do
@@ -132,7 +135,10 @@ defmodule ExMaude.Binary do
   end
 
   @doc """
-  Returns the path to the bundled Maude binary for the current platform, or nil.
+  Returns a package-local Maude binary for the current platform, or nil.
+
+  Released Hex packages do not include these GPL-licensed binaries; this helper
+  primarily supports source checkouts and separately installed assets.
   """
   @spec bundled_path() :: Path.t() | nil
   def bundled_path do
@@ -157,7 +163,12 @@ defmodule ExMaude.Binary do
   end
 
   @doc """
-  Returns all supported platforms.
+  Returns platforms that ExMaude can identify and use with a configured,
+  locally installed, or system-provided Maude executable.
+
+  This is broader than `mix maude.install` availability. Official stable
+  Maude release assets currently cover macOS arm64/x64 and Linux x64;
+  Linux arm64 callers must provide a compatible executable.
   """
   @spec supported_platforms() :: [String.t()]
   def supported_platforms do

@@ -55,7 +55,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 1. Ensure your code follows the project style
 2. Update documentation as needed
 3. Add tests for new functionality
-4. Update CHANGELOG.md with your changes
+4. Use a Conventional Commit message so git_ops can generate the changelog
 5. Submit a PR with a clear description
 
 ## Releases
@@ -65,7 +65,8 @@ Releases are managed by maintainers using git_ops:
 1. Ensure all tests pass: `mix check`
 2. Run `mix release` (alias for `mix git_ops.release`) — updates changelog, bumps version, commits, and tags
 3. Push with tags: `git push --follow-tags`
-4. CI will publish to Hex.pm on the `v*` tag
+4. The tag starts the precompiled-NIF workflow; Hex publishing runs only after
+   that workflow succeeds and its exact tagged commit is verified
 
 ### What the tag triggers
 

@@ -195,7 +195,8 @@ config :ex_maude,
   pool_size: 4,                        # Worker processes
   pool_max_overflow: 2,                # Extra workers under load
   timeout: 5_000,                      # Default command timeout (ms)
-  preload_modules: []                  # Modules to load on startup
+  preload_modules: [],                 # Modules to load on every pool at startup
+  telemetry_include_commands: false    # Secure default: command text is omitted
 ```
 
 ## Pool Management
@@ -219,6 +220,9 @@ end, pool: :verification_pool)
 {:ok, results} = ExMaude.Pool.broadcast(fn worker ->
   ExMaude.Server.load_file(worker, path)
 end)
+
+# GOOD: high-level loading also supports and remembers a named pool
+:ok = ExMaude.load_file(path, pool: :verification_pool)
 ```
 
 ## Backend Selection
@@ -237,7 +241,10 @@ config :ex_maude, backend: :nif     # Rustler NIF managing subprocess pipes
 | `:cnode` | Uses a C bridge and Erlang distribution. Requires `epmd` and the compiled bridge; benchmark it against Port for the target workload. |
 | `:nif` | Native code drives the Maude subprocess through pipes. A native crash can crash the VM even though Maude itself remains a subprocess. |
 
-Precompiled NIF binaries are published on Hex for macOS aarch64/x86_64, Linux gnu/musl × aarch64/x86_64, and Windows gnu/msvc. On platforms outside that list, force a local build:
+Precompiled NIF binaries are attached to GitHub releases and verified by
+checksums shipped in the Hex package for macOS aarch64/x86_64, Linux gnu/musl
+× aarch64/x86_64, and Windows gnu/msvc. On platforms outside that list, force
+a local build:
 
 ```bash
 EX_MAUDE_BUILD=1 mix deps.compile ex_maude

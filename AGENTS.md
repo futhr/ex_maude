@@ -156,8 +156,10 @@ ExMaude emits standard telemetry events:
 | `[:ex_maude, :command, :start]` | `system_time` | `operation`, `module` |
 | `[:ex_maude, :command, :stop]` | `duration` | `operation`, `module`, `result` |
 | `[:ex_maude, :command, :exception]` | `duration` | `operation`, `module`, `kind`, `reason` |
-| `[:ex_maude, :pool, :checkout, :start]` | `system_time` | - |
-| `[:ex_maude, :pool, :checkout, :stop]` | `duration` | `result` |
+| `[:ex_maude, :server, :command_start]` | `system_time`, `command_bytes` | `pid`, `backend`; optional truncated `command` |
+| `[:ex_maude, :server, :command_complete]` | `system_time`, optional `response_size` | `pid`, `backend`, `result` |
+| `[:ex_maude, :pool, :checkout, :start]` | `system_time` | `backend` |
+| `[:ex_maude, :pool, :checkout, :stop]` | `duration` | `result`, `backend` |
 | `[:ex_maude, :iot, :detect_conflicts, :start]` | `system_time`, `rule_count` | - |
 | `[:ex_maude, :iot, :detect_conflicts, :stop]` | `duration`, `conflict_count` | `result` |
 
@@ -172,12 +174,19 @@ All errors use `ExMaude.Error` struct with standardized types:
 | `:timeout` | Operation timed out |
 | `:parse_error` | Maude syntax/parse error |
 | `:module_not_found` | Module was not found |
+| `:syntax_error` | Invalid Maude syntax |
+| `:busy` | Worker already has an in-flight command |
 | `:load_error` | Module load failed on one or more workers |
 | `:maude_crash` | Maude process crashed |
 | `:file_not_found` | File does not exist |
 | `:pool_error` | Pool checkout failed |
 | `:invalid_path` | Path validation failed |
+| `:ambiguous_term` | Term has multiple parses |
+| `:sort_error` | Sort/type mismatch |
+| `:not_connected` / `:cnode_error` | C-node connectivity or protocol failure |
+| `:nif_not_loaded` / `:nif_error` | NIF availability or runtime failure |
 | `:validation` | Rule validation failed |
+| `:unknown` | Unrecognized Maude error |
 
 ## Configuration
 
@@ -267,7 +276,10 @@ Do not add `Co-Authored-By` or any AI/Claude attribution to commit messages.
 
 1. `mix git_ops.release` — updates changelog, bumps version in mix.exs and README.md, commits, and tags
 2. `git push --follow-tags` — pushes commit and tag
-3. CI (`publish.yml`) triggers on `v*` tag → runs checks → `mix hex.publish`
+3. `release.yml` builds and publishes the precompiled NIF artifacts
+4. After that workflow succeeds, `publish.yml` checks out and verifies the
+   exact tagged commit, runs release gates, generates NIF checksums, and
+   publishes to Hex
 
 ## References
 

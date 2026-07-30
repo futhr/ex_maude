@@ -5,6 +5,37 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## Unreleased
+
+### Breaking Changes
+
+* Clean bounded safety and liveness searches now return
+  `{:ok, :unverified}` instead of claiming `:safe` or `:live`; validation and
+  encoding failures remain explicit errors.
+* ExMaude is an embeddable library with no automatic application callback.
+  Callers own `ExMaude.Pool.child_spec/1` in their supervision tree.
+
+### Features
+
+* Named pools, pool-scoped module loading, and persistent per-pool module
+  preloads keep every worker's Maude session consistent.
+* Central command validation, balanced term encoding, optional redacted command
+  telemetry, and stricter installer integrity checks harden external-input and
+  operational boundaries.
+
+### Bug Fixes
+
+* Keep path-based consumers isolated from local NIF build artifacts. Rustler
+  source compilation is now enabled only by `EX_MAUDE_BUILD=1`, so an ignored
+  native artifact cannot force an optional transitive dependency into another
+  project's build.
+* Return a modern map child specification accepted by current Elixir
+  supervisors.
+* Broadcast module loads to the pool's actual workers and return structured
+  errors when a pool is missing.
+* Normalize backend timeout/crash handling, parser output, and conflict
+  encoding across Port, C-Node, and NIF backends.
+
 ## [v0.3.0](https://github.com/futhr/ex_maude/compare/v0.2.0...v0.3.0) (2026-06-10)
 ### Breaking Changes:
 

@@ -152,7 +152,7 @@ Types: `:state_conflict`, `:env_conflict`, `:state_cascade`,
 
 ```elixir
 # Safety: is a bad world reachable?
-{:ok, :safe} | {:ok, :unverified} |
+{:ok, :unverified} |
 {:error, {:counterexample, sols}} | {:error, err} =
   ExMaude.IoT.verify_safety(rules,
     {:thing_state, "door", "state", "error"},
@@ -160,13 +160,14 @@ Types: `:state_conflict`, `:env_conflict`, `:state_cascade`,
     max_depth: 50, timeout: 30_000)
 
 # Liveness: does every terminal world reach the goal?
-{:ok, :live} | {:error, :deadlock_possible} | {:ok, :unverified} =
+{:error, :deadlock_possible} | {:ok, :unverified} | {:error, err} =
   ExMaude.IoT.verify_liveness(rules,
     {:thing_state, "door", "state", "notified"})
 ```
 
-`{:ok, :unverified}` = Maude unavailable or timed out (no proof either
-way). Encoding/module errors surface as `{:error, _}`.
+`{:ok, :unverified}` = the bounded search found no counterexample or the
+backend was unavailable/timed out; it is no positive proof. Validation,
+encoding, and module errors surface as `{:error, _}`.
 
 ### AI agent policies
 

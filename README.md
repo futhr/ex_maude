@@ -30,7 +30,7 @@ a formal specification language based on rewriting logic. Use ExMaude for:
 |---------|-------------|
 | **Port-based IPC** | Efficient communication via Erlang Ports |
 | **Worker Pool** | Concurrent operations via Poolboy |
-| **High-level API** | `reduce/3`, `rewrite/3`, `search/4`, `load_file/1` |
+| **High-level API** | `reduce/3`, `rewrite/3`, `search/4`, `load_file/2` |
 | **Output Parsing** | Structured parsing of Maude results |
 | **Telemetry** | Built-in observability events |
 | **IoT Module** | Formal conflict detection for physical-IoT automation rules |
@@ -62,6 +62,11 @@ Elixir/Rust/C sources — Maude itself is GPL-licensed and installed separately)
 mix deps.get
 mix maude.install
 ```
+
+The installer verifies the SHA-256 digest published by GitHub and fails closed
+when a release asset has no valid digest. Official stable installers are
+available for macOS arm64/x64 and Linux x64. On Linux arm64, configure a
+system-provided Maude executable instead.
 
 Already have Maude on your system? Skip the install task and either keep it on
 your `PATH` or point the library at it:
@@ -101,7 +106,9 @@ config :ex_maude,
   pool_size: 4,                        # Number of worker processes
   pool_max_overflow: 2,                # Extra workers under load
   timeout: 5_000,                      # Default command timeout (ms)
-  use_pty: false                       # PTY wrapper opt-in (Port backend only)
+  use_pty: false,                      # PTY wrapper opt-in (Port backend only)
+  preload_modules: [],                 # Modules loaded when workers start
+  telemetry_include_commands: false   # Keep command text out of telemetry
 ```
 
 ### Configuration Options
@@ -114,11 +121,14 @@ config :ex_maude,
 | `pool_max_overflow` | `integer()` | `2` | Extra workers allowed under load |
 | `timeout` | `integer()` | `5000` | Default command timeout in ms |
 | `use_pty` | `boolean()` | `false` | Wrap Maude in a PTY instead of pipes with `-interactive` |
+| `preload_modules` | `[Path.t()]` | `[]` | Modules loaded by every worker at startup |
+| `telemetry_include_commands` | `boolean()` | `false` | Include truncated Maude commands in server telemetry; opt in only when commands contain no secrets |
 
 ExMaude is a library application: it starts no processes automatically. Add
 `ExMaude.Pool.child_spec/1` wherever the pool belongs in your supervision tree.
 Pass `:name` when you need multiple independent pools, then select one with the
-`:pool` option accepted by `ExMaude.Pool` operations and `ExMaude.execute/2`.
+`:pool` option accepted by `ExMaude.Pool` operations and the high-level API.
+Runtime module preloads are tracked independently for each named pool.
 
 By default the Port backend talks to `maude -interactive` over plain pipes — the same mode the C-Node and NIF backends use, and it needs no extra tooling. Set `use_pty: true` to wrap Maude in a PTY (`script`/`unbuffer`) instead.
 
@@ -160,7 +170,7 @@ ExMaude.search(module, initial, pattern, opts \\ [])
 
 ```elixir
 # Load from file
-ExMaude.load_file("/path/to/module.maude")
+ExMaude.load_file("/path/to/module.maude", pool: :verification_pool)
 
 # Load from string
 ExMaude.load_module("""
@@ -169,7 +179,7 @@ fmod MY-NAT is
   op zero : -> MyNat .
   op s : MyNat -> MyNat .
 endfm
-""")
+""", pool: :verification_pool)
 ```
 
 ### Direct Execution
@@ -301,6 +311,8 @@ All measurements use native time units for precision.
 | `[:ex_maude, :command, :start]` | Command execution started |
 | `[:ex_maude, :command, :stop]` | Command execution completed |
 | `[:ex_maude, :command, :exception]` | Command raised an exception |
+| `[:ex_maude, :server, :command_start]` | Backend command started |
+| `[:ex_maude, :server, :command_complete]` | Backend command completed |
 | `[:ex_maude, :pool, :checkout, :start]` | Pool checkout started |
 | `[:ex_maude, :pool, :checkout, :stop]` | Pool checkout completed |
 | `[:ex_maude, :iot, :detect_conflicts, :start]` | IoT conflict detection started |
@@ -314,13 +326,18 @@ All measurements use native time units for precision.
 - `system_time` - Wall clock time when event started
 - `rule_count` - Number of rules (IoT and AI events)
 - `conflict_count` - Conflicts detected (IoT and AI events)
+- `command_bytes` - UTF-8 byte size of a backend command
 
 ### Metadata
 
-- `operation` - Command type (`:reduce`, `:rewrite`, `:search`, `:execute`, `:parse`)
+- `operation` - Command type (`:reduce`, `:rewrite`, `:search`, `:execute`, `:parse`, `:load_file`, `:load_module`)
 - `module` - Maude module name
 - `result` - `:ok` or `:error`
 - `template` - Conflict-detection template in use (`:iot_rules` or `:ai_rules`)
+
+Raw command text is absent by default because Maude terms may contain
+credentials or policy data. Set `telemetry_include_commands: true` only after
+reviewing that risk; opted-in text is truncated to 100 characters.
 
 ### Example: Prometheus Metrics
 
@@ -467,7 +484,7 @@ Explore ExMaude interactively with Livebook:
 ## Documentation
 
 - [GitHub](https://github.com/futhr/ex_maude) - Documentation and source code
-- [AGENTS.md](AGENTS.md) - AI agent integration guide
+- [Usage Rules](usage-rules.md) - Integration and operational patterns
 
 ---
 
