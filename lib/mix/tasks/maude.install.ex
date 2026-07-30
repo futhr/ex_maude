@@ -65,7 +65,8 @@ defmodule Mix.Tasks.Maude.Install do
     * **Network errors** - Check your internet connection and proxy settings
     * **Permission denied** - Ensure you have write access to the installation path
     * **Platform not supported** - Check if your OS/architecture is in the supported list
-    * **Verification failed** - The binary may require additional system libraries
+    * **Integrity verification failed** - Download manually only after verifying
+      the artifact against an authoritative checksum
 
   For macOS, you may need to allow the binary in System Preferences > Security & Privacy
   if you see a "cannot be opened because the developer cannot be verified" error.
@@ -79,6 +80,8 @@ defmodule Mix.Tasks.Maude.Install do
   @download_timeout 120_000
   @api_timeout 30_000
   @max_download_size 100 * 1024 * 1024
+  @max_extracted_size @max_download_size * 4
+  @max_archive_entries 10_000
 
   @impl Mix.Task
   def run(args) do
@@ -232,14 +235,16 @@ defmodule Mix.Tasks.Maude.Install do
 
         File.mkdir_p!(install_path)
 
-        tmp_dir = System.tmp_dir!()
-        zip_path = Path.join(tmp_dir, "maude-#{resolved_version}-#{platform}.zip")
+        tmp_dir = create_private_tmp_dir()
+        zip_path = Path.join(tmp_dir, "maude.zip")
 
-        download_file(url, zip_path)
-        verify_checksum(zip_path, sha256)
-        extract_and_install(zip_path, install_path, resolved_version)
-
-        File.rm(zip_path)
+        try do
+          download_file(url, zip_path)
+          verify_checksum(zip_path, sha256)
+          extract_and_install(zip_path, install_path, resolved_version, tmp_dir)
+        after
+          File.rm_rf(tmp_dir)
+        end
 
         maude_binary = Path.join(install_path, "maude")
         File.chmod!(maude_binary, 0o755)
@@ -290,6 +295,16 @@ defmodule Mix.Tasks.Maude.Install do
         You may need to build Maude from source for your platform.
         See: https://github.com/maude-lang/Maude
         """)
+
+      {:error, :missing_digest, release, asset} ->
+        Mix.raise("""
+        Refusing to install #{asset} from #{release}: the GitHub release does not
+        provide a valid SHA-256 digest.
+
+        Automatic installation fails closed when artifact integrity cannot be
+        verified. Install Maude manually from:
+        https://github.com/maude-lang/Maude/releases
+        """)
     end
   end
 
@@ -301,12 +316,7 @@ defmodule Mix.Tasks.Maude.Install do
         |> Enum.find_value(fn release ->
           case find_asset_for_platform(release, platform) do
             {:ok, asset} ->
-              {:ok,
-               %{
-                 url: asset["browser_download_url"],
-                 sha256: parse_sha256(asset["digest"]),
-                 version: release["tag_name"]
-               }}
+              release_asset_details(release, asset)
 
             :error ->
               nil
@@ -340,12 +350,7 @@ defmodule Mix.Tasks.Maude.Install do
           release ->
             case find_asset_for_platform(release, platform) do
               {:ok, asset} ->
-                {:ok,
-                 %{
-                   url: asset["browser_download_url"],
-                   sha256: parse_sha256(asset["digest"]),
-                   version: release["tag_name"]
-                 }}
+                release_asset_details(release, asset)
 
               :error ->
                 available_platforms = get_release_platforms(release)
@@ -409,22 +414,41 @@ defmodule Mix.Tasks.Maude.Install do
     |> Enum.uniq()
   end
 
-  defp parse_sha256(nil), do: nil
-  defp parse_sha256("sha256:" <> hash), do: hash
+  defp release_asset_details(release, asset) do
+    case parse_sha256(asset["digest"]) do
+      nil ->
+        {:error, :missing_digest, release["tag_name"], asset["name"]}
+
+      sha256 ->
+        {:ok,
+         %{
+           url: asset["browser_download_url"],
+           sha256: sha256,
+           version: release["tag_name"]
+         }}
+    end
+  end
+
+  defp parse_sha256("sha256:" <> hash) do
+    if String.match?(hash, ~r/\A[0-9a-fA-F]{64}\z/), do: String.downcase(hash)
+  end
+
   defp parse_sha256(_), do: nil
 
   defp fetch_releases do
     url = String.to_charlist(@github_api)
 
-    headers = [
-      {~c"User-Agent", ~c"ExMaude-Installer"},
-      {~c"Accept", ~c"application/vnd.github.v3+json"}
-    ]
+    headers =
+      [
+        {~c"User-Agent", ~c"ExMaude-Installer"},
+        {~c"Accept", ~c"application/vnd.github.v3+json"}
+      ] ++ github_auth_header()
 
     http_opts = [
       ssl: ssl_opts(),
       timeout: @api_timeout,
-      autoredirect: true
+      # Never forward an optional GitHub API token across redirects.
+      autoredirect: false
     ]
 
     case :httpc.request(:get, {url, headers}, http_opts, body_format: :binary) do
@@ -442,14 +466,37 @@ defmodule Mix.Tasks.Maude.Install do
     end
   end
 
+  defp github_auth_header do
+    case System.get_env("GITHUB_TOKEN") do
+      token when is_binary(token) and token != "" ->
+        [{~c"Authorization", String.to_charlist("Bearer " <> token)}]
+
+      _ ->
+        []
+    end
+  end
+
   defp detect_platform do
     ExMaude.Binary.platform()
+  end
+
+  defp create_private_tmp_dir do
+    suffix =
+      16
+      |> :crypto.strong_rand_bytes()
+      |> Base.url_encode64(padding: false)
+
+    path = Path.join(System.tmp_dir!(), "ex_maude-install-#{suffix}")
+    File.mkdir!(path)
+    File.chmod!(path, 0o700)
+    path
   end
 
   defp download_file(url, destination) do
     Mix.shell().info("Downloading from: #{url}")
 
-    with :ok <- validate_download_path(destination) do
+    with :ok <- validate_https_url(url),
+         :ok <- validate_download_path(destination) do
       # Use curl if available for better redirect handling and progress
       case System.find_executable("curl") do
         nil -> download_with_httpc(url, destination)
@@ -477,6 +524,10 @@ defmodule Mix.Tasks.Maude.Install do
   defp download_with_curl(curl, url, destination) do
     args = [
       "-fSL",
+      "--proto",
+      "=https",
+      "--proto-redir",
+      "=https",
       "--progress-bar",
       "--max-filesize",
       Integer.to_string(@max_download_size),
@@ -522,13 +573,19 @@ defmodule Mix.Tasks.Maude.Install do
     end
   end
 
-  defp download_with_httpc(url, destination) do
+  defp download_with_httpc(url, destination, redirects_left \\ 5)
+
+  defp download_with_httpc(_, _, 0) do
+    Mix.raise("Failed to download Maude: too many redirects")
+  end
+
+  defp download_with_httpc(url, destination, redirects_left) do
     url_charlist = String.to_charlist(url)
 
     http_opts = [
       ssl: ssl_opts(),
       timeout: @download_timeout,
-      autoredirect: true
+      autoredirect: false
     ]
 
     case :httpc.request(:get, {url_charlist, []}, http_opts, body_format: :binary) do
@@ -546,11 +603,8 @@ defmodule Mix.Tasks.Maude.Install do
         Mix.shell().info("Downloaded #{size_kb} KB")
         :ok
 
-      {:ok, {{_, 302, _}, headers, _}} ->
-        handle_redirect(headers, destination)
-
-      {:ok, {{_, 301, _}, headers, _}} ->
-        handle_redirect(headers, destination)
+      {:ok, {{_, status, _}, headers, _}} when status in [301, 302, 303, 307, 308] ->
+        handle_redirect(headers, destination, redirects_left - 1)
 
       {:ok, {{_, status, reason}, _, _}} ->
         Mix.raise("""
@@ -598,16 +652,25 @@ defmodule Mix.Tasks.Maude.Install do
     ]
   end
 
-  defp handle_redirect(headers, destination) do
+  defp handle_redirect(headers, destination, redirects_left) do
     case Enum.find(headers, fn {key, _} -> String.downcase(to_string(key)) == "location" end) do
-      {_, location} -> download_with_httpc(to_string(location), destination)
-      nil -> {:error, "no Location header in redirect response"}
+      {_, location} ->
+        location = to_string(location)
+
+        with :ok <- validate_https_url(location) do
+          download_with_httpc(location, destination, redirects_left)
+        end
+
+      nil ->
+        {:error, "no Location header in redirect response"}
     end
   end
 
-  defp verify_checksum(_, nil) do
-    Mix.shell().info("(No checksum available, skipping verification)")
-    :ok
+  defp validate_https_url(url) do
+    case URI.parse(url) do
+      %URI{scheme: "https", host: host} when is_binary(host) and host != "" -> :ok
+      _ -> Mix.raise("Refusing non-HTTPS download URL: #{inspect(url)}")
+    end
   end
 
   defp verify_checksum(path, expected_sha) do
@@ -638,87 +701,88 @@ defmodule Mix.Tasks.Maude.Install do
     end
   end
 
-  defp extract_and_install(zip_path, install_path, version) do
+  defp extract_and_install(zip_path, install_path, version, tmp_dir) do
     Mix.shell().info("Extracting...")
+    extraction_path = Path.join(tmp_dir, "extracted")
+    File.mkdir!(extraction_path)
 
-    with :ok <- validate_extraction_paths(zip_path, install_path) do
-      # Use system unzip for better compatibility with various zip formats
-      case System.find_executable("unzip") do
-        nil ->
-          extract_with_erlang(zip_path, install_path, version)
-
-        unzip ->
-          extract_with_unzip(unzip, zip_path, install_path, version)
-      end
+    with :ok <- validate_archive(zip_path) do
+      extract_with_erlang(zip_path, extraction_path)
+      validate_extracted_tree!(extraction_path)
+      rename_maude_binary(extraction_path, version)
+      copy_release_tree!(extraction_path, install_path)
     end
   end
 
-  defp validate_extraction_paths(zip_path, install_path) do
-    expanded_zip = Path.expand(zip_path)
-    expanded_install = Path.expand(install_path)
-    tmp_dir = Path.expand(System.tmp_dir!())
-    cwd = Path.expand(File.cwd!())
+  @doc false
+  @spec validate_archive(Path.t()) :: :ok
+  def validate_archive(zip_path) do
+    case :zip.list_dir(String.to_charlist(zip_path)) do
+      {:ok, entries} ->
+        files =
+          Enum.flat_map(entries, fn
+            {:zip_file, name, info, _, _, _} -> [{to_string(name), info}]
+            _ -> []
+          end)
 
-    # Validate paths don't contain shell metacharacters
-    shell_chars = [";", "|", "&", "`", "$(", "${"]
+        if files == [], do: Mix.raise("Archive contains no files")
+
+        if length(files) > @max_archive_entries,
+          do: Mix.raise("Archive contains too many entries")
+
+        extracted_size =
+          Enum.reduce(files, 0, fn {_, info}, total ->
+            total + archive_entry_size(info)
+          end)
+
+        if extracted_size > @max_extracted_size do
+          Mix.raise("Archive exceeds the maximum extracted size")
+        end
+
+        Enum.each(files, &validate_archive_entry!/1)
+        :ok
+
+      {:error, reason} ->
+        Mix.raise("Failed to inspect archive: #{inspect(reason)}")
+    end
+  end
+
+  defp archive_entry_size(info) when is_tuple(info) and tuple_size(info) > 1 do
+    case elem(info, 1) do
+      size when is_integer(size) and size >= 0 -> size
+      _ -> Mix.raise("Archive contains invalid file metadata")
+    end
+  end
+
+  defp archive_entry_size(_), do: Mix.raise("Archive contains invalid file metadata")
+
+  defp validate_archive_entry!({name, info}) do
+    normalized = String.replace(name, "\\", "/")
+    components = String.split(normalized, "/", trim: true)
+    type = if is_tuple(info) and tuple_size(info) > 2, do: elem(info, 2)
 
     cond do
-      Enum.any?(shell_chars, &String.contains?(zip_path, &1)) ->
-        Mix.raise("Invalid zip path: contains shell metacharacters")
+      normalized == "" ->
+        Mix.raise("Archive contains an empty path")
 
-      Enum.any?(shell_chars, &String.contains?(install_path, &1)) ->
-        Mix.raise("Invalid install path: contains shell metacharacters")
+      Path.type(normalized) == :absolute or String.match?(normalized, ~r/\A[A-Za-z]:/) ->
+        Mix.raise("Archive contains an absolute path: #{inspect(name)}")
 
-      not String.starts_with?(expanded_zip, tmp_dir) ->
-        Mix.raise("Invalid zip path: must be within temp directory")
+      ".." in components ->
+        Mix.raise("Archive contains directory traversal: #{inspect(name)}")
 
-      not (String.starts_with?(expanded_install, cwd) or
-               String.starts_with?(expanded_install, tmp_dir)) ->
-        Mix.raise("Invalid install path: must be within project or temp directory")
+      type not in [:regular, :directory] ->
+        Mix.raise("Archive contains unsupported file type #{inspect(type)}: #{inspect(name)}")
 
       true ->
         :ok
     end
   end
 
-  defp extract_with_unzip(unzip, zip_path, install_path, _) do
-    # -o: overwrite without prompting
-    # -q: quiet
-    args = ["-o", "-q", zip_path, "-d", install_path]
-
-    case System.cmd(unzip, args, stderr_to_stdout: true) do
-      {_, 0} ->
-        files = File.ls!(install_path)
-        Mix.shell().info("Extracted #{length(files)} files")
-
-        maude_path = Path.join(install_path, "maude")
-
-        if File.exists?(maude_path) do
-          :ok
-        else
-          Mix.raise("""
-          Extraction succeeded but 'maude' binary not found.
-
-          Extracted files: #{inspect(files)}
-
-          This may indicate an issue with the release package.
-          """)
-        end
-
-      {output, code} ->
-        Mix.raise("""
-        Failed to extract archive (unzip exit code: #{code})
-
-        #{String.trim(output)}
-        """)
-    end
-  end
-
-  defp extract_with_erlang(zip_path, install_path, version) do
-    case :zip.unzip(String.to_charlist(zip_path), cwd: String.to_charlist(install_path)) do
+  defp extract_with_erlang(zip_path, extraction_path) do
+    case :zip.unzip(String.to_charlist(zip_path), cwd: String.to_charlist(extraction_path)) do
       {:ok, files} ->
         Mix.shell().info("Extracted #{length(files)} files")
-        rename_maude_binary(install_path, version)
         :ok
 
       {:error, :einval} ->
@@ -733,10 +797,55 @@ defmodule Mix.Tasks.Maude.Install do
     end
   end
 
+  defp validate_extracted_tree!(root) do
+    root
+    |> Path.join("**/*")
+    |> Path.wildcard(match_dot: true)
+    |> Enum.each(fn path ->
+      case File.lstat!(path) do
+        %{type: type} when type in [:regular, :directory] -> :ok
+        %{type: type} -> Mix.raise("Extracted archive contains unsupported #{type}: #{path}")
+      end
+    end)
+  end
+
+  defp copy_release_tree!(source, destination) do
+    File.mkdir_p!(destination)
+    reject_destination_symlinks!(source, destination)
+
+    source
+    |> File.ls!()
+    |> Enum.each(fn entry ->
+      source_path = Path.join(source, entry)
+      destination_path = Path.join(destination, entry)
+
+      case File.cp_r(source_path, destination_path) do
+        {:ok, _} -> :ok
+        {:error, reason, path} -> Mix.raise("Failed to install #{path}: #{inspect(reason)}")
+      end
+    end)
+  end
+
+  defp reject_destination_symlinks!(source, destination) do
+    source
+    |> Path.join("**/*")
+    |> Path.wildcard(match_dot: true)
+    |> Enum.each(fn source_path ->
+      relative = Path.relative_to(source_path, source)
+      destination_path = Path.join(destination, relative)
+
+      case File.lstat(destination_path) do
+        {:ok, %{type: :symlink}} ->
+          Mix.raise("Refusing to overwrite destination symlink: #{destination_path}")
+
+        _ ->
+          :ok
+      end
+    end)
+  end
+
   defp rename_maude_binary(install_path, version) do
     target = Path.join(install_path, "maude")
-
-    if File.exists?(target), do: File.rm!(target)
 
     # Maude releases use several binary names across versions and platforms.
     possible_names = [
@@ -747,23 +856,25 @@ defmodule Mix.Tasks.Maude.Install do
       # Older naming
       "maude-Yices2",
       "Maude",
-      "maude",
       # Version-specific
       "maude-#{version}",
       "Maude-#{version}"
     ]
 
     found =
-      Enum.find_value(possible_names, fn name ->
-        source = Path.join(install_path, name)
+      if File.regular?(target) do
+        true
+      else
+        Enum.find_value(possible_names, fn name ->
+          source = Path.join(install_path, name)
 
-        if File.exists?(source) and not File.dir?(source) do
-          File.rename!(source, target)
-          true
-        else
-          nil
-        end
-      end)
+          if File.regular?(source) do
+            File.rm(target)
+            File.rename!(source, target)
+            true
+          end
+        end)
+      end
 
     unless found do
       files =

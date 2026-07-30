@@ -42,6 +42,7 @@ defmodule Mix.Tasks.Maude.InstallTest do
     end
 
     @tag :tmp_dir
+    @tag :network
     test "accepts --version option", %{tmp_dir: tmp_dir} do
       # This will fail at network level but validates option parsing
       output =
@@ -57,6 +58,7 @@ defmodule Mix.Tasks.Maude.InstallTest do
     end
 
     @tag :tmp_dir
+    @tag :network
     test "accepts --force option", %{tmp_dir: tmp_dir} do
       output =
         capture_io(fn ->
@@ -73,6 +75,7 @@ defmodule Mix.Tasks.Maude.InstallTest do
 
   describe "platform detection" do
     @tag :tmp_dir
+    @tag :network
     test "detects current platform format", %{tmp_dir: tmp_dir} do
       # We can't directly test detect_platform/0 as it's private,
       # but we can verify the output format through the task
@@ -275,19 +278,18 @@ defmodule Mix.Tasks.Maude.InstallTest do
 
     @tag :slow
     @tag :network
-    test "installs specific version", %{tmp_dir: tmp_dir} do
+    test "fails closed for an older release without a GitHub digest", %{tmp_dir: tmp_dir} do
       install_path = Path.join(tmp_dir, "maude-bin")
 
-      output =
-        capture_io(fn ->
-          Mix.Tasks.Maude.Install.run(["--version", "3.5", "--path", install_path])
-        end)
+      error =
+        assert_raise Mix.Error, ~r/does not\s+provide a valid SHA-256 digest/, fn ->
+          capture_io(fn ->
+            Mix.Tasks.Maude.Install.run(["--version", "3.5", "--path", install_path])
+          end)
+        end
 
-      assert output =~ "Maude3.5"
-      assert output =~ "Maude installed successfully"
-
-      maude_binary = Path.join(install_path, "maude")
-      assert File.exists?(maude_binary)
+      assert error.message =~ "fails closed"
+      refute File.exists?(Path.join(install_path, "maude"))
     end
 
     @tag :network
@@ -326,7 +328,7 @@ defmodule Mix.Tasks.Maude.InstallTest do
         end)
 
       # Should verify checksum for 3.5.1 (has digest in API)
-      assert output =~ "Checksum verified" or output =~ "No checksum available"
+      assert output =~ "Checksum verified"
       assert output =~ "Maude installed successfully"
     end
   end
@@ -358,23 +360,33 @@ defmodule Mix.Tasks.Maude.InstallTest do
   end
 
   describe "path validation" do
-    test "validates path traversal protection exists" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "validate_download_path"
-      assert source =~ "validate_extraction_paths"
-      assert source =~ "directory traversal"
+    test "accepts a regular archive", %{tmp_dir: tmp_dir} do
+      archive = create_archive!(tmp_dir, "valid.zip", [{~c"maude", "binary"}])
+      assert :ok = Mix.Tasks.Maude.Install.validate_archive(archive)
     end
 
-    test "validates shell metacharacter protection exists" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "shell metacharacters"
-      assert source =~ ~r/\[.*\"\;\".*\]/
+    test "rejects archive path traversal", %{tmp_dir: tmp_dir} do
+      archive = create_archive!(tmp_dir, "traversal.zip", [{~c"../escape", "malicious"}])
+
+      assert_raise Mix.Error, ~r/directory traversal/, fn ->
+        Mix.Tasks.Maude.Install.validate_archive(archive)
+      end
+    end
+
+    test "rejects absolute archive paths", %{tmp_dir: tmp_dir} do
+      archive = create_archive!(tmp_dir, "absolute.zip", [{~c"C:/escape", "malicious"}])
+
+      assert_raise Mix.Error, ~r/absolute path/, fn ->
+        Mix.Tasks.Maude.Install.validate_archive(archive)
+      end
     end
 
     test "file size limit is configured" do
       source = File.read!("lib/mix/tasks/maude.install.ex")
       assert source =~ "@max_download_size"
       assert source =~ "100 * 1024 * 1024"
+      assert source =~ "@max_extracted_size"
+      assert source =~ "@max_archive_entries"
     end
   end
 
@@ -426,14 +438,10 @@ defmodule Mix.Tasks.Maude.InstallTest do
   end
 
   describe "extraction methods" do
-    test "unzip extraction exists" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "extract_with_unzip"
-    end
-
-    test "erlang extraction fallback exists" do
+    test "uses the Erlang extractor after validating archive entries" do
       source = File.read!("lib/mix/tasks/maude.install.ex")
       assert source =~ "extract_with_erlang"
+      refute source =~ "extract_with_unzip"
     end
 
     test "binary renaming logic exists" do
@@ -442,6 +450,12 @@ defmodule Mix.Tasks.Maude.InstallTest do
       # Should handle various naming conventions
       assert source =~ "maude.darwin64" or source =~ "Maude"
     end
+  end
+
+  defp create_archive!(directory, name, entries) do
+    path = Path.join(directory, name)
+    {:ok, _} = :zip.create(String.to_charlist(path), entries)
+    path
   end
 
   describe "ssl configuration" do
