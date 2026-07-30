@@ -50,6 +50,12 @@ jobs:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
 
+      - name: Setup Rust for NIF coverage
+        if: matrix.elixir == '1.20' && matrix.otp == '29'
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: "1.91.1"
+
       - name: Restore deps cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -70,7 +76,11 @@ jobs:
 
       - name: Run tests with coverage
         if: matrix.elixir == '1.20' && matrix.otp == '29'
-        run: mix coveralls.json --include integration
+        env:
+          EX_MAUDE_BUILD: "1"
+        run: |
+          mix compile --force --warnings-as-errors
+          mix coveralls.json --include integration
 
       - name: Upload to Codecov
         if: matrix.elixir == '1.20' && matrix.otp == '29'
@@ -120,8 +130,10 @@ jobs:
 
       - name: Check GitHub Actions workflows
         run: |
-          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
-          actionlint
+          install_dir="${RUNNER_TEMP}/actionlint"
+          mkdir -p "${install_dir}"
+          GOBIN="${install_dir}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          "${install_dir}/actionlint"
 
       - name: Check shell scripts
         run: shellcheck bin/*.sh
