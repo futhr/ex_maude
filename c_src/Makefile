@@ -3,7 +3,7 @@
 # Compiles the maude_bridge C-Node binary that communicates
 # with the Erlang VM using Erlang distribution protocol.
 #
-# The ei library is part of erl_interface and is still supported in OTP 28.
+# The ei library is part of erl_interface and is still supported in OTP 29.
 # Only the old erl_ prefixed API was removed in OTP 23.
 
 # Detect erl_interface location
@@ -60,7 +60,7 @@ EI_LIB := $(EI_DIR)/lib
 # Compiler settings
 # -D_REENTRANT is required for OTP 21+ to use __erl_errno_place() instead of __erl_errno symbol
 CC := cc
-CFLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations -O2 -D_REENTRANT -isystem $(EI_INCLUDE) -isystem $(ERTS_INCLUDE)
+CFLAGS := -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -O2 -D_REENTRANT -isystem $(EI_INCLUDE) -isystem $(ERTS_INCLUDE)
 LDFLAGS := -L$(EI_LIB) -lei -lpthread
 
 # Platform-specific settings

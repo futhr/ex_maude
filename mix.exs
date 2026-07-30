@@ -118,8 +118,6 @@ defmodule ExMaude.MixProject do
       {:ex_check, "~> 0.16", only: [:dev, :test], runtime: false},
       {:doctor, "~> 0.22", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
-      {:castore, "~> 1.0", only: :test},
-      {:mox, "~> 1.1", only: :test},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:benchee, "~> 1.3", only: :dev, runtime: false},
@@ -153,6 +151,7 @@ defmodule ExMaude.MixProject do
         .formatter.exs
         mix.exs
         README.md
+        CONTRIBUTING.md
         LICENSE
         THIRD_PARTY_NOTICES.md
         CHANGELOG.md
@@ -178,7 +177,6 @@ defmodule ExMaude.MixProject do
         "notebooks/benchmarks.livemd": [title: "Benchmarks"],
         "CHANGELOG.md": [title: "Changelog"],
         "CONTRIBUTING.md": [title: "Contributing"],
-        "AGENTS.md": [title: "AI Agents"],
         "usage-rules.md": [title: "Usage Rules"],
         "THIRD_PARTY_NOTICES.md": [title: "Third-party Notices"],
         "bench/output/benchmarks.md": [title: "Benchmark Results"],
@@ -187,7 +185,7 @@ defmodule ExMaude.MixProject do
       groups_for_extras: [
         "Getting Started": ~r/README|cheatsheet/,
         "Interactive Tutorials": ~r/notebooks\//,
-        Reference: ~r/CHANGELOG|CONTRIBUTING|AGENTS|usage-rules|LICENSE|THIRD_PARTY/,
+        Reference: ~r/CHANGELOG|CONTRIBUTING|usage-rules|LICENSE|THIRD_PARTY/,
         Performance: ~r/bench\/output/
       ],
       groups_for_modules: [
@@ -240,7 +238,7 @@ defmodule ExMaude.MixProject do
       "cover.html": ["coveralls.html"],
       "test.network": ["test --include network"],
       "test.integration": ["test --include integration"],
-      "test.nif": ["test --include nif --include integration"],
+      "test.nif": [&test_nif/1],
       "test.all": [
         "test --include network --include integration --include cnode --include nif"
       ],
@@ -259,5 +257,20 @@ defmodule ExMaude.MixProject do
       # Release
       release: ["git_ops.release"]
     ]
+  end
+
+  defp test_nif(args) do
+    previous = System.get_env("EX_MAUDE_BUILD")
+    System.put_env("EX_MAUDE_BUILD", "1")
+
+    try do
+      Mix.Task.run("compile", ["--force"])
+      Mix.Task.reenable("test")
+      Mix.Task.run("test", ["--include", "nif", "--include", "integration" | args])
+    after
+      if previous,
+        do: System.put_env("EX_MAUDE_BUILD", previous),
+        else: System.delete_env("EX_MAUDE_BUILD")
+    end
   end
 end
