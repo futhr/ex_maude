@@ -24,6 +24,55 @@ a formal specification language based on rewriting logic. Use ExMaude for:
 
 ---
 
+## Why Maude Instead of Native Erlang?
+
+Maude isn't "better Erlang"; it solves a different problem.
+
+Erlang is excellent for building concurrent, fault-tolerant applications. Maude
+is special because it treats your system as mathematics: states are terms,
+behavior is expressed as rewrite rules, and properties can be explored
+systematically.
+
+For ExMaude's IoT use case, Maude provides:
+
+- **Declarative rules** - Describe what transitions mean instead of writing
+  control flow
+- **Equational reasoning** - Automatically normalize values using equations,
+  including reasoning modulo properties such as associativity and commutativity
+- **State-space search** - Explore many possible rule applications and execution
+  orders, not merely one execution
+- **Formal verification** - Check reachability, invariants, deadlocks, and
+  potentially model-check temporal properties
+- **Executable specifications** - Run and analyze the same formal model
+
+For AI rules, ExMaude provides a deterministic safety envelope around
+probabilistic AI behavior. An AI model may propose different actions, while
+Maude checks each structured rule or action for capability, authority,
+sovereignty, approval, and cross-rule conflicts. It can explore nondeterministic
+execution paths—what *could* happen—without estimating how probable each path
+is. Probability and model-confidence scoring remain outside the current AI-rule
+module.
+
+You could implement the conflict detector in native Erlang, but you would also
+need to implement—and trust—your own term-rewriting engine, canonicalization
+rules, nondeterministic search, cycle detection, and possibly a model checker.
+That becomes a substantial verification project by itself.
+
+Maude's biggest advantage is when the question is:
+
+> Can this happen under any valid sequence of rule applications?
+
+Native Erlang is generally preferable when the question is simply:
+
+> Please execute this known application workflow efficiently.
+
+There are costs: an external process, serialization and parsing overhead,
+another language to maintain, and a less familiar ecosystem. Maude earns its
+place where formal reasoning and nondeterministic exploration are central;
+ordinary application behavior should remain in Elixir/Erlang.
+
+---
+
 ## Features
 
 | Feature | Description |
