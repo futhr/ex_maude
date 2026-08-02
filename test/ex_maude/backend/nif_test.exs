@@ -68,20 +68,22 @@ defmodule ExMaude.Backend.NIFTest do
   describe "callback behavior" do
     test "execute stops on native errors" do
       state = %NIF{handle: make_ref()}
+      expected_type = if Backend.available?(:nif), do: :nif_error, else: :nif_not_loaded
 
-      assert {:stop, {:shutdown, {:native_failure, :nif_not_loaded}}, {:error, error}, ^state} =
+      assert {:stop, {:shutdown, {:native_failure, ^expected_type}}, {:error, error}, ^state} =
                NIF.handle_call({:execute, "reduce in NAT : 1 .", 10}, self(), state)
 
-      assert error.type == :nif_not_loaded
+      assert error.type == expected_type
     end
 
     test "load_file stops on native errors" do
       state = %NIF{handle: make_ref()}
+      expected_type = if Backend.available?(:nif), do: :nif_error, else: :nif_not_loaded
 
-      assert {:stop, {:shutdown, {:native_failure, :nif_not_loaded}}, {:error, error}, ^state} =
+      assert {:stop, {:shutdown, {:native_failure, ^expected_type}}, {:error, error}, ^state} =
                NIF.handle_call({:load_file, "/tmp/missing.maude", 10}, self(), state)
 
-      assert error.type == :nif_not_loaded
+      assert error.type == expected_type
     end
 
     test "alive? returns false when the native call raises" do
