@@ -98,13 +98,7 @@ defmodule ExMaude.AI.Validator do
             acc
 
           {:error, errs} ->
-            id =
-              case rule do
-                %{id: id} when is_binary(id) and id != "" -> id
-                _ -> "<index #{idx}>"
-              end
-
-            Map.put(acc, id, errs)
+            Map.put(acc, rule_error_id(rule, idx), errs)
         end
       end)
 
@@ -285,15 +279,26 @@ defmodule ExMaude.AI.Validator do
 
   defp validate_arg_map(args) when is_map(args) do
     Enum.reduce_while(args, :ok, fn {k, v}, _ ->
-      if valid_arg_key?(k) do
-        case validate_value(v) do
-          :ok -> {:cont, :ok}
-          {:error, msg} -> {:halt, {:error, "key #{inspect(k)}: #{msg}"}}
-        end
-      else
-        {:halt, {:error, "unsupported argument key: #{inspect(k)}"}}
-      end
+      validate_arg_entry(k, v)
     end)
+  end
+
+  defp rule_error_id(%{id: id}, _) when is_binary(id) and id != "", do: id
+  defp rule_error_id(_, idx), do: "<index #{idx}>"
+
+  defp validate_arg_entry(key, value) do
+    if valid_arg_key?(key) do
+      validate_arg_value(key, value)
+    else
+      {:halt, {:error, "unsupported argument key: #{inspect(key)}"}}
+    end
+  end
+
+  defp validate_arg_value(key, value) do
+    case validate_value(value) do
+      :ok -> {:cont, :ok}
+      {:error, msg} -> {:halt, {:error, "key #{inspect(key)}: #{msg}"}}
+    end
   end
 
   @doc false

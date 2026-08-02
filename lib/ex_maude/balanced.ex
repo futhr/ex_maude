@@ -20,15 +20,18 @@ defmodule ExMaude.Balanced do
             do_extract(remaining, marker, [expression | acc])
 
           :error ->
-            next_start = start + marker_length
-            remaining_length = byte_size(input) - next_start
-
-            if remaining_length > 0 do
-              do_extract(binary_part(input, next_start, remaining_length), marker, acc)
-            else
-              Enum.reverse(acc)
-            end
+            continue_after_failed_match(input, marker, acc, start + marker_length)
         end
+    end
+  end
+
+  defp continue_after_failed_match(input, marker, acc, next_start) do
+    remaining_length = byte_size(input) - next_start
+
+    if remaining_length > 0 do
+      do_extract(binary_part(input, next_start, remaining_length), marker, acc)
+    else
+      Enum.reverse(acc)
     end
   end
 

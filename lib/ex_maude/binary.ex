@@ -102,8 +102,6 @@ defmodule ExMaude.Binary do
       {{:unix, :darwin}, _} ->
         "darwin-x64"
 
-      # coveralls-ignore-start
-      # Only the host platform is reachable from tests.
       {{:unix, :linux}, arch} when arch in ["x86_64", "amd64"] ->
         "linux-x64"
 
@@ -112,7 +110,6 @@ defmodule ExMaude.Binary do
 
       {os, arch} ->
         "#{elem(os, 1)}-#{arch}"
-        # coveralls-ignore-stop
     end
   end
 
@@ -122,13 +119,11 @@ defmodule ExMaude.Binary do
   @spec priv_dir() :: Path.t()
   def priv_dir do
     case :code.priv_dir(:ex_maude) do
-      # coveralls-ignore-start
       # Reached only when the app is not loaded — fall back to cwd-relative
       # priv so development scripts still work.
       {:error, :bad_name} ->
         Path.join([File.cwd!(), "priv"])
 
-      # coveralls-ignore-stop
       path ->
         to_string(path)
     end
@@ -148,8 +143,6 @@ defmodule ExMaude.Binary do
     if File.exists?(path) and executable?(path) do
       path
     else
-      # coveralls-ignore-start
-      # Fall back to a generic `maude` binary in priv/maude/bin if present.
       generic = Path.join([priv_dir(), "maude", "bin", "maude"])
 
       if File.exists?(generic) and executable?(generic) do
@@ -157,8 +150,6 @@ defmodule ExMaude.Binary do
       else
         nil
       end
-
-      # coveralls-ignore-stop
     end
   end
 

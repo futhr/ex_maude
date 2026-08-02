@@ -159,7 +159,6 @@ defmodule ExMaude.IntegrationTest do
       path = create_temp_module(source)
       :ok = ExMaude.load_file(path)
 
-      # Should be able to show the module
       {:ok, output} = ExMaude.execute("show module LOADED-TEST .")
       assert String.contains?(output, "LOADED-TEST")
     end
@@ -232,13 +231,11 @@ defmodule ExMaude.IntegrationTest do
 
       results = Task.await_many(tasks, 30_000)
 
-      # All should succeed
       assert Enum.all?(results, fn
                {:ok, _} -> true
                _ -> false
              end)
 
-      # Verify correctness
       expected = for i <- 1..10, do: {:ok, "#{i * 2}"}
       assert results == expected
     end
@@ -266,7 +263,6 @@ defmodule ExMaude.IntegrationTest do
       path = ExMaude.iot_rules_path()
       :ok = ExMaude.load_file(path)
 
-      # Create two conflicting rules using wrapped value types
       command = """
       reduce in CONFLICT-DETECTOR :
         detectConflicts(
@@ -276,7 +272,6 @@ defmodule ExMaude.IntegrationTest do
       """
 
       {:ok, result} = ExMaude.execute(command)
-      # Should detect a conflict
       assert String.contains?(result, "conflict") or String.contains?(result, "Conflict")
     end
   end

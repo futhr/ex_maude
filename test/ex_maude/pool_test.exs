@@ -362,7 +362,6 @@ defmodule ExMaude.PoolTest do
 
   describe "transaction/2 error handling" do
     test "function must be 1-arity" do
-      # Verify the guard requirement
       fun = fn _ -> :ok end
       assert is_function(fun, 1)
     end
@@ -401,7 +400,6 @@ defmodule ExMaude.PoolTest do
     test "returns map with expected keys" do
       status = Pool.status()
 
-      # Verify all expected keys are present
       assert Map.has_key?(status, :size)
       assert Map.has_key?(status, :overflow)
       assert Map.has_key?(status, :available)
@@ -469,7 +467,6 @@ defmodule ExMaude.PoolTest do
 
   describe "telemetry events" do
     test "checkout start event format" do
-      # Verify event name format
       event = [:ex_maude, :pool, :checkout, :start]
       assert length(event) == 4
       assert hd(event) == :ex_maude
@@ -516,11 +513,9 @@ defmodule ExMaude.PoolTest do
         nil
       )
 
-      # Trigger transaction
       result = Pool.transaction(fn _ -> :ok end)
       assert result == :ok
 
-      # Should receive telemetry event with ok result
       assert_receive {:telemetry, measurements, metadata}, 1000
       assert Map.has_key?(measurements, :duration)
       assert metadata.result == :ok
@@ -623,9 +618,7 @@ defmodule ExMaude.PoolTest do
 
       try do
         Application.put_env(:ex_maude, :backend, :port)
-        # Trigger transaction to test config_backend is called
         _ = Pool.transaction(fn _ -> :ok end)
-        # If we get here, config was read (even if transaction failed)
         assert true
       after
         if original do

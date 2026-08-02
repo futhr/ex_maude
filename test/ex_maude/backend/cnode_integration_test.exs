@@ -1,5 +1,6 @@
 defmodule ExMaude.Backend.CNodeIntegrationTest do
   @moduledoc false
+
   use ExUnit.Case, async: false
 
   alias ExMaude.Backend
@@ -8,7 +9,6 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
   @moduletag :integration
   @moduletag timeout: 60_000
 
-  # Check prerequisites at module load time
   @cnode_available Backend.available?(:cnode) and Node.alive?()
 
   if @cnode_available do

@@ -345,10 +345,8 @@ fmod NAT"
 
   describe "parse_module_list/1 edge cases" do
     test "handles unknown module type" do
-      # If an unknown type appears, it should return :unknown
       output = "unknown MYSTERY-MOD"
       modules = Parser.parse_module_list(output)
-      # The regex only matches known types, so this returns empty
       assert modules == []
     end
 
@@ -479,7 +477,6 @@ fmod NAT"
   describe "parse_term/1 complex cases" do
     test "parses function with nested comma arguments" do
       # Note: The simple comma-split parser doesn't handle nested parens well
-      # This tests the actual behavior
       result = Parser.parse_term("pair(f(a, b), g(c, d))")
       assert {:app, "pair", args} = result
       # The simple parser splits on all commas, so it finds 4 args
@@ -488,7 +485,6 @@ fmod NAT"
 
     test "parses chained operators" do
       result = Parser.parse_term("a and b and c")
-      # Should parse left-to-right or as the first match
       assert {:app, "and", _} = result
     end
 
@@ -536,9 +532,7 @@ fmod NAT"
 
     test "parses result with generic type" do
       output = "result [Sort]: value"
-      # This tests types with brackets - the regex may not match this format
       result = Parser.parse_result(output)
-      # Either it parses successfully or returns no_result - both are valid behaviors
       assert match?({:ok, _, _}, result) or match?({:error, :no_result}, result)
     end
   end
@@ -564,7 +558,6 @@ fmod NAT"
       output = "fmod LIST{X} is"
       # The regex may or may not match parameterized module names
       modules = Parser.parse_module_list(output)
-      # Should either parse it or return empty - not crash
       assert is_list(modules)
     end
   end

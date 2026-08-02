@@ -1,10 +1,13 @@
 defmodule ExMaude.Backend.NIFLifecycleTest do
-  @moduledoc false
+  @moduledoc """
+  Tests NIF backend timeout and EOF restart semantics with protocol-compatible
+  fake Maude executables.
 
-  # Drives the NIF backend against test/support/fake_maude.sh (the NIF only
-  # needs an executable speaking the prompt protocol), so timeout/EOF restart
-  # semantics are testable without a Maude installation. Requires the
-  # compiled NIF, hence the tags.
+  The NIF only needs an executable that speaks the prompt protocol, so these
+  cases do not require a real Maude installation. They do require the compiled
+  NIF, hence the module tags.
+  """
+
   use ExUnit.Case, async: false
 
   @moduletag :nif

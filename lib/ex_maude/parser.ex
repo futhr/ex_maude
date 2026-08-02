@@ -205,9 +205,7 @@ defmodule ExMaude.Parser do
   defp parse_module_type("fth"), do: :fth
   defp parse_module_type("th"), do: :th
   defp parse_module_type("view"), do: :view
-  # coveralls-ignore-start
   defp parse_module_type(_), do: :unknown
-  # coveralls-ignore-stop
 
   @doc """
   Parses a Maude term into an Elixir term structure.

@@ -199,10 +199,8 @@ defmodule ExMaude.ServerTest do
     test "loads file", %{maude_available: true} do
       {:ok, pid} = Server.start_link([])
 
-      # Try to load non-existent file
       result = Server.load_file(pid, "/nonexistent/file.maude")
 
-      # Should return an error (file not found by Maude)
       assert {:error, _} = result
 
       GenServer.stop(pid)
@@ -441,7 +439,6 @@ defmodule ExMaude.ServerTest do
 
     test "extracts from result with spaces in type" do
       output = "result List Nat: 1 2 3"
-      # May or may not match depending on regex
       result = extract_result(output)
       assert is_binary(result)
     end
@@ -481,8 +478,6 @@ defmodule ExMaude.ServerTest do
     end
 
     test "delegates to Backend.impl()" do
-      # Server delegates to the configured backend
-      # Verify Backend.Port (default) has GenServer callbacks
       assert function_exported?(ExMaude.Backend.Port, :init, 1)
       assert function_exported?(ExMaude.Backend.Port, :handle_call, 3)
       assert function_exported?(ExMaude.Backend.Port, :handle_info, 2)
@@ -514,13 +509,11 @@ defmodule ExMaude.ServerTest do
 
   describe "alive?/1 function behavior" do
     test "returns false for nil" do
-      # Can't pass nil to alive? but verify the function handles edge cases
       assert function_exported?(Server, :alive?, 1)
     end
 
     test "returns false after process exits" do
       pid = spawn(fn -> :ok end)
-      # Wait for it to exit
       Process.sleep(50)
       refute Server.alive?(pid)
     end

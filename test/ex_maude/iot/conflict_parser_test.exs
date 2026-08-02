@@ -324,7 +324,6 @@ defmodule ExMaude.IoT.ConflictParserTest do
       """
 
       conflicts = ConflictParser.parse_conflicts(output)
-      # May or may not parse unicode - just shouldn't crash
       assert is_list(conflicts)
     end
 
@@ -426,7 +425,6 @@ defmodule ExMaude.IoT.ConflictParserTest do
     end
 
     test "handles output with trailing whitespace" do
-      # Use string without heredoc to avoid newline issues
       output =
         "result ConflictSet: conflict(stateConflict, rule( \"r1\", thing(\"d\"), always, nil, 1), rule( \"r2\", thing(\"d\"), always, nil, 1), \"reason with spaces\")   "
 
@@ -435,7 +433,6 @@ defmodule ExMaude.IoT.ConflictParserTest do
     end
 
     test "handles output with leading whitespace" do
-      # Use string without heredoc to avoid newline issues
       output =
         "   result ConflictSet: conflict(stateConflict, rule( \"r1\", thing(\"d\"), always, nil, 1), rule( \"r2\", thing(\"d\"), always, nil, 1), \"reason with spaces\")"
 

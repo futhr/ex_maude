@@ -7,6 +7,24 @@ defmodule ExMaude.AITest do
 
   doctest ExMaude.AI
 
+  @fake_maude Path.expand("../support/fake_maude.sh", __DIR__)
+  @fake_pool :ai_api_test_pool
+
+  defp start_fake_pool do
+    start_supervised!(
+      ExMaude.Pool.child_spec(
+        name: @fake_pool,
+        worker_module: ExMaude.Backend.Port,
+        maude_path: @fake_maude,
+        use_pty: false,
+        pool_size: 1,
+        pool_max_overflow: 0
+      )
+    )
+
+    @fake_pool
+  end
+
   describe "validate_rule/1 (delegate)" do
     test "passes through to validator" do
       rule = %{
@@ -36,6 +54,66 @@ defmodule ExMaude.AITest do
     test "returns failures map for invalid set" do
       rules = [%{id: "r1"}]
       assert {:error, %{"r1" => _}} = AI.validate_rules(rules)
+    end
+  end
+
+  describe "conflict detection validation" do
+    test "detect_conflicts/2 emits telemetry for validation failures" do
+      ref = make_ref()
+      test_pid = self()
+      handler_id = "ai-api-validation-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach_many(
+        handler_id,
+        [
+          [:ex_maude, :ai, :detect_conflicts, :start],
+          [:ex_maude, :ai, :detect_conflicts, :stop]
+        ],
+        fn event, measurements, metadata, _ ->
+          send(test_pid, {ref, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      assert {:error, %{"<index 0>" => ["rule must be a map"]}} = AI.detect_conflicts([:bad])
+
+      assert_receive {^ref, [:ex_maude, :ai, :detect_conflicts, :start],
+                      %{rule_count: 1, system_time: _}, %{template: :ai_rules}}
+
+      assert_receive {^ref, [:ex_maude, :ai, :detect_conflicts, :stop],
+                      %{duration: duration, conflict_count: 0},
+                      %{result: :error, template: :ai_rules}}
+
+      assert is_integer(duration)
+    end
+
+    test "validates jurisdictions before loading Maude" do
+      rules = [%{id: "r", agent_id: {"a", "b"}, trigger: {:always}, invocations: []}]
+
+      assert {:error, %ExMaude.Error{type: :validation}} =
+               AI.detect_conflicts(rules, jurisdictions: [:mars])
+
+      assert {:error, %ExMaude.Error{type: :validation}} =
+               AI.detect_single_rule_conflicts(rules, jurisdictions: [:mars])
+    end
+
+    test "specialized detectors validate rules before loading Maude" do
+      assert {:error, %{"<index 0>" => ["rule must be a map"]}} =
+               AI.detect_pair_conflicts([:bad])
+
+      assert {:error, %{"<index 0>" => ["rule must be a map"]}} =
+               AI.detect_single_rule_conflicts([:bad])
+    end
+
+    test "detectors encode and execute through a fake Maude pool" do
+      pool = start_fake_pool()
+      rules = [%{id: "r", agent_id: {"a", "b"}, trigger: {:always}, invocations: []}]
+
+      assert {:ok, []} = AI.detect_conflicts(rules, pool: pool)
+      assert {:ok, []} = AI.detect_pair_conflicts(rules, pool: pool)
+      assert {:ok, []} = AI.detect_single_rule_conflicts(rules, pool: pool)
     end
   end
 

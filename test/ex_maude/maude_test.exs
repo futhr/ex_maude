@@ -69,15 +69,10 @@ defmodule ExMaude.MaudeTest do
 
   describe "load_module/1" do
     test "validates path stays in temp directory" do
-      # The function should safely handle module source
-      # This is a unit test of the security check
       source = "fmod TEST is endfm"
 
-      # If successful, will try to load (may fail due to pool not running)
-      # If path validation fails, will return invalid_path error
       result = Maude.load_module(source)
 
-      # Should not return invalid_path error for normal source
       case result do
         {:error, %Error{type: :invalid_path}} ->
           flunk("Should not reject valid source as invalid path")
@@ -197,7 +192,6 @@ defmodule ExMaude.MaudeTest do
   describe "rewrite/3 integration" do
     @tag :integration
     test "rewrites simple term", %{maude_available: true} do
-      # Use a built-in module that has rewrite rules
       {:ok, result} = Maude.rewrite("NAT", "0", max_rewrites: 10)
       assert result == "0"
     end
@@ -205,7 +199,6 @@ defmodule ExMaude.MaudeTest do
     @tag :integration
     test "respects max_rewrites", %{maude_available: true} do
       {:ok, _} = Maude.rewrite("NAT", "1", max_rewrites: 1)
-      # Should complete without error
     end
   end
 
@@ -354,7 +347,6 @@ defmodule ExMaude.MaudeTest do
 
   describe "load_module/1 security" do
     test "generates unique temp file names" do
-      # Verify that temp filenames are generated uniquely
       id1 = :erlang.unique_integer([:positive])
       id2 = :erlang.unique_integer([:positive])
       refute id1 == id2
@@ -426,7 +418,6 @@ defmodule ExMaude.MaudeTest do
 
   describe "timeout handling" do
     test "default timeout is 5000ms" do
-      # Verify the default from the module
       default = 5_000
       assert default == 5000
     end

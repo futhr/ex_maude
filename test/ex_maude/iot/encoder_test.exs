@@ -395,7 +395,6 @@ defmodule ExMaude.IoT.EncoderTest do
 
       {:ok, encoded} = Encoder.encode_rules(rules)
 
-      # Should contain all rule IDs
       for i <- 1..10 do
         assert String.contains?(encoded, "\"rule-#{i}\"")
       end
@@ -436,7 +435,6 @@ defmodule ExMaude.IoT.EncoderTest do
 
       encoded = Encoder.encode_trigger(trigger)
 
-      # Should have multiple or( patterns
       assert String.contains?(encoded, "or(")
       assert String.contains?(encoded, "propEq")
     end

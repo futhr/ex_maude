@@ -3,6 +3,8 @@ defmodule ExMaude.Backend.CNodeTest do
 
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias ExMaude.Backend
   alias ExMaude.Backend.CNode
 
@@ -56,6 +58,24 @@ defmodule ExMaude.Backend.CNodeTest do
     end
   end
 
+  describe "startup failure" do
+    test "fails cleanly when prerequisites are missing" do
+      original_flag = Process.flag(:trap_exit, true)
+
+      try do
+        case CNode.start_link(maude_path: "maude") do
+          {:error, {:cnode_start_failed, reason}} ->
+            assert reason in [:node_not_distributed] or match?({:missing_binary, _}, reason)
+
+          {:ok, pid} ->
+            CNode.stop(pid)
+        end
+      after
+        Process.flag(:trap_exit, original_flag)
+      end
+    end
+  end
+
   describe "cookie handshake" do
     test "encodes the cookie outside process arguments" do
       assert {:ok, <<6::unsigned-big-32, "secret">>} =
@@ -75,7 +95,6 @@ defmodule ExMaude.Backend.CNodeTest do
     end
 
     test "available? checks for maude_bridge binary" do
-      # The result depends on whether the binary is compiled
       priv_dir = :code.priv_dir(:ex_maude)
       binary_path = Path.join(priv_dir, "maude_bridge")
       binary_exists = File.exists?(binary_path)
@@ -101,8 +120,6 @@ defmodule ExMaude.Backend.CNodeTest do
 
   describe "execute/3 edge cases" do
     test "returns error when not connected" do
-      # This tests the behavior when calling execute on an unconnected server
-      # We can't easily test this without mocking, but we verify the function exists
       assert function_exported?(CNode, :execute, 3)
     end
 
@@ -110,9 +127,71 @@ defmodule ExMaude.Backend.CNodeTest do
       fake_pid = spawn(fn -> :ok end)
       Process.sleep(10)
 
-      # GenServer.call to dead process raises exit
-      # The execute/3 only catches :timeout exits, not :noproc
       assert catch_exit(CNode.execute(fake_pid, "test", timeout: 100))
+    end
+  end
+
+  describe "callback behavior for disconnected state" do
+    test "execute and load_file return not_connected errors" do
+      state = %CNode{connected: false}
+
+      assert {:reply, {:error, execute_error}, ^state} =
+               CNode.handle_call({:execute, "reduce in NAT : 1 .", 100}, self(), state)
+
+      assert execute_error.type == :not_connected
+
+      assert {:reply, {:error, load_error}, ^state} =
+               CNode.handle_call({:load_file, "/tmp/missing.maude", 100}, self(), state)
+
+      assert load_error.type == :not_connected
+    end
+
+    test "connected execute stops on bridge send failure" do
+      state = %CNode{connected: true, cnode_name: :missing_cnode}
+
+      assert {:stop, {:shutdown, {:bridge_failure, type}}, {:error, error}, ^state} =
+               CNode.handle_call({:execute, "reduce in NAT : 1 .", 1}, self(), state)
+
+      assert type in [:timeout, :cnode_error]
+      assert error.type == type
+    end
+
+    test "alive? reflects connection state" do
+      disconnected = %CNode{connected: false}
+      connected = %CNode{connected: true}
+
+      assert {:reply, false, ^disconnected} = CNode.handle_call(:alive?, self(), disconnected)
+      assert {:reply, true, ^connected} = CNode.handle_call(:alive?, self(), connected)
+    end
+
+    test "connection retry exhaustion stops the worker" do
+      state = %CNode{cnode_name: :missing_cnode}
+
+      assert capture_log(fn ->
+               assert {:stop, {:connect_failed, :retries_exhausted}, ^state} =
+                        CNode.handle_info({:connect_retry, 0}, state)
+             end) =~ "Failed to connect to C-Node"
+    end
+
+    test "stale connection retry is ignored after connection" do
+      state = %CNode{connected: true}
+
+      assert {:noreply, ^state} = CNode.handle_info({:connect_retry, 5}, state)
+    end
+
+    test "nodedown for the bridge stops the worker" do
+      state = %CNode{cnode_name: :bridge@localhost}
+
+      assert capture_log(fn ->
+               assert {:stop, :nodedown, ^state} =
+                        CNode.handle_info({:nodedown, :bridge@localhost}, state)
+             end) =~ "went down"
+    end
+
+    test "unrelated info messages are ignored" do
+      state = %CNode{}
+
+      assert {:noreply, ^state} = CNode.handle_info(:unrelated, state)
     end
   end
 
@@ -130,13 +209,10 @@ defmodule ExMaude.Backend.CNodeTest do
 
   describe "default constants" do
     test "default timeout is 30 seconds" do
-      # Verify the default timeout by checking the module attribute
-      # This is indirectly tested through execute behavior
       assert function_exported?(CNode, :execute, 3)
     end
   end
 
-  # Integration tests - only run when C-Node binary is available and node is distributed
   describe "integration tests" do
     @describetag :cnode
 
@@ -164,7 +240,6 @@ defmodule ExMaude.Backend.CNodeTest do
       else
         {:ok, pid} = CNode.start_link([])
 
-        # Wait for connection with timeout
         result =
           Enum.reduce_while(1..40, false, fn _, _ ->
             if CNode.alive?(pid) do
@@ -188,7 +263,6 @@ defmodule ExMaude.Backend.CNodeTest do
       else
         {:ok, pid} = CNode.start_link([])
 
-        # Wait for connection
         Enum.reduce_while(1..40, false, fn _, _ ->
           if CNode.alive?(pid) do
             {:halt, true}

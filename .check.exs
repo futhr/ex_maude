@@ -1,71 +1,38 @@
+sobelow_command = [
+  "bash",
+  "-c",
+  "mix sobelow --config --quiet --compact 2>&1 | awk '!/Sobelow cannot find the router/ && !/please use the `--router` flag/'; exit ${PIPESTATUS[0]}"
+]
+
 [
-  # Several tools compile or test the same native artifacts. Running them in
-  # order avoids build-lock contention and keeps conditional native checks
-  # from waiting indefinitely on ex_check's dependency scheduler.
   parallel: false,
-  # Show skipped tools in the summary — a silently skipped tool looks like a
-  # passing gate. (deps: [:compiler] entries used to be skipped this way:
-  # ex_check runs the compiler separately before the pipeline, so it never
-  # appears in the finished set that dependency resolution consults. Never
-  # name :compiler in deps.)
-  skipped: true,
-
+  skipped: false,
   tools: [
-    # Dependencies
     {:deps_get, command: "mix deps.get"},
-
-    # Elixir compilation — ex_check always runs this first and gates the
-    # rest of the pipeline on it.
     {:compiler, command: "mix compile --warnings-as-errors"},
-
-    # C-Node compilation (only if c_src exists)
     {:c_compile, command: "make -C c_src", enabled: File.dir?("c_src")},
-
-    # Formatting
     {:formatter, command: "mix format --check-formatted"},
-
-    # C code format check (optional, only if clang-format installed)
     {:c_format_check,
      command: "make -C c_src format-check",
      enabled: File.dir?("c_src") and System.find_executable("clang-format") != nil},
-
-    # Rust format check (only if native Rust code exists and cargo installed)
     {:rust_fmt,
      command: "cargo fmt --check",
      cd: "native/ex_maude_nif",
      enabled: File.dir?("native/ex_maude_nif") and System.find_executable("cargo") != nil},
-
-    # Static analysis
     {:credo, command: "mix credo --strict"},
-    {:sobelow, command: "mix sobelow --config"},
-
-    # C code linting with clang-tidy (optional, only if installed)
+    {:sobelow, command: sobelow_command},
     {:c_lint,
      command: "make -C c_src lint",
      enabled: File.dir?("c_src") and System.find_executable("clang-tidy") != nil},
-
-    # Rust clippy linting (only if native Rust code exists and cargo installed)
     {:rust_clippy,
      command: "cargo clippy --lib -- -D warnings",
      cd: "native/ex_maude_nif",
      enabled: File.dir?("native/ex_maude_nif") and System.find_executable("cargo") != nil},
-
-    # Security and dependencies
     {:mix_audit, command: "mix deps.audit"},
-
-    # Type checking
     {:dialyzer, command: "mix dialyzer"},
-
-    # Documentation
-    {:doctor, command: "mix doctor"},
-    {:ex_doc, command: "mix docs"},
-
-    # Tests
+    {:doctor, command: "mix doctor --summary --raise"},
+    {:ex_doc, command: ["sh", "-c", "mix docs --warnings-as-errors --formatter html >/dev/null"]},
     {:ex_unit, command: "mix test --cover"},
-
-    # C-Node integration tests (only if binary exists)
-    {:test_cnode,
-     command: "mix test.cnode",
-     enabled: File.exists?("priv/maude_bridge")}
+    {:test_cnode, command: "mix test.cnode", enabled: File.exists?("priv/maude_bridge")}
   ]
 ]

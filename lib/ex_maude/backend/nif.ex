@@ -218,9 +218,7 @@ defmodule ExMaude.Backend.NIF do
     GenServer.stop(server, :normal)
   end
 
-  # Server Callbacks
-  # coveralls-ignore-start
-  # GenServer callbacks require the NIF to be loaded — tested via integration tests.
+  # Server callbacks
 
   @impl GenServer
   def init(opts) do
@@ -304,8 +302,6 @@ defmodule ExMaude.Backend.NIF do
 
     :ok
   end
-
-  # coveralls-ignore-stop
 
   # Every error surfaced by the native layer (timeout, EOF, I/O failure,
   # poisoned lock) leaves the subprocess and its reader channel in an

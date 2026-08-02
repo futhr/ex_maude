@@ -539,7 +539,6 @@ defmodule ExMaude.IoTTest do
 
   describe "type definitions" do
     test "trigger types are properly typed" do
-      # Test that all trigger type tuples are valid
       triggers = [
         {:prop_eq, "x", true},
         {:prop_gt, "x", 10},

@@ -278,7 +278,6 @@ defmodule ExMaude.IoT.ValidatorTest do
 
       assert {:error, errors} = Validator.validate_rules(rules)
 
-      # Should have errors for rule_1 (no id) and also-invalid (no trigger)
       assert Map.has_key?(errors, "rule_1")
       assert Map.has_key?(errors, "also-invalid")
       refute Map.has_key?(errors, "valid")

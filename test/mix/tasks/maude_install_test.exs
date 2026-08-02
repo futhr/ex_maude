@@ -77,8 +77,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
     @tag :tmp_dir
     @tag :network
     test "detects current platform format", %{tmp_dir: tmp_dir} do
-      # We can't directly test detect_platform/0 as it's private,
-      # but we can verify the output format through the task
       output =
         capture_io(fn ->
           try do
@@ -88,7 +86,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
           end
         end)
 
-      # Should detect a valid platform
       assert output =~ ~r/darwin-arm64|darwin-x64|linux-x64|linux-arm64/
     end
   end
@@ -124,7 +121,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
           Mix.Tasks.Maude.Install.run(["--check"])
         end)
 
-      # Should show either found or not found
       assert output =~ "Local binary:"
     end
 
@@ -143,8 +139,40 @@ defmodule Mix.Tasks.Maude.InstallTest do
           Mix.Tasks.Maude.Install.run(["--check"])
         end)
 
-      # Should show what ExMaude will use or that none is available
       assert output =~ "ExMaude will use:" or output =~ "No Maude binary available"
+    end
+
+    test "reports configured path status", %{tmp_dir: tmp_dir} do
+      original = Application.get_env(:ex_maude, :maude_path)
+      configured = Path.join(tmp_dir, "configured-maude")
+      File.write!(configured, "#!/bin/sh\necho maude")
+
+      try do
+        Application.put_env(:ex_maude, :maude_path, configured)
+
+        output =
+          capture_io(fn ->
+            Mix.Tasks.Maude.Install.run(["--check"])
+          end)
+
+        assert output =~ "Configured: #{configured}"
+
+        missing = Path.join(tmp_dir, "missing-maude")
+        Application.put_env(:ex_maude, :maude_path, missing)
+
+        output =
+          capture_io(fn ->
+            Mix.Tasks.Maude.Install.run(["--check"])
+          end)
+
+        assert output =~ "Configured: #{missing} (file not found)"
+      after
+        if original do
+          Application.put_env(:ex_maude, :maude_path, original)
+        else
+          Application.delete_env(:ex_maude, :maude_path)
+        end
+      end
     end
   end
 
@@ -166,8 +194,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
           end
         end)
 
-      # Should find the version and start download, or show platform detection
-      # Network failures may prevent version from being shown
       assert output =~ "3.5.1" or output =~ "Maude3.5.1" or output =~ "Detecting platform"
     end
 
@@ -225,21 +251,17 @@ defmodule Mix.Tasks.Maude.InstallTest do
       maude_binary = Path.join(install_path, "maude")
       assert File.exists?(maude_binary)
 
-      # Verify it's executable
       assert {:ok, %{mode: mode}} = File.stat(maude_binary)
       assert Bitwise.band(mode, 0o111) != 0
 
-      # Verify it runs
       {version_output, 0} = System.cmd(maude_binary, ["--version"], stderr_to_stdout: true)
       assert version_output =~ ~r/\d+\.\d+/
     end
 
-    @tag :integration
     test "skips installation if already installed", %{tmp_dir: tmp_dir} do
       install_path = Path.join(tmp_dir, "maude-bin")
       File.mkdir_p!(install_path)
 
-      # Create a fake maude binary
       maude_path = Path.join(install_path, "maude")
       File.write!(maude_path, "#!/bin/sh\necho 'fake maude'")
       File.chmod!(maude_path, 0o755)
@@ -259,7 +281,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
       install_path = Path.join(tmp_dir, "maude-bin")
       File.mkdir_p!(install_path)
 
-      # Create a fake maude binary
       maude_path = Path.join(install_path, "maude")
       File.write!(maude_path, "#!/bin/sh\necho 'fake maude'")
       File.chmod!(maude_path, 0o755)
@@ -271,7 +292,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
 
       assert output =~ "Maude installed successfully"
 
-      # Verify real Maude was installed
       {version_output, 0} = System.cmd(maude_path, ["--version"], stderr_to_stdout: true)
       assert version_output =~ ~r/\d+\.\d+/
     end
@@ -294,15 +314,12 @@ defmodule Mix.Tasks.Maude.InstallTest do
 
     @tag :network
     test "extracts library files alongside binary", %{tmp_dir: tmp_dir} do
-      # Use existing installation or skip
       existing_path = Path.expand("priv/maude/bin", Mix.Project.app_path())
 
       if File.exists?(Path.join(existing_path, "maude")) do
-        # Verify library files exist
         assert File.exists?(Path.join(existing_path, "prelude.maude"))
         assert File.exists?(Path.join(existing_path, "model-checker.maude"))
       else
-        # Install fresh
         install_path = Path.join(tmp_dir, "maude-bin")
 
         capture_io(fn ->
@@ -323,11 +340,9 @@ defmodule Mix.Tasks.Maude.InstallTest do
 
       output =
         capture_io(fn ->
-          # 3.5.1 has checksums in the GitHub API
           Mix.Tasks.Maude.Install.run(["--version", "3.5.1", "--path", install_path])
         end)
 
-      # Should verify checksum for 3.5.1 (has digest in API)
       assert output =~ "Checksum verified"
       assert output =~ "Maude installed successfully"
     end
@@ -335,8 +350,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
 
   describe "error handling" do
     test "fails gracefully on network error" do
-      # This is hard to test without mocking, but we can verify
-      # the error message format exists in the module
       source = File.read!("lib/mix/tasks/maude.install.ex")
       assert source =~ "Failed to connect"
       assert source =~ "internet connection"
@@ -447,7 +460,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
     test "binary renaming logic exists" do
       source = File.read!("lib/mix/tasks/maude.install.ex")
       assert source =~ "rename_maude_binary"
-      # Should handle various naming conventions
       assert source =~ "maude.darwin64" or source =~ "Maude"
     end
   end
@@ -533,7 +545,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
   describe "binary naming" do
     test "handles multiple binary naming conventions" do
       source = File.read!("lib/mix/tasks/maude.install.ex")
-      # Should handle various Maude binary names
       assert source =~ "maude.darwin64" or source =~ "possible_names"
       assert source =~ "maude.linux64" or source =~ "possible_names"
     end

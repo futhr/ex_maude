@@ -74,13 +74,11 @@ defmodule ExMaude.TelemetryTest do
 
       assert result == {:ok, "result"}
 
-      # Verify start event
       assert_receive {^ref, [:ex_maude, :command, :start], start_measurements, start_metadata}
       assert is_integer(start_measurements.system_time)
       assert start_metadata.operation == :test
       assert start_metadata.module == "TEST"
 
-      # Verify stop event
       assert_receive {^ref, [:ex_maude, :command, :stop], stop_measurements, stop_metadata}
       assert is_integer(stop_measurements.duration)
       assert stop_measurements.duration > 0
@@ -97,10 +95,8 @@ defmodule ExMaude.TelemetryTest do
 
       assert result == {:error, :some_reason}
 
-      # Verify start event
       assert_receive {^ref, [:ex_maude, :command, :start], _, _}
 
-      # Verify stop event with error result
       assert_receive {^ref, [:ex_maude, :command, :stop], stop_measurements, stop_metadata}
       assert is_integer(stop_measurements.duration)
       assert stop_metadata.result == :error
@@ -113,10 +109,8 @@ defmodule ExMaude.TelemetryTest do
         end)
       end
 
-      # Verify start event
       assert_receive {^ref, [:ex_maude, :command, :start], _, _}
 
-      # Verify exception event
       assert_receive {^ref, [:ex_maude, :command, :exception], exc_measurements, exc_metadata}
       assert is_integer(exc_measurements.duration)
       assert exc_metadata.kind == :error
@@ -130,7 +124,6 @@ defmodule ExMaude.TelemetryTest do
         end)
       )
 
-      # Verify exception event
       assert_receive {^ref, [:ex_maude, :command, :exception], exc_measurements, exc_metadata}
       assert is_integer(exc_measurements.duration)
       assert exc_metadata.kind == :throw
@@ -144,7 +137,6 @@ defmodule ExMaude.TelemetryTest do
         end)
       )
 
-      # Verify exception event
       assert_receive {^ref, [:ex_maude, :command, :exception], exc_measurements, exc_metadata}
       assert is_integer(exc_measurements.duration)
       assert exc_metadata.kind == :exit
@@ -269,12 +261,10 @@ defmodule ExMaude.TelemetryTest do
     end
 
     test "measurements use native time units" do
-      # Verify the pattern used in span/3 matches what Prometheus expects
       start_time = System.monotonic_time()
       Process.sleep(1)
       duration = System.monotonic_time() - start_time
 
-      # Should be convertible to various units
       assert is_integer(duration)
       assert System.convert_time_unit(duration, :native, :millisecond) >= 0
       assert System.convert_time_unit(duration, :native, :microsecond) >= 0
@@ -298,10 +288,8 @@ defmodule ExMaude.TelemetryTest do
       lifecycle_actions = [:start, :command_start, :command_complete, :timeout, :crash]
 
       for event <- events do
-        # Should have at least [:app, :component, :action]
         assert length(event) >= 3
 
-        # First element should be :ex_maude
         assert hd(event) == :ex_maude
 
         case event do
@@ -351,7 +339,6 @@ defmodule ExMaude.TelemetryTest do
 
       assert {:ok, {:outer, {:ok, "inner_value"}}} = result
 
-      # Should receive 4 events (2 starts + 2 stops)
       assert_receive {^ref, [:ex_maude, :command, :start], _, %{operation: :outer}}
       assert_receive {^ref, [:ex_maude, :command, :start], _, %{operation: :inner}}
       assert_receive {^ref, [:ex_maude, :command, :stop], _, %{operation: :inner}}
@@ -405,7 +392,6 @@ defmodule ExMaude.TelemetryTest do
       events = Telemetry.events()
       handler_id = "test-attach-#{:erlang.unique_integer([:positive])}"
 
-      # Should not raise
       :telemetry.attach_many(
         handler_id,
         events,

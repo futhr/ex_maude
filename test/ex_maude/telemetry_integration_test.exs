@@ -32,11 +32,9 @@ defmodule ExMaude.TelemetryIntegrationTest do
     test "reduce emits command telemetry", %{ref: ref} do
       {:ok, _} = ExMaude.Maude.reduce("NAT", "1 + 1")
 
-      # Should receive command start
       assert_receive {^ref, [:ex_maude, :command, :start], %{system_time: _},
                       %{operation: :reduce, module: "NAT"}}
 
-      # Should receive command stop
       assert_receive {^ref, [:ex_maude, :command, :stop], %{duration: duration},
                       %{operation: :reduce, module: "NAT", result: :ok}}
 
@@ -131,11 +129,9 @@ defmodule ExMaude.TelemetryIntegrationTest do
     test "transaction emits pool checkout telemetry", %{ref: ref} do
       {:ok, _} = ExMaude.Maude.reduce("NAT", "1 + 1")
 
-      # Pool checkout start
       assert_receive {^ref, [:ex_maude, :pool, :checkout, :start], %{system_time: sys_time}, %{}}
       assert is_integer(sys_time)
 
-      # Pool checkout stop
       assert_receive {^ref, [:ex_maude, :pool, :checkout, :stop], %{duration: duration},
                       %{result: :ok}}
 

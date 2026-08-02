@@ -40,19 +40,15 @@ defmodule ExMaude.Backend.PortTest do
     end
 
     test "fails with non-existent maude path" do
-      # Starting with non-existent path causes init to fail
-      # The GenServer.start_link returns {:error, _} or crashes the caller
       Process.flag(:trap_exit, true)
 
       result = Port.start_link(maude_path: "/nonexistent/maude/binary")
 
       case result do
         {:error, _} ->
-          # Expected error return
           assert true
 
         {:ok, pid} ->
-          # If it somehow started, it should die quickly
           assert_receive {:EXIT, ^pid, _reason}, 1000
       end
     end
@@ -64,12 +60,9 @@ defmodule ExMaude.Backend.PortTest do
     end
 
     test "exits when server is not alive" do
-      # Create a fake pid that doesn't exist
       fake_pid = spawn(fn -> :ok end)
       Process.sleep(10)
 
-      # GenServer.call to dead process raises exit
-      # The execute/3 only catches :timeout exits, not :noproc
       assert catch_exit(Port.execute(fake_pid, "test", timeout: 100))
     end
   end
@@ -176,7 +169,6 @@ defmodule ExMaude.Backend.PortTest do
     end
 
     test "returns false for non-existent pid" do
-      # Create and immediately kill a process
       pid = spawn(fn -> :ok end)
       Process.exit(pid, :kill)
       Process.sleep(10)

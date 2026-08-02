@@ -1,8 +1,12 @@
 defmodule ExMaude.BackendTest do
-  @moduledoc false
+  @moduledoc """
+  Tests backend selection and backend availability reporting.
 
-  # Mutates global config (Application.put_env) — must not run concurrently
-  # with other suites that read it.
+  This suite mutates global application configuration with
+  `Application.put_env/3`, so it must not run concurrently with suites that
+  read the same configuration.
+  """
+
   use ExUnit.Case, async: false
 
   alias ExMaude.Backend
@@ -73,13 +77,11 @@ defmodule ExMaude.BackendTest do
     end
 
     test "cnode availability depends on binary" do
-      # CNode requires the compiled maude_bridge binary
       result = Backend.available?(:cnode)
       assert is_boolean(result)
     end
 
     test "nif availability depends on loaded module" do
-      # NIF requires ExMaude.Backend.NIF.Native to be loaded
       result = Backend.available?(:nif)
       assert is_boolean(result)
     end
@@ -87,7 +89,6 @@ defmodule ExMaude.BackendTest do
 
   describe "behaviour callbacks" do
     test "Port backend implements all callbacks" do
-      # Ensure module is loaded before checking exports
       Code.ensure_loaded!(ExMaude.Backend.Port)
 
       assert function_exported?(ExMaude.Backend.Port, :start_link, 1)
@@ -98,7 +99,6 @@ defmodule ExMaude.BackendTest do
     end
 
     test "CNode backend implements all callbacks" do
-      # Ensure module is loaded before checking exports
       Code.ensure_loaded!(ExMaude.Backend.CNode)
 
       assert function_exported?(ExMaude.Backend.CNode, :start_link, 1)
@@ -109,7 +109,6 @@ defmodule ExMaude.BackendTest do
     end
 
     test "NIF backend implements all callbacks" do
-      # Ensure module is loaded before checking exports
       Code.ensure_loaded!(ExMaude.Backend.NIF)
 
       assert function_exported?(ExMaude.Backend.NIF, :start_link, 1)
@@ -132,7 +131,6 @@ defmodule ExMaude.BackendTest do
     test "returns a list of available backends" do
       backends = Backend.available_backends()
       assert is_list(backends)
-      # Port is always available
       assert :port in backends
     end
 
@@ -147,12 +145,9 @@ defmodule ExMaude.BackendTest do
 
   describe "available?/1 edge cases" do
     test "cnode checks executable permission" do
-      # The cnode_binary path exists after compilation
-      # This tests the executable? check path
       result = Backend.available?(:cnode)
       assert is_boolean(result)
 
-      # If it's available, the binary must exist and be executable
       if result do
         path = Backend.cnode_binary()
         assert File.exists?(path)

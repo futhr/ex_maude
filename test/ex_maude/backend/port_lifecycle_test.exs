@@ -1,10 +1,15 @@
 defmodule ExMaude.Backend.PortLifecycleTest do
-  @moduledoc false
+  @moduledoc """
+  Tests Port backend timeout and restart semantics with protocol-compatible
+  fake Maude executables.
 
-  # Drives the Port backend against test/support/fake_maude.sh — a shell
-  # script speaking the prompt protocol — so timeout and restart semantics
-  # are testable deterministically without a Maude installation.
+  The fake shell scripts speak the prompt protocol, which makes lifecycle
+  behavior deterministic without requiring a real Maude installation.
+  """
+
   use ExUnit.Case, async: true
+
+  import ExUnit.CaptureLog
 
   alias ExMaude.Backend.Port
   alias ExMaude.Error
@@ -127,12 +132,14 @@ defmodule ExMaude.Backend.PortLifecycleTest do
     test "init fails fast when the binary never prints a prompt" do
       Process.flag(:trap_exit, true)
 
-      assert {:error, {:maude_start_failed, :no_prompt}} =
-               Port.start_link(
-                 maude_path: @fake_silent,
-                 use_pty: false,
-                 startup_timeout_ms: 150
-               )
+      assert capture_log(fn ->
+               assert {:error, {:maude_start_failed, :no_prompt}} =
+                        Port.start_link(
+                          maude_path: @fake_silent,
+                          use_pty: false,
+                          startup_timeout_ms: 150
+                        )
+             end) =~ "Timeout waiting for Maude prompt"
     end
 
     test "init reports a binary that exits before becoming ready" do

@@ -1,6 +1,5 @@
 import Config
 
-# Test configuration
 config :ex_maude,
   pool_size: 2,
   pool_max_overflow: 0,

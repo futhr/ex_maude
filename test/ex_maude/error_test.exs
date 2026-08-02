@@ -367,9 +367,7 @@ defmodule ExMaude.ErrorTest do
       error1 = Error.from_output(output1)
       assert error1.type == :module_not_found
 
-      # Check if case insensitive
       error2 = Error.from_output(output2)
-      # May or may not match depending on regex
       assert error2.type in [:module_not_found, :unknown]
     end
 
@@ -565,7 +563,6 @@ defmodule ExMaude.ErrorTest do
 
   describe "from_output/1 message truncation" do
     test "truncates very long error messages" do
-      # Create a 500+ character message
       long_content = String.duplicate("x", 500)
       output = "Error: #{long_content}"
       error = Error.from_output(output)

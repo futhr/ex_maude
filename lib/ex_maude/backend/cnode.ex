@@ -125,9 +125,7 @@ defmodule ExMaude.Backend.CNode do
     GenServer.stop(server, :normal)
   end
 
-  # Server Callbacks
-  # coveralls-ignore-start
-  # GenServer callbacks require C-Node binary and distributed node - tested via integration tests
+  # Server callbacks
 
   @impl GenServer
   def init(opts) do
@@ -294,11 +292,7 @@ defmodule ExMaude.Backend.CNode do
     _ -> :ok
   end
 
-  # coveralls-ignore-stop
-
-  # Private Functions
-  # coveralls-ignore-start
-  # These functions require C-Node binary and distributed node - tested via integration tests
+  # Private functions
 
   defp start_cnode(state) do
     bridge_path = bridge_executable()
@@ -553,6 +547,4 @@ defmodule ExMaude.Backend.CNode do
   defp emit_telemetry(event, measurements) do
     Telemetry.server_event(event, measurements, %{pid: self(), backend: :cnode})
   end
-
-  # coveralls-ignore-stop
 end

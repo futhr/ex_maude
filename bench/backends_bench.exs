@@ -1,5 +1,12 @@
 defmodule ExMaude.Bench.Backends do
-  @moduledoc false
+  @moduledoc """
+  Compares the available ExMaude backends with the same Maude workload.
+
+  The benchmark starts each backend once before measurement. Timed scenarios
+  include command transport, Maude evaluation, and response parsing, but not
+  worker startup. C-Node is included only when its bridge is available and the
+  current VM is running as a distributed node.
+  """
 
   alias ExMaude.Backend
 

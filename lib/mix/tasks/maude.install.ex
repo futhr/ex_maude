@@ -136,7 +136,6 @@ defmodule Mix.Tasks.Maude.Install do
     platform = detect_platform()
     Mix.shell().info("Platform: #{platform}")
 
-    # Check the project-local install
     bundled_path = ExMaude.Binary.bundled_path()
 
     if bundled_path do
@@ -145,7 +144,6 @@ defmodule Mix.Tasks.Maude.Install do
       Mix.shell().info("✗ Local binary: not found for #{platform}")
     end
 
-    # Check system PATH
     system_path = System.find_executable("maude")
 
     if system_path do
@@ -154,7 +152,6 @@ defmodule Mix.Tasks.Maude.Install do
       Mix.shell().info("✗ System PATH: maude not found")
     end
 
-    # Check configured path
     configured = Application.get_env(:ex_maude, :maude_path)
 
     if configured do
@@ -185,24 +182,30 @@ defmodule Mix.Tasks.Maude.Install do
     case fetch_releases() do
       {:ok, releases} ->
         platform = detect_platform()
-        Mix.shell().info("\nAvailable Maude versions for #{platform}:\n")
-
-        releases
-        |> Enum.filter(&has_platform_asset?(&1, platform))
-        |> Enum.each(fn release ->
-          tag = release["tag_name"]
-          name = release["name"]
-          date = release["published_at"] |> String.slice(0, 10)
-          latest = if release["prerelease"] == false, do: "", else: " (prerelease)"
-          Mix.shell().info("  #{tag} - #{name} (#{date})#{latest}")
-        end)
-
+        print_available_versions(releases, platform)
         Mix.shell().info("\nInstall with: mix maude.install --version <VERSION>")
         Mix.shell().info("Example: mix maude.install --version 3.5.1")
 
       {:error, reason} ->
         Mix.raise("Failed to fetch releases: #{reason}")
     end
+  end
+
+  defp print_available_versions(releases, platform) do
+    Mix.shell().info("\nAvailable Maude versions for #{platform}:\n")
+
+    releases
+    |> Enum.filter(&has_platform_asset?(&1, platform))
+    |> Enum.each(&print_release_version/1)
+  end
+
+  defp print_release_version(release) do
+    tag = release["tag_name"]
+    name = release["name"]
+    date = release["published_at"] |> String.slice(0, 10)
+    latest = if release["prerelease"] == false, do: "", else: " (prerelease)"
+
+    Mix.shell().info("  #{tag} - #{name} (#{date})#{latest}")
   end
 
   # Install into ExMaude's own priv directory: that's where
@@ -311,18 +314,7 @@ defmodule Mix.Tasks.Maude.Install do
   defp find_release_asset(nil, platform) do
     case fetch_releases() do
       {:ok, releases} ->
-        releases
-        |> Enum.filter(&(&1["prerelease"] == false))
-        |> Enum.find_value(fn release ->
-          case find_asset_for_platform(release, platform) do
-            {:ok, asset} ->
-              release_asset_details(release, asset)
-
-            :error ->
-              nil
-          end
-        end)
-        |> case do
+        case latest_release_asset(releases, platform) do
           nil -> {:error, :platform_not_supported, get_all_platforms(releases)}
           result -> result
         end
@@ -338,29 +330,44 @@ defmodule Mix.Tasks.Maude.Install do
 
     case fetch_releases() do
       {:ok, releases} ->
-        case Enum.find(releases, &(&1["tag_name"] == version_tag)) do
-          nil ->
-            available =
-              releases
-              |> Enum.filter(&(&1["prerelease"] == false))
-              |> Enum.map(& &1["tag_name"])
-
-            {:error, :version_not_found, available}
-
-          release ->
-            case find_asset_for_platform(release, platform) do
-              {:ok, asset} ->
-                release_asset_details(release, asset)
-
-              :error ->
-                available_platforms = get_release_platforms(release)
-                {:error, :platform_not_supported, available_platforms}
-            end
-        end
+        find_release_asset(releases, version_tag, platform)
 
       {:error, _} ->
         {:error, :no_releases}
     end
+  end
+
+  defp latest_release_asset(releases, platform) do
+    releases
+    |> Enum.filter(&(&1["prerelease"] == false))
+    |> Enum.find_value(&latest_release_asset_details(&1, platform))
+  end
+
+  defp find_release_asset(releases, version_tag, platform) do
+    case Enum.find(releases, &(&1["tag_name"] == version_tag)) do
+      nil -> {:error, :version_not_found, stable_release_tags(releases)}
+      release -> release_asset_details_for_platform(release, platform)
+    end
+  end
+
+  defp release_asset_details_for_platform(release, platform) do
+    case find_asset_for_platform(release, platform) do
+      {:ok, asset} -> release_asset_details(release, asset)
+      :error -> {:error, :platform_not_supported, get_release_platforms(release)}
+    end
+  end
+
+  defp latest_release_asset_details(release, platform) do
+    case find_asset_for_platform(release, platform) do
+      {:ok, asset} -> release_asset_details(release, asset)
+      :error -> nil
+    end
+  end
+
+  defp stable_release_tags(releases) do
+    releases
+    |> Enum.filter(&(&1["prerelease"] == false))
+    |> Enum.map(& &1["tag_name"])
   end
 
   defp normalize_version_tag(version) do
@@ -397,14 +404,14 @@ defmodule Mix.Tasks.Maude.Install do
   defp get_release_platforms(release) do
     assets = release["assets"] || []
 
-    Enum.flat_map(platform_patterns(), fn {platform, patterns} ->
-      if Enum.any?(assets, fn asset ->
-           Enum.any?(patterns, &Regex.match?(&1, asset["name"]))
-         end) do
-        [platform]
-      else
-        []
-      end
+    platform_patterns()
+    |> Enum.filter(fn {_, patterns} -> platform_asset?(assets, patterns) end)
+    |> Enum.map(fn {platform, _} -> platform end)
+  end
+
+  defp platform_asset?(assets, patterns) do
+    Enum.any?(assets, fn asset ->
+      Enum.any?(patterns, &Regex.match?(&1, asset["name"]))
     end)
   end
 
@@ -497,7 +504,6 @@ defmodule Mix.Tasks.Maude.Install do
 
     with :ok <- validate_https_url(url),
          :ok <- validate_download_path(destination) do
-      # Use curl if available for better redirect handling and progress
       case System.find_executable("curl") do
         nil -> download_with_httpc(url, destination)
         curl -> download_with_curl(curl, url, destination)
@@ -846,9 +852,15 @@ defmodule Mix.Tasks.Maude.Install do
 
   defp rename_maude_binary(install_path, version) do
     target = Path.join(install_path, "maude")
+    found = File.regular?(target) or rename_known_maude_binary(install_path, target, version)
 
-    # Maude releases use several binary names across versions and platforms.
-    possible_names = [
+    unless found do
+      warn_missing_maude_binary(install_path)
+    end
+  end
+
+  defp maude_binary_names(version) do
+    [
       # 3.5+ naming
       "maude.darwin64",
       "maude.linux64",
@@ -860,35 +872,38 @@ defmodule Mix.Tasks.Maude.Install do
       "maude-#{version}",
       "Maude-#{version}"
     ]
+  end
 
-    found =
-      if File.regular?(target) do
-        true
-      else
-        Enum.find_value(possible_names, fn name ->
-          source = Path.join(install_path, name)
+  defp rename_known_maude_binary(install_path, target, version) do
+    Enum.find_value(maude_binary_names(version), false, fn name ->
+      rename_maude_candidate(install_path, target, name)
+    end)
+  end
 
-          if File.regular?(source) do
-            File.rm(target)
-            File.rename!(source, target)
-            true
-          end
-        end)
-      end
+  defp rename_maude_candidate(install_path, target, name) do
+    source = Path.join(install_path, name)
 
-    unless found do
-      files =
-        install_path
-        |> File.ls!()
-        |> Enum.reject(&File.dir?(Path.join(install_path, &1)))
-
-      Mix.shell().error("""
-      Warning: Could not find Maude binary to rename.
-      Extracted files: #{inspect(files)}
-
-      You may need to manually rename the correct file to 'maude'.
-      """)
+    if File.regular?(source) do
+      File.rm(target)
+      File.rename!(source, target)
+      true
+    else
+      false
     end
+  end
+
+  defp warn_missing_maude_binary(install_path) do
+    files =
+      install_path
+      |> File.ls!()
+      |> Enum.reject(&File.dir?(Path.join(install_path, &1)))
+
+    Mix.shell().error("""
+    Warning: Could not find Maude binary to rename.
+    Extracted files: #{inspect(files)}
+
+    You may need to manually rename the correct file to 'maude'.
+    """)
   end
 
   defp verify_installation(maude_binary) do
@@ -898,19 +913,7 @@ defmodule Mix.Tasks.Maude.Install do
 
     result =
       Enum.find_value(verify_commands, fn args ->
-        case System.cmd(maude_binary, args, stderr_to_stdout: true) do
-          {output, 0} ->
-            {:ok, output}
-
-          {output, _} ->
-            # Some Maude versions exit non-zero for --version/--help but
-            # still print a usable banner.
-            if String.contains?(output, "Maude") do
-              {:ok, output}
-            else
-              nil
-            end
-        end
+        verify_command(maude_binary, args)
       end)
 
     case result do
@@ -950,6 +953,17 @@ defmodule Mix.Tasks.Maude.Install do
           Fedora/RHEL:   sudo dnf install gmp ncurses-compat-libs
         """)
     end
+  end
+
+  defp verify_command(maude_binary, args) do
+    case System.cmd(maude_binary, args, stderr_to_stdout: true) do
+      {output, 0} -> {:ok, output}
+      {output, _} -> maude_banner(output)
+    end
+  end
+
+  defp maude_banner(output) do
+    if String.contains?(output, "Maude"), do: {:ok, output}
   end
 
   # Platform patterns for matching asset names across different release naming conventions.

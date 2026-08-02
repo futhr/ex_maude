@@ -117,7 +117,7 @@ defmodule ExMaude.Backend.Port do
     GenServer.stop(server, :normal)
   end
 
-  # Server Callbacks
+  # Server callbacks
 
   @impl GenServer
   def init(opts) do
@@ -175,10 +175,6 @@ defmodule ExMaude.Backend.Port do
     alive = port_alive?(state.port)
     {:reply, alive, state}
   end
-
-  # coveralls-ignore-start
-  # Paths below require a live (or deliberately wedged) Maude process; they
-  # are exercised by the fake-script lifecycle tests and integration tests.
 
   @impl GenServer
   def handle_info({port, {:data, data}}, %{port: port} = state) do
@@ -245,12 +241,7 @@ defmodule ExMaude.Backend.Port do
     :ok
   end
 
-  # coveralls-ignore-stop
-
-  # Private Functions
-  # coveralls-ignore-start
-  # These functions require an actual Maude process - tested via the
-  # fake-script lifecycle tests and integration tests.
+  # Private functions
 
   defp shutdown_maude(state) do
     if state.port do
@@ -315,8 +306,6 @@ defmodule ExMaude.Backend.Port do
     end
   end
 
-  # coveralls-ignore-stop
-
   @doc false
   # Maude only prints its `Maude>` prompt when it believes it is interactive:
   # either stdin is a TTY (PTY wrapper) or `-interactive` forces it. Every
@@ -360,8 +349,6 @@ defmodule ExMaude.Backend.Port do
   def resolve_launcher(true, _, executable, _) do
     {executable, ["-interactive" | @maude_args]}
   end
-
-  # coveralls-ignore-start
 
   defp find_executable(path) do
     case System.find_executable(path) do
@@ -430,6 +417,4 @@ defmodule ExMaude.Backend.Port do
   defp emit_telemetry(event, measurements) do
     Telemetry.server_event(event, measurements, %{pid: self(), backend: :port})
   end
-
-  # coveralls-ignore-stop
 end

@@ -205,10 +205,8 @@ defmodule ExMaude.Maude do
         File.rm(expanded_path)
       end
     else
-      # coveralls-ignore-start
       # Unreachable under normal Path.expand behavior.
       {:error, Error.invalid_path("Generated path escapes temp directory")}
-      # coveralls-ignore-stop
     end
   end
 
