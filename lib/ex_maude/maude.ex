@@ -28,7 +28,8 @@ defmodule ExMaude.Maude do
   - `[:ex_maude, :command, :exception]` - Emitted when a command raises
 
   Metadata includes `:operation` (`:reduce`, `:rewrite`, `:search`, `:execute`,
-  `:parse`, `:load_file`, `:load_module`) and `:module` (the Maude module name).
+  `:parse`, `:load_file`, `:ensure_file_loaded`, `:load_module`) and `:module`
+  (the Maude module name).
 
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
@@ -145,6 +146,77 @@ defmodule ExMaude.Maude do
       fn -> do_load_file(path, opts) end
     )
   end
+
+  @doc """
+  Loads a Maude file into a pool at most once, safely under concurrency.
+
+  `load_file/2` broadcasts to every worker on every call, including workers
+  currently checked out serving other reductions — those loads fail, so N
+  concurrent callers mostly see `:load_error` even though the file is fine.
+
+  This returns `:ok` if the source path was successfully preloaded or the
+  file's content digest is already recorded for the pool. Otherwise it loads
+  inside a per-node lock, re-checking after acquiring it. Prefer it on any path
+  that can run concurrently.
+
+  A residual race remains if a *new* module is loaded while a long-running
+  command holds a worker; `:preload_modules` avoids it for known modules.
+
+  ## Options
+
+    * `:pool` — Registered pool name (default: `:ex_maude_pool`)
+  """
+  @spec ensure_file_loaded(Path.t(), keyword()) :: :ok | {:error, Error.t()}
+  def ensure_file_loaded(path, opts \\ []) do
+    Telemetry.span(
+      [:ex_maude, :command],
+      %{operation: :ensure_file_loaded, module: "file"},
+      fn -> do_ensure_file_loaded(path, opts) end
+    )
+  end
+
+  defp do_ensure_file_loaded(path, opts) do
+    pool = Keyword.get(opts, :pool, :ex_maude_pool)
+
+    cond do
+      not File.exists?(path) -> {:error, Error.file_not_found(path)}
+      already_loaded?(path, pool) -> :ok
+      true -> load_once(path, pool, opts)
+    end
+  end
+
+  defp load_once(path, pool, opts) do
+    # :global lock IDs are {resource, requester}. The resource must be shared
+    # by competing callers while the requester must identify this process;
+    # using a constant requester would make the lock re-entrant across callers.
+    resource = {__MODULE__, :ensure_file_loaded, node(), pool, Path.expand(path)}
+    lock = {resource, self()}
+
+    case :global.trans(lock, fn -> load_unless_loaded(path, pool, opts) end) do
+      :aborted ->
+        {:error, Error.new(:load_error, "Could not acquire load lock for #{path}")}
+
+      result ->
+        result
+    end
+  end
+
+  # Re-check inside the lock: while we waited, the caller that held it may
+  # have completed the load we were about to duplicate.
+  defp load_unless_loaded(path, pool, opts) do
+    if already_loaded?(path, pool), do: :ok, else: do_load_file(path, opts)
+  end
+
+  # Both successful startup preloads and runtime loads record the same
+  # content-derived identity without requiring a pool call here.
+  defp already_loaded?(path, pool) do
+    case Preloads.identity(path) do
+      {:ok, identity} -> Enum.any?(Preloads.loaded_for_pool(pool), &same_path?(&1, identity))
+      :error -> false
+    end
+  end
+
+  defp same_path?(left, right), do: Path.expand(left) == Path.expand(right)
 
   @doc """
   Loads a Maude module from a string.

@@ -141,6 +141,15 @@ defmodule ExMaude do
   defdelegate load_file(path, opts \\ []), to: ExMaude.Maude
 
   @doc """
+  Loads a Maude file into a pool at most once, safely under concurrency.
+
+  Prefer this over `load_file/2` on any path that can run concurrently.
+  See `ExMaude.Maude.ensure_file_loaded/2`.
+  """
+  @spec ensure_file_loaded(Path.t(), keyword()) :: :ok | {:error, ExMaude.Error.t()}
+  defdelegate ensure_file_loaded(path, opts \\ []), to: ExMaude.Maude
+
+  @doc """
   Loads a Maude module from a string.
 
   ## Examples

@@ -149,6 +149,7 @@ defmodule ExMaude.Backend.CNode do
 
     case result do
       {:ok, state} ->
+        Preloads.mark_loaded(pool, preload_modules)
         schedule_health_check()
         emit_telemetry(:start, %{maude_path: maude_path})
         {:ok, state}

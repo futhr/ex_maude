@@ -490,7 +490,7 @@ defmodule ExMaude.IoT do
     path = ExMaude.iot_rules_path()
 
     if File.exists?(path) do
-      ExMaude.load_file(path, pool: Keyword.get(opts, :pool, :ex_maude_pool))
+      ExMaude.ensure_file_loaded(path, pool: Keyword.get(opts, :pool, :ex_maude_pool))
     else
       {:error, {:module_not_found, path}}
     end

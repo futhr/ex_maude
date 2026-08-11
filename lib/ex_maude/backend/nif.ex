@@ -26,13 +26,20 @@ defmodule ExMaude.Backend.NIF do
       config :ex_maude,
         backend: :nif
 
-  ## Precompiled Binaries
+  ## Getting the NIF
 
-  Precompiled NIF binaries are downloaded automatically for supported
-  platforms (macOS aarch64/x86_64, Linux gnu/musl × aarch64/x86_64,
-  Windows gnu/msvc). To force a build from source (requires Rust toolchain):
+  Published Hex packages use checksummed precompiled binaries for the supported
+  targets below. The release pipeline generates the checksum file after the
+  matching GitHub release assets exist and before publishing the package.
 
-      EX_MAUDE_BUILD=1 mix deps.compile ex_maude
+  A source checkout intentionally has an empty checksum file, so development
+  builds must opt into compilation from source (requires a Rust toolchain):
+
+      EX_MAUDE_BUILD=1 mix compile --force        # in this project
+      EX_MAUDE_BUILD=1 mix deps.compile ex_maude  # as a dependency
+
+  Use `:port` as the default when a precompiled NIF is unavailable and a local
+  Rust build is not desired.
   """
 
   @behaviour ExMaude.Backend
@@ -231,6 +238,7 @@ defmodule ExMaude.Backend.NIF do
       {:ok, handle} ->
         case preload_native_modules(handle, preload_modules) do
           :ok ->
+            Preloads.mark_loaded(pool, preload_modules)
             emit_telemetry(:start, %{maude_path: maude_path})
             {:ok, %__MODULE__{handle: handle, maude_path: maude_path}}
 

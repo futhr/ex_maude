@@ -26,6 +26,12 @@ defmodule ExMaude.MaudeTest do
       assert function_exported?(ExMaude, :load_file, 2)
     end
 
+    test "ensure_file_loaded/2 is exported" do
+      assert function_exported?(Maude, :ensure_file_loaded, 1)
+      assert function_exported?(Maude, :ensure_file_loaded, 2)
+      assert function_exported?(ExMaude, :ensure_file_loaded, 2)
+    end
+
     test "load_module/1 is exported" do
       assert function_exported?(Maude, :load_module, 1)
       assert function_exported?(Maude, :load_module, 2)
@@ -64,6 +70,13 @@ defmodule ExMaude.MaudeTest do
       {:error, error} = Maude.load_file(path)
 
       assert error.details.path == path
+    end
+  end
+
+  describe "ensure_file_loaded/2 validation" do
+    test "returns a structured error for a non-existent file" do
+      assert {:error, %Error{type: :file_not_found}} =
+               Maude.ensure_file_loaded("/nonexistent/path/to/file.maude")
     end
   end
 

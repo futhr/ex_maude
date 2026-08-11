@@ -138,6 +138,7 @@ defmodule ExMaude.Backend.Port do
 
         case become_ready(state, preload_modules, startup_timeout) do
           {:ok, state} ->
+            Preloads.mark_loaded(pool, preload_modules)
             emit_telemetry(:start, %{maude_path: maude_path})
             {:ok, state}
 

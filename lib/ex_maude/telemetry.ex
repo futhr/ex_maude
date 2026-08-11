@@ -20,7 +20,7 @@ defmodule ExMaude.Telemetry do
   ### Command Events
 
   Emitted for high-level Maude operations (`reduce`, `rewrite`, `search`,
-  `execute`, `parse`, `load_file`, and `load_module`).
+  `execute`, `parse`, `load_file`, `ensure_file_loaded`, and `load_module`).
 
   `[:ex_maude, :command, :start]`
   - Measurements: `%{system_time: integer}`
