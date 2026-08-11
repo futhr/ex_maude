@@ -1,7 +1,7 @@
 defmodule ExMaude.Backend.NIFIntegrationTest do
   @moduledoc false
 
-  use ExUnit.Case, async: false
+  use ExMaude.NIFCase, async: false
 
   alias ExMaude.Backend.NIF
   alias ExMaude.Error

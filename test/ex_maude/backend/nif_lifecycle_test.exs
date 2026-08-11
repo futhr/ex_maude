@@ -8,7 +8,7 @@ defmodule ExMaude.Backend.NIFLifecycleTest do
   NIF, hence the module tags.
   """
 
-  use ExUnit.Case, async: false
+  use ExMaude.NIFCase, async: false
 
   @moduletag :nif
   @moduletag :integration

@@ -25,8 +25,8 @@ defmodule ExMaude.MaudeCase do
   ## Test Tags
 
   Tests using this case template should be tagged with `@moduletag :integration`
-  or individual `@tag :integration`. These tests will be automatically skipped
-  when Maude is not available on the system.
+  or individual `@tag :integration`. Integration tests are excluded by default;
+  explicitly including them requires an available Maude interpreter.
 
   ## Context Variables
 
@@ -74,15 +74,6 @@ defmodule ExMaude.MaudeCase do
   # Find Maude binary - uses ExMaude.Binary for consistent detection
   defp find_maude do
     ExMaude.Binary.find()
-  end
-
-  setup context do
-    # Skip test if it requires integration but Maude is not available
-    if context[:integration] && !context[:maude_available] do
-      :skip
-    else
-      :ok
-    end
   end
 
   @doc """
