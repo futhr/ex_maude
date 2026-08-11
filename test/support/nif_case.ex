@@ -4,8 +4,9 @@ defmodule ExMaude.NIFCase do
 
   The NIF is only present when `EX_MAUDE_BUILD=1` is set, or when a populated
   `checksum-Elixir.ExMaude.Backend.NIF.Native.exs` triggers a precompiled
-  download. With neither, `ExMaude.Backend.NIF.Native` keeps its
-  `:erlang.nif_error(:nif_not_loaded)` stubs and every call raises.
+  download. With neither, the hidden native adapter used by
+  `ExMaude.Backend.NIF` keeps its `:erlang.nif_error(:nif_not_loaded)` stubs
+  and every call raises.
 
   These tests carry both `:nif` and `:integration`. ExUnit resolves `include`
   ahead of `exclude`, so the documented `mix test --include integration` pulls
