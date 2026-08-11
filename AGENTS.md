@@ -234,14 +234,17 @@ end)
 ### Loading Modules
 
 ```elixir
-# From file (broadcasts to all workers)
+# From file (explicitly broadcasts to all workers)
 :ok = ExMaude.load_file("/path/to/module.maude")
+
+# Idempotent load for concurrent runtime paths
+:ok = ExMaude.ensure_file_loaded("/path/to/module.maude")
 
 # From string
 :ok = ExMaude.load_module("fmod TEST is ... endfm")
 
 # IoT rules module
-:ok = ExMaude.load_file(ExMaude.iot_rules_path())
+:ok = ExMaude.ensure_file_loaded(ExMaude.iot_rules_path())
 ```
 
 ### IoT Conflict Detection

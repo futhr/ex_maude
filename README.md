@@ -79,7 +79,7 @@ ordinary application behavior should remain in Elixir/Erlang.
 |---------|-------------|
 | **Port-based IPC** | Efficient communication via Erlang Ports |
 | **Worker Pool** | Concurrent operations via Poolboy |
-| **High-level API** | `reduce/3`, `rewrite/3`, `search/4`, `load_file/2` |
+| **High-level API** | `reduce/3`, `rewrite/3`, `search/4`, and pool-wide module loading |
 | **Output Parsing** | Structured parsing of Maude results |
 | **Telemetry** | Built-in observability events |
 | **IoT Module** | Formal conflict detection for physical-IoT automation rules |
@@ -189,7 +189,7 @@ provide `MAUDE_PATH`, or keep `maude` on `PATH`.
 ```elixir
 # Check available backends
 ExMaude.Backend.available_backends()
-#=> [:port]  # plus :cnode if maude_bridge is compiled, :nif if the precompiled NIF loaded
+#=> [:port]  # plus :cnode if maude_bridge is compiled, :nif if the NIF loaded
 
 # Configure before the pool starts
 config :ex_maude, backend: :cnode
@@ -218,8 +218,11 @@ ExMaude.search(module, initial, pattern, opts \\ [])
 ### Module Loading
 
 ```elixir
-# Load from file
+# Load or reload from a file immediately on every worker
 ExMaude.load_file("/path/to/module.maude", pool: :verification_pool)
+
+# Idempotent loading for paths reached concurrently at runtime
+ExMaude.ensure_file_loaded("/path/to/module.maude", pool: :verification_pool)
 
 # Load from string
 ExMaude.load_module("""
@@ -230,6 +233,11 @@ fmod MY-NAT is
 endfm
 """, pool: :verification_pool)
 ```
+
+Use `preload_modules` for modules known when the pool starts. For dynamic
+paths, `ensure_file_loaded/2` serializes the first pool-wide load and remembers
+the loaded content for replacement workers; `load_file/2` deliberately
+broadcasts every call and is appropriate when an explicit reload is required.
 
 ### Direct Execution
 
@@ -379,7 +387,7 @@ All measurements use native time units for precision.
 
 ### Metadata
 
-- `operation` - Command type (`:reduce`, `:rewrite`, `:search`, `:execute`, `:parse`, `:load_file`, `:load_module`)
+- `operation` - Command type (`:reduce`, `:rewrite`, `:search`, `:execute`, `:parse`, `:load_file`, `:ensure_file_loaded`, `:load_module`)
 - `module` - Maude module name
 - `result` - `:ok` or `:error`
 - `template` - Conflict-detection template in use (`:iot_rules` or `:ai_rules`)

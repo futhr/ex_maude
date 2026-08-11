@@ -56,8 +56,11 @@ Rules can be non-deterministic and may not terminate — always pass a
 ### Loading Maude code
 
 ```elixir
-# From a file — loads into every pool worker
+# From a file — explicitly loads/reloads every pool worker
 :ok = ExMaude.load_file("/path/to/my-module.maude")
+
+# Concurrent runtime path — loads once per pool and remembered content
+:ok = ExMaude.ensure_file_loaded("/path/to/my-module.maude")
 
 # From a string
 :ok = ExMaude.load_module("fmod MY-MOD is sort Foo . endfm")
@@ -65,6 +68,10 @@ Rules can be non-deterministic and may not terminate — always pass a
 # Preload at worker start (survives worker restarts)
 config :ex_maude, preload_modules: ["/path/to/my-module.maude"]
 ```
+
+Prefer startup preloads for known modules and `ensure_file_loaded/2` for
+dynamic modules shared by concurrent requests. Use `load_file/2` when an
+explicit reload is intended.
 
 ### Inspecting
 

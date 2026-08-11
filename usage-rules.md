@@ -4,7 +4,10 @@ Guidelines for AI agents and developers working with ExMaude - Elixir bindings f
 
 ## Overview
 
-ExMaude provides a high-level Elixir API for interacting with Maude, a formal specification language based on rewriting logic. It manages Maude processes via Erlang Ports with a Poolboy worker pool.
+ExMaude provides a high-level Elixir API for interacting with Maude, a formal
+specification language based on rewriting logic. It manages independent Maude
+processes through a pluggable Port, C-Node, or NIF backend and a Poolboy worker
+pool.
 
 ## Core Concepts
 
@@ -14,6 +17,7 @@ ExMaude provides a high-level Elixir API for interacting with Maude, a formal sp
 - **rewrite** - Apply rules and equations (may be non-deterministic)
 - **search** - Explore state space to find states matching a pattern
 - **load_file** - Load a Maude module file into all workers
+- **ensure_file_loaded** - Idempotently load a file on concurrent runtime paths
 
 ### Module Types in Maude
 
@@ -77,6 +81,9 @@ case ExMaude.load_file(path) do
   :ok -> :loaded
   {:error, %ExMaude.Error{type: :file_not_found}} -> create_or_fail()
 end
+
+# GOOD: Avoid duplicate broadcasts when concurrent requests need the same file
+:ok = ExMaude.ensure_file_loaded(path, pool: :verification_pool)
 
 # GOOD: Load from string for dynamic modules
 ExMaude.load_module("""
@@ -221,8 +228,9 @@ end, pool: :verification_pool)
   ExMaude.Server.load_file(worker, path)
 end)
 
-# GOOD: high-level loading also supports and remembers a named pool
-:ok = ExMaude.load_file(path, pool: :verification_pool)
+# GOOD: high-level loading supports named pools; use the idempotent form on
+# concurrent runtime paths
+:ok = ExMaude.ensure_file_loaded(path, pool: :verification_pool)
 ```
 
 ## Backend Selection
@@ -330,8 +338,8 @@ ExMaude.search("MOD", "init", "goal", timeout: 60_000)
 # BAD: Using module before loading
 ExMaude.reduce("MY-CUSTOM-MOD", term)  # Will fail
 
-# GOOD: Load first
-:ok = ExMaude.load_file("my-custom-mod.maude")
+# GOOD: Load first; use ensure_file_loaded when multiple callers may race
+:ok = ExMaude.ensure_file_loaded("my-custom-mod.maude")
 {:ok, result} = ExMaude.reduce("MY-CUSTOM-MOD", term)
 ```
 

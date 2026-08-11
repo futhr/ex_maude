@@ -19,6 +19,8 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 * Named pools, pool-scoped module loading, and persistent per-pool module
   preloads keep every worker's Maude session consistent.
+* Add `ExMaude.ensure_file_loaded/2` for idempotent, concurrency-safe runtime
+  module loading while preserving `load_file/2` for explicit reloads.
 * Central command validation, balanced term encoding, optional redacted command
   telemetry, and stricter installer integrity checks harden external-input and
   operational boundaries.

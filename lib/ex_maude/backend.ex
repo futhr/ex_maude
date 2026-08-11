@@ -99,9 +99,10 @@ defmodule ExMaude.Backend do
   Checks if a backend is available on this system.
 
   The Port backend is always available. C-Node requires the `maude_bridge`
-  binary to be compiled. NIF reports available when the Rustler-precompiled
-  native function table has been loaded (probed via a cheap `nif_loaded/0`
-  NIF that raises `:nif_not_loaded` while the stub is in place).
+  binary to be compiled. NIF reports available when its native function table
+  has been loaded from either a precompiled binary or a source build (probed
+  via a cheap `nif_loaded/0` NIF that raises `:nif_not_loaded` while the stub
+  is in place).
 
   ## Examples
 
@@ -112,7 +113,7 @@ defmodule ExMaude.Backend do
       #=> true if priv/maude_bridge has been compiled
 
       ExMaude.Backend.available?(:nif)
-      #=> true if the precompiled NIF binary loaded for this platform
+      #=> true if the NIF loaded for this platform
 
   """
   @spec available?(backend_type()) :: boolean()
