@@ -20,7 +20,16 @@ defmodule ExMaude.Backend.NIFLifecycleTest do
   @fake_silent Path.expand("../../support/fake_silent.sh", __DIR__)
 
   defp start_fake_worker(opts \\ []) do
-    opts = Keyword.merge([maude_path: @fake_maude], opts)
+    # A dedicated pool name keeps runtime preloads remembered by other tests
+    # (against the default pool) out of these protocol-level workers: replaying
+    # a leaked preload through the fake's echo protocol would trip tight
+    # max_response_bytes limits during init.
+    opts =
+      Keyword.merge(
+        [maude_path: @fake_maude, pool: :nif_lifecycle_test_pool, preload_modules: []],
+        opts
+      )
+
     start_supervised!({NIF, opts}, restart: :temporary)
   end
 
