@@ -468,8 +468,8 @@ static int wait_for_ready(void) {
   /* Interactive Maude emits its initial prompt without input. Sending a
    * newline here races that prompt and can leave a second empty response in
    * the pipe, where it would be mistaken for the first real command. */
-  int result = read_until_prompt(&buf, &capacity, 10000,
-                                 DEFAULT_MAX_RESPONSE_SIZE);
+  int result =
+      read_until_prompt(&buf, &capacity, 10000, DEFAULT_MAX_RESPONSE_SIZE);
   if (result >= 0) {
     fprintf(stderr, "Maude ready (startup output %d bytes): '%s'\n", result,
             buf);
@@ -623,9 +623,9 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
     /* Read response up to the caller's deadline */
     char *output = NULL;
     size_t output_capacity = 0;
-    int out_len = read_until_prompt(
-        &output, &output_capacity, clamp_timeout(timeout_ms),
-        clamp_response_limit(max_response_bytes));
+    int out_len =
+        read_until_prompt(&output, &output_capacity, clamp_timeout(timeout_ms),
+                          clamp_response_limit(max_response_bytes));
 
     if (out_len == -1) {
       encode_error(&response, "read_timeout");
@@ -700,9 +700,9 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
     /* Read response */
     char *output = NULL;
     size_t output_capacity = 0;
-    int out_len = read_until_prompt(
-        &output, &output_capacity, clamp_timeout(timeout_ms),
-        clamp_response_limit(max_response_bytes));
+    int out_len =
+        read_until_prompt(&output, &output_capacity, clamp_timeout(timeout_ms),
+                          clamp_response_limit(max_response_bytes));
 
     if (out_len == -1) {
       encode_error(&response, "read_timeout");
