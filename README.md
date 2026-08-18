@@ -99,7 +99,7 @@ Add `ex_maude` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_maude, "~> 0.3.0"}
+    {:ex_maude, "~> 0.4.0"}
   ]
 end
 ```

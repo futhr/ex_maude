@@ -5,38 +5,68 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
-## Unreleased
-
-### Breaking Changes
+## [v0.4.0](https://github.com/futhr/ex_maude/compare/v0.3.0...v0.4.0) (2026-08-18)
+### Breaking Changes:
 
 * Clean bounded safety and liveness searches now return
   `{:ok, :unverified}` instead of claiming `:safe` or `:live`; validation and
   encoding failures remain explicit errors.
+
 * ExMaude is an embeddable library with no automatic application callback.
   Callers own `ExMaude.Pool.child_spec/1` in their supervision tree.
 
-### Features
+### Upgrade notes:
 
-* Named pools, pool-scoped module loading, and persistent per-pool module
-  preloads keep every worker's Maude session consistent.
-* Add `ExMaude.ensure_file_loaded/2` for idempotent, concurrency-safe runtime
-  module loading while preserving `load_file/2` for explicit reloads.
-* Central command validation, balanced term encoding, optional redacted command
-  telemetry, and stricter installer integrity checks harden external-input and
-  operational boundaries.
+* **Add the pool to your supervision tree.** The library no longer starts
+  its own application supervisor. Put `ExMaude.Pool.child_spec/1` in your
+  application's children (the README and notebooks show the one-liner).
+* **Handle `{:ok, :unverified}` from bounded verification.** Code that
+  matched on `:safe` or `:live` from clean bounded searches must treat
+  `:unverified` as the honest result of a bounded exploration; hard
+  failures still arrive as `{:error, _}`.
+* **New pool features.** Named pools, pool-scoped module loading, and
+  persistent per-pool preloads keep every worker's Maude session
+  consistent; `ExMaude.ensure_file_loaded/2` provides idempotent,
+  concurrency-safe runtime loading while `load_file/2` remains the
+  explicit reload.
 
-### Bug Fixes
+### Features:
 
-* Keep path-based consumers isolated from local NIF build artifacts. Rustler
-  source compilation is now enabled only by `EX_MAUDE_BUILD=1`, so an ignored
-  native artifact cannot force an optional transitive dependency into another
-  project's build.
-* Return a modern map child specification accepted by current Elixir
-  supervisors.
-* Broadcast module loads to the pool's actual workers and return structured
-  errors when a pool is missing.
-* Normalize backend timeout/crash handling, parser output, and conflict
-  encoding across Port, C-Node, and NIF backends.
+* maude: add concurrency-safe module loading by Tobias Bohwalli
+
+* runtime: harden isolated pool execution by futhr
+
+### Bug Fixes:
+
+* keep path-based consumers isolated from local NIF build artifacts: Rustler
+  source compilation now requires `EX_MAUDE_BUILD=1`, so an ignored native
+  artifact cannot force an optional transitive dependency into another
+  project's build by futhr
+
+* return a modern map child specification accepted by current Elixir
+  supervisors by futhr
+
+* harden native backend framing and bounds by Tobias Bohwalli
+
+* docs: avoid hidden NIF module reference by Tobias Bohwalli
+
+* installer: verify release artifacts before extraction by futhr
+
+* nif: preserve stderr ordering across commands by futhr
+
+* config: honor runtime and telemetry contracts by futhr
+
+* cnode: harden bridge transport and cleanup by futhr
+
+* nif: reap subprocesses on every lifecycle path by futhr
+
+* ai: validate and terminate conflict detection by futhr
+
+* iot: make bounded verification and conflicts sound by futhr
+
+* pool: keep module state consistent across workers by futhr
+
+* cnode: make workers ready before checkout by futhr
 
 ## [v0.3.0](https://github.com/futhr/ex_maude/compare/v0.2.0...v0.3.0) (2026-06-10)
 ### Breaking Changes:
