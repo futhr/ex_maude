@@ -28,7 +28,7 @@ jobs:
         env:
           RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          project_version="$(sed -n 's/^  @version \"\\(.*\\)\"/\\1/p' mix.exs | head -n1)"
+          project_version="$(sed -n 's/^  @version "\(.*\)"/\1/p' mix.exs | head -n1)"
           release_tag="v${project_version}"
           git fetch --force origin "refs/tags/${release_tag}:refs/tags/${release_tag}"
           test "$(git rev-list -n1 "${release_tag}")" = "${RELEASE_SHA}"
