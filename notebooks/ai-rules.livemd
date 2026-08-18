@@ -1,16 +1,28 @@
+<!-- livebook:{"persist_outputs":true} -->
+
 # ExMaude AI Rule Conflict Detection
 
 ```elixir
-Mix.install(
-  [
-    {:ex_maude, path: Path.join(__DIR__, ".."), env: :dev}
-  ],
-  config_path: :ex_maude,
-  lockfile: :ex_maude,
-  config: [
-    ex_maude: [use_pty: false]
-  ]
-)
+app_root = Path.expand("..", __DIR__)
+
+if File.exists?(Path.join(app_root, "mix.exs")) do
+  # Running from a clone of the repository: use the local checkout,
+  # which bundles the Maude interpreter under priv/.
+  Mix.install(
+    [{:ex_maude, path: app_root, env: :dev}],
+    config_path: :ex_maude,
+    lockfile: :ex_maude,
+    config: [ex_maude: [use_pty: false]]
+  )
+else
+  # Running standalone (e.g. via the "Run in Livebook" badge): use the
+  # released package. This needs a `maude` binary on your PATH, or the
+  # MAUDE_PATH env var set — see https://github.com/futhr/ex_maude#installation
+  Mix.install(
+    [{:ex_maude, "~> 0.3"}],
+    config: [ex_maude: [use_pty: false]]
+  )
+end
 
 {:ok, _pool_supervisor} =
   Supervisor.start_link([ExMaude.Pool.child_spec()], strategy: :one_for_one)
@@ -32,12 +44,18 @@ Where `ExMaude.IoT` models physical-IoT rules (Things, Properties, Actions),
 * **Approval gates** — explicit gates before high-impact actions
 * **Budget intervals** — symbolic arithmetic over budget envelopes
 
-Both modules target the same Maude verification core. They can ship in the
-same application — the templates and APIs are independent.
+Both modules target the same Maude verification core and follow the same
+**detect → fix → prove clean** workflow shown in the
+[Advanced Usage](advanced.livemd) notebook — read that first if you haven't.
+They can ship in the same application; the templates and APIs are independent.
 
 ## Rule Vocabulary
 
+The blocks in this section are reference material, not runnable cells — they show the shapes the rule maps are built from.
+
 ### Predicates (triggers)
+
+<!-- livebook:{"force_markdown":true} -->
 
 ```elixir
 # Property-style (carry-over from IoT rules)
@@ -73,6 +91,8 @@ same application — the templates and APIs are independent.
 ```
 
 ### Tool invocations
+
+<!-- livebook:{"force_markdown":true} -->
 
 ```elixir
 # Direct tool invocation
@@ -232,9 +252,7 @@ before passing rules to ExMaude.
 
 ## Conflict-Type Cheatsheet
 
-```elixir
-ExMaude.AI.ConflictParser
-```
+The full set of conflict types (parsed by `ExMaude.AI.ConflictParser`):
 
 | Constructor | Atom | Detection |
 |---|---|---|
@@ -245,6 +263,7 @@ ExMaude.AI.ConflictParser
 | `agentLoopCascade` | `:agent_loop_cascade` | pairwise |
 | `sovereigntyViolation` | `:sovereignty_violation` | single-rule |
 | `approvalGateBypass` | `:approval_gate_bypass` | single-rule |
+
 `detect_pair_conflicts/2` runs only the pairwise checks;
 `detect_single_rule_conflicts/2` runs only the single-rule checks;
 `detect_conflicts/2` runs both.

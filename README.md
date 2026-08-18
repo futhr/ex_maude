@@ -530,13 +530,15 @@ See [Development](#development) section for benchmark commands.
 
 Explore ExMaude interactively with Livebook:
 
+The notebooks form a learning path — follow them in order for a gradual introduction to Maude and formal verification:
+
 | Notebook | Description | Livebook |
 |----------|-------------|----------|
-| [Quick Start](notebooks/quickstart.livemd) | Basic usage and examples | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fquickstart.livemd) |
-| [Advanced Usage](notebooks/advanced.livemd) | IoT conflicts, custom modules, pooling | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fadvanced.livemd) |
-| [AI Rules](notebooks/ai-rules.livemd) | AI agent policy conflict detection | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fai-rules.livemd) |
-| [Term Rewriting](notebooks/rewriting.livemd) | Rewriting and search deep dive | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Frewriting.livemd) |
-| [Benchmarks](notebooks/benchmarks.livemd) | Performance metrics | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fbenchmarks.livemd) |
+| [Quick Start](notebooks/quickstart.livemd) | First contact: reduce, parse, modules, error handling | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fquickstart.livemd) |
+| [Term Rewriting](notebooks/rewriting.livemd) | Equations vs rules, search, and your first verification | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Frewriting.livemd) |
+| [Advanced Usage](notebooks/advanced.livemd) | IoT rule-conflict detection, custom modules, pooling, telemetry | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fadvanced.livemd) |
+| [AI Rules](notebooks/ai-rules.livemd) | Conflict detection for AI agent policies | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fai-rules.livemd) |
+| [Benchmarks](notebooks/benchmarks.livemd) | Latency, concurrency, and how verification cost scales | [![Run in Livebook](https://livebook.dev/badge/v1/pink.svg)](https://livebook.dev/run?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffuthr%2Fex_maude%2Fmain%2Fnotebooks%2Fbenchmarks.livemd) |
 
 ---
 
