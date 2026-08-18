@@ -19,7 +19,7 @@ else
   # released package. This needs a `maude` binary on your PATH, or the
   # MAUDE_PATH env var set — see https://github.com/futhr/ex_maude#installation
   Mix.install(
-    [{:ex_maude, "~> 0.3"}],
+    [{:ex_maude, "~> 0.4"}],
     config: [ex_maude: [use_pty: false]]
   )
 end
