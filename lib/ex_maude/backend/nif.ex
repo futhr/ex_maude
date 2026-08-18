@@ -24,7 +24,8 @@ defmodule ExMaude.Backend.NIF do
   ## Configuration
 
       config :ex_maude,
-        backend: :nif
+        backend: :nif,
+        max_response_bytes: 16_777_216
 
   ## Getting the NIF
 
@@ -50,16 +51,21 @@ defmodule ExMaude.Backend.NIF do
   alias ExMaude.{Binary, Command, Config, Error, Parser, Preloads, Telemetry}
 
   @default_timeout 30_000
+  @default_max_response_bytes 16 * 1024 * 1024
+  @maximum_response_bytes 2_147_483_000
 
   @typedoc """
   Internal state for the NIF backend GenServer.
   """
   @type t :: %__MODULE__{
           handle: reference() | nil,
-          maude_path: String.t() | nil
+          maude_path: String.t() | nil,
+          max_response_bytes: pos_integer()
         }
 
-  defstruct [:handle, :maude_path]
+  defstruct handle: nil,
+            maude_path: nil,
+            max_response_bytes: @default_max_response_bytes
 
   defmodule Native do
     @moduledoc false
@@ -125,6 +131,11 @@ defmodule ExMaude.Backend.NIF do
     @spec execute_with_timeout(reference(), String.t(), non_neg_integer()) ::
             binary() | {:error, term()}
     def execute_with_timeout(_, _, _), do: :erlang.nif_error(:nif_not_loaded)
+
+    @doc false
+    @spec execute_with_limit(reference(), String.t(), non_neg_integer(), pos_integer()) ::
+            binary() | {:error, term()}
+    def execute_with_limit(_, _, _, _), do: :erlang.nif_error(:nif_not_loaded)
 
     @doc false
     @spec stop(reference()) :: :ok | {:error, term()}
@@ -233,14 +244,21 @@ defmodule ExMaude.Backend.NIF do
     pool = Keyword.get(opts, :pool, :ex_maude_pool)
     preload_modules = Preloads.for_pool(pool, opts[:preload_modules])
     startup_timeout = opts[:startup_timeout_ms] || 10_000
+    max_response_bytes = response_limit(opts[:max_response_bytes])
 
     case start_native(maude_path, startup_timeout) do
       {:ok, handle} ->
-        case preload_native_modules(handle, preload_modules) do
+        case preload_native_modules(handle, preload_modules, max_response_bytes) do
           :ok ->
             Preloads.mark_loaded(pool, preload_modules)
             emit_telemetry(:start, %{maude_path: maude_path})
-            {:ok, %__MODULE__{handle: handle, maude_path: maude_path}}
+
+            {:ok,
+             %__MODULE__{
+               handle: handle,
+               maude_path: maude_path,
+               max_response_bytes: max_response_bytes
+             }}
 
           {:error, reason} ->
             Native.stop(handle)
@@ -257,7 +275,7 @@ defmodule ExMaude.Backend.NIF do
     command = Command.normalize(command)
     Telemetry.command_started(:nif, command)
 
-    case run_native_execute(handle, command, timeout) do
+    case run_native_execute(handle, command, timeout, state.max_response_bytes) do
       {:ok, raw} ->
         result = Parser.parse_backend_response(raw)
         emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
@@ -269,7 +287,12 @@ defmodule ExMaude.Backend.NIF do
   end
 
   def handle_call({:load_file, path, timeout}, _, %{handle: handle} = state) do
-    case run_native_execute(handle, Command.normalize(Command.load_file(path)), timeout) do
+    case run_native_execute(
+           handle,
+           Command.normalize(Command.load_file(path)),
+           timeout,
+           state.max_response_bytes
+         ) do
       {:ok, raw} ->
         result =
           case Parser.parse_backend_response(raw) do
@@ -341,14 +364,16 @@ defmodule ExMaude.Backend.NIF do
     end
   end
 
-  defp run_native_execute(handle, command, timeout) do
-    safe_call(fn -> Native.execute_with_timeout(handle, command, timeout) end)
+  defp run_native_execute(handle, command, timeout, max_response_bytes) do
+    safe_call(fn ->
+      Native.execute_with_limit(handle, command, timeout, max_response_bytes)
+    end)
   end
 
   # Wraps a NIF call and maps both raised errors and returned `{:error, t}`
   # tuples into a uniform `{:ok, value} | {:error, %Error{}}` shape. The
   # NIFs we wrap return either a successful payload (`reference()` for
-  # `start/1`, `binary()` for `execute_with_timeout/3`) or `{:error, t}`.
+  # `start/1`, `binary()` for the execute functions) or `{:error, t}`.
   defp safe_call(fun) do
     case fun.() do
       output when is_binary(output) -> {:ok, output}
@@ -373,6 +398,7 @@ defmodule ExMaude.Backend.NIF do
   end
 
   defp decode_nif_error({:timeout, ms}) when is_integer(ms), do: Error.timeout(ms)
+  defp decode_nif_error({:response_too_large, bytes}), do: Error.response_too_large(bytes)
   defp decode_nif_error(:eof), do: Error.crash(0)
   defp decode_nif_error({:io_error, msg}), do: Error.exception(:nif_error, msg)
 
@@ -390,19 +416,30 @@ defmodule ExMaude.Backend.NIF do
     )
   end
 
-  defp preload_native_modules(_, []), do: :ok
+  defp preload_native_modules(_, [], _), do: :ok
 
-  defp preload_native_modules(handle, [path | paths]) do
+  defp preload_native_modules(handle, [path | paths], max_response_bytes) do
     timeout = Config.timeout(@default_timeout)
 
     with {:ok, raw} <-
-           run_native_execute(handle, Command.normalize(Command.load_file(path)), timeout),
+           run_native_execute(
+             handle,
+             Command.normalize(Command.load_file(path)),
+             timeout,
+             max_response_bytes
+           ),
          {:ok, _} <- Parser.parse_backend_response(raw) do
-      preload_native_modules(handle, paths)
+      preload_native_modules(handle, paths, max_response_bytes)
     else
       {:error, reason} -> {:error, {path, reason}}
     end
   end
+
+  defp response_limit(bytes)
+       when is_integer(bytes) and bytes in 1..@maximum_response_bytes,
+       do: bytes
+
+  defp response_limit(_), do: Config.max_response_bytes(@default_max_response_bytes)
 
   defp emit_telemetry(event, measurements) do
     Telemetry.server_event(event, measurements, %{pid: self(), backend: :nif})

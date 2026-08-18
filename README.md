@@ -155,6 +155,7 @@ config :ex_maude,
   pool_size: 4,                        # Number of worker processes
   pool_max_overflow: 2,                # Extra workers under load
   timeout: 5_000,                      # Default command timeout (ms)
+  max_response_bytes: 16_777_216,      # Per-command output ceiling (16 MiB)
   use_pty: false,                      # PTY wrapper opt-in (Port backend only)
   preload_modules: [],                 # Modules loaded when workers start
   telemetry_include_commands: false   # Keep command text out of telemetry
@@ -169,6 +170,7 @@ config :ex_maude,
 | `pool_size` | `integer()` | `4` | Number of Maude worker processes |
 | `pool_max_overflow` | `integer()` | `2` | Extra workers allowed under load |
 | `timeout` | `integer()` | `5000` | Default command timeout in ms |
+| `max_response_bytes` | `integer()` | `16777216` | Maximum response bytes accepted before the worker is replaced |
 | `use_pty` | `boolean()` | `false` | Wrap Maude in a PTY instead of pipes with `-interactive` |
 | `preload_modules` | `[Path.t()]` | `[]` | Modules loaded by every worker at startup |
 | `telemetry_include_commands` | `boolean()` | `false` | Include truncated Maude commands in server telemetry; opt in only when commands contain no secrets |

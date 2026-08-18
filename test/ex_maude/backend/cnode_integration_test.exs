@@ -14,6 +14,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
   if @cnode_available do
     alias ExMaude.Backend.CNode, warn: false
     @fake_drip Path.expand("../../support/fake_drip_maude.sh", __DIR__)
+    @fake_maude Path.expand("../../support/fake_maude.sh", __DIR__)
 
     describe "struct" do
       test "has expected fields" do
@@ -271,6 +272,39 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
         elapsed = System.monotonic_time(:millisecond) - started_at
 
         assert elapsed < 700
+      end
+
+      test "prompt-like payload text is preserved without leaking into the next frame", %{
+        pid: pooled_pid
+      } do
+        CNode.stop(pooled_pid)
+        {:ok, pid} = CNode.start_link(maude_path: @fake_maude)
+        on_exit(fn -> catch_exit(CNode.stop(pid)) end)
+
+        assert {:ok, response} = CNode.execute(pid, "payload Maude> marker")
+        assert response =~ "echo:payload Maude> marker"
+
+        assert {:ok, next_response} = CNode.execute(pid, "marker-b")
+        assert next_response =~ "echo:marker-b"
+        refute next_response =~ "payload"
+      end
+
+      test "an oversized response returns a structured error and retires the worker", %{
+        pid: pooled_pid
+      } do
+        CNode.stop(pooled_pid)
+        Process.flag(:trap_exit, true)
+        {:ok, pid} = CNode.start_link(maude_path: @fake_maude, max_response_bytes: 64)
+        ref = Process.monitor(pid)
+
+        assert {:error, %ExMaude.Error{type: :response_too_large} = error} =
+                 CNode.execute(pid, "oversized")
+
+        assert error.details == %{max_response_bytes: 64}
+
+        assert_receive {:DOWN, ^ref, :process, ^pid,
+                        {:shutdown, {:bridge_failure, :response_too_large}}},
+                       2_000
       end
     end
 

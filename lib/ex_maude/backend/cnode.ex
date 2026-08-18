@@ -28,7 +28,8 @@ defmodule ExMaude.Backend.CNode do
 
       config :ex_maude,
         backend: :cnode,
-        cnode_timeout: 30_000
+        cnode_timeout: 30_000,
+        max_response_bytes: 16_777_216
 
   """
 
@@ -40,6 +41,8 @@ defmodule ExMaude.Backend.CNode do
   alias ExMaude.{Binary, Command, Config, Error, Parser, Preloads, Telemetry}
 
   @default_timeout 30_000
+  @default_max_response_bytes 16 * 1024 * 1024
+  @maximum_response_bytes 2_147_483_000
   @ping_timeout 2_000
   @health_check_interval 5_000
   @connect_retries 10
@@ -60,7 +63,8 @@ defmodule ExMaude.Backend.CNode do
           os_pid: non_neg_integer() | nil,
           maude_path: String.t() | nil,
           cookie: String.t(),
-          connected: boolean()
+          connected: boolean(),
+          max_response_bytes: pos_integer()
         }
 
   defstruct [
@@ -69,7 +73,8 @@ defmodule ExMaude.Backend.CNode do
     :os_pid,
     :maude_path,
     cookie: "",
-    connected: false
+    connected: false,
+    max_response_bytes: @default_max_response_bytes
   ]
 
   # Client API
@@ -134,10 +139,12 @@ defmodule ExMaude.Backend.CNode do
     startup_timeout = opts[:startup_timeout_ms] || @default_timeout
     pool = Keyword.get(opts, :pool, :ex_maude_pool)
     preload_modules = Preloads.for_pool(pool, opts[:preload_modules])
+    max_response_bytes = response_limit(opts[:max_response_bytes])
 
     state = %__MODULE__{
       maude_path: maude_path,
-      cookie: cookie
+      cookie: cookie,
+      max_response_bytes: max_response_bytes
     }
 
     result =
@@ -168,7 +175,12 @@ defmodule ExMaude.Backend.CNode do
     command = Command.normalize(command)
     Telemetry.command_started(:cnode, command)
 
-    case send_cnode_command(state.cnode_name, {:execute, command}, timeout) do
+    case send_cnode_command(
+           state.cnode_name,
+           {:execute, command},
+           timeout,
+           state.max_response_bytes
+         ) do
       {:ok, raw} ->
         result = Parser.parse_backend_response(raw)
         emit_telemetry(:command_complete, %{success: match?({:ok, _}, result)})
@@ -187,7 +199,12 @@ defmodule ExMaude.Backend.CNode do
   end
 
   def handle_call({:load_file, path, timeout}, _, %{connected: true} = state) do
-    case send_cnode_command(state.cnode_name, {:load_file, path}, timeout) do
+    case send_cnode_command(
+           state.cnode_name,
+           {:load_file, path},
+           timeout,
+           state.max_response_bytes
+         ) do
       :ok ->
         {:reply, :ok, state}
 
@@ -214,7 +231,12 @@ defmodule ExMaude.Backend.CNode do
 
   @impl GenServer
   def handle_info(:health_check, state) do
-    case send_cnode_command(state.cnode_name, :ping, @ping_timeout) do
+    case send_cnode_command(
+           state.cnode_name,
+           :ping,
+           @ping_timeout,
+           state.max_response_bytes
+         ) do
       :pong ->
         schedule_health_check()
         {:noreply, %{state | connected: true}}
@@ -372,14 +394,17 @@ defmodule ExMaude.Backend.CNode do
   # {ref, reply}. Stale replies from previously timed-out commands carry a
   # different ref, are never matched here, and drain through the GenServer's
   # handle_info catch-all instead of being misattributed.
-  defp send_cnode_command(cnode_name, request, timeout) do
+  defp send_cnode_command(cnode_name, request, timeout, max_response_bytes) do
     ref = make_ref()
 
     try do
-      send({:any, cnode_name}, build_request(request, ref, timeout))
+      send(
+        {:any, cnode_name},
+        build_request(request, ref, timeout, max_response_bytes)
+      )
 
       receive do
-        {^ref, response} -> normalize_response(response, timeout)
+        {^ref, response} -> normalize_response(response, timeout, max_response_bytes)
       after
         timeout + @reply_grace ->
           {:error, Error.timeout(timeout)}
@@ -391,32 +416,39 @@ defmodule ExMaude.Backend.CNode do
     end
   end
 
-  defp build_request({:execute, command}, ref, timeout), do: {:execute, ref, command, timeout}
-  defp build_request({:load_file, path}, ref, timeout), do: {:load_file, ref, path, timeout}
-  defp build_request(:ping, ref, _), do: {:ping, ref}
+  defp build_request({:execute, command}, ref, timeout, max_response_bytes),
+    do: {:execute, ref, command, timeout, max_response_bytes}
+
+  defp build_request({:load_file, path}, ref, timeout, max_response_bytes),
+    do: {:load_file, ref, path, timeout, max_response_bytes}
+
+  defp build_request(:ping, ref, _, _), do: {:ping, ref}
 
   # Bridge replies: {:ok, output} / :ok / :pong pass through; atom error
   # reasons are infrastructure failures (:read_timeout maps to the caller's
   # command deadline, :maude_eof to a crashed interpreter); binary error
   # payloads are semantic Maude output and keep their shape for the caller
   # to interpret.
-  defp normalize_response({:ok, output}, _), do: {:ok, output}
-  defp normalize_response(:ok, _), do: :ok
-  defp normalize_response(:pong, _), do: :pong
+  defp normalize_response({:ok, output}, _, _), do: {:ok, output}
+  defp normalize_response(:ok, _, _), do: :ok
+  defp normalize_response(:pong, _, _), do: :pong
 
-  defp normalize_response({:error, :read_timeout}, timeout),
+  defp normalize_response({:error, :read_timeout}, timeout, _),
     do: {:error, Error.timeout(timeout)}
 
-  defp normalize_response({:error, :maude_eof}, _),
+  defp normalize_response({:error, :maude_eof}, _, _),
     do: {:error, Error.crash(0)}
 
-  defp normalize_response({:error, reason}, _) when is_atom(reason),
+  defp normalize_response({:error, :response_too_large}, _, max_response_bytes),
+    do: {:error, Error.response_too_large(max_response_bytes)}
+
+  defp normalize_response({:error, reason}, _, _) when is_atom(reason),
     do: {:error, Error.exception(:cnode_error, "bridge failure: #{reason}")}
 
-  defp normalize_response({:error, output}, _) when is_binary(output),
+  defp normalize_response({:error, output}, _, _) when is_binary(output),
     do: {:error, output}
 
-  defp normalize_response(other, _),
+  defp normalize_response(other, _, _),
     do: {:error, Error.exception(:cnode_error, "unexpected bridge reply: #{inspect(other)}")}
 
   defp schedule_health_check do
@@ -496,7 +528,12 @@ defmodule ExMaude.Backend.CNode do
   defp preload_cnode_modules(state, [path | paths]) do
     timeout = Config.timeout(@default_timeout)
 
-    case send_cnode_command(state.cnode_name, {:load_file, path}, timeout) do
+    case send_cnode_command(
+           state.cnode_name,
+           {:load_file, path},
+           timeout,
+           state.max_response_bytes
+         ) do
       :ok ->
         preload_cnode_modules(state, paths)
 
@@ -548,4 +585,10 @@ defmodule ExMaude.Backend.CNode do
   defp emit_telemetry(event, measurements) do
     Telemetry.server_event(event, measurements, %{pid: self(), backend: :cnode})
   end
+
+  defp response_limit(bytes)
+       when is_integer(bytes) and bytes in 1..@maximum_response_bytes,
+       do: bytes
+
+  defp response_limit(_), do: Config.max_response_bytes(@default_max_response_bytes)
 end

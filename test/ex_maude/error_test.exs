@@ -102,6 +102,17 @@ defmodule ExMaude.ErrorTest do
     end
   end
 
+  describe "response_too_large/1" do
+    test "records the enforced byte ceiling" do
+      error = Error.response_too_large(1024)
+
+      assert error.type == :response_too_large
+      assert error.message =~ "1024"
+      assert error.details == %{max_response_bytes: 1024}
+      refute Error.recoverable?(error)
+    end
+  end
+
   describe "crash/1" do
     test "creates crash error with exit code" do
       error = Error.crash(137)
@@ -296,6 +307,7 @@ defmodule ExMaude.ErrorTest do
         :module_not_found,
         :syntax_error,
         :timeout,
+        :response_too_large,
         :maude_crash,
         :file_not_found,
         :load_error,
@@ -478,6 +490,7 @@ defmodule ExMaude.ErrorTest do
       recoverable_types = [:timeout, :maude_crash]
 
       non_recoverable_types = [
+        :response_too_large,
         :parse_error,
         :module_not_found,
         :syntax_error,

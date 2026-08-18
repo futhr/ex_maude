@@ -19,10 +19,22 @@ while IFS= read -r line; do
       exit 0
       ;;
     hang*)
-      sleep 600
+      # Stop this process itself instead of spawning `sleep`: backend timeout
+      # cleanup can then kill the complete fake without leaving a grandchild
+      # holding the test runner's output descriptors open.
+      kill -STOP "$$"
       ;;
     die*)
       exit 1
+      ;;
+    oversized*)
+      printf 'result String: "'
+      count=0
+      while [ "$count" -lt 256 ]; do
+        printf 'x'
+        count=$((count + 1))
+      done
+      printf '"\nMaude> '
       ;;
     *)
       printf 'result String: "echo:%s"\nMaude> ' "$line"

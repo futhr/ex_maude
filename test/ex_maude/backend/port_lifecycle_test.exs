@@ -25,12 +25,14 @@ defmodule ExMaude.Backend.PortLifecycleTest do
   describe "command timeout" do
     test "reports the requested timeout value in the error" do
       pid = start_fake_worker()
+      ref = Process.monitor(pid)
 
       assert {:error, %Error{type: :timeout} = error} =
                Port.execute(pid, "hang", timeout: 80)
 
       assert error.details.timeout_ms == 80
       assert error.message =~ "80ms"
+      assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, :command_timeout}}, 1_000
     end
 
     test "stops the worker so the pool can replace it" do
@@ -57,22 +59,24 @@ defmodule ExMaude.Backend.PortLifecycleTest do
       on_exit(fn -> :telemetry.detach(handler_id) end)
 
       pid = start_fake_worker()
+      ref = Process.monitor(pid)
       Port.execute(pid, "hang", timeout: 60)
 
       assert_receive {:timeout_event, %{timeout_ms: 60}}, 1_000
+      assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, :command_timeout}}, 1_000
     end
   end
 
   describe "stale timeout messages" do
     test "a timer whose command already completed is ignored" do
-      state = %Port{port: nil, buffer: "", pending: nil, maude_path: nil, os_pid: nil}
+      state = %Port{}
 
       assert {:noreply, ^state} = Port.handle_info({:command_timeout, make_ref()}, state)
     end
 
     test "a timer for a previous command does not cut into the current one" do
       pending = %{from: {self(), make_ref()}, ref: make_ref(), timer: make_ref(), timeout: 100}
-      state = %Port{port: nil, buffer: "", pending: pending, maude_path: nil, os_pid: nil}
+      state = %Port{pending: pending}
 
       assert {:noreply, %Port{pending: ^pending}} =
                Port.handle_info({:command_timeout, make_ref()}, state)
@@ -82,7 +86,7 @@ defmodule ExMaude.Backend.PortLifecycleTest do
   describe "busy guard" do
     test "rejects a second command while one is in flight" do
       pending = %{from: {self(), make_ref()}, ref: make_ref(), timer: make_ref(), timeout: 100}
-      state = %Port{port: nil, buffer: "", pending: pending, maude_path: nil, os_pid: nil}
+      state = %Port{pending: pending}
 
       assert {:reply, {:error, %Error{type: :busy}}, ^state} =
                Port.handle_call(
@@ -90,6 +94,30 @@ defmodule ExMaude.Backend.PortLifecycleTest do
                  {self(), make_ref()},
                  state
                )
+    end
+  end
+
+  describe "response framing and limits" do
+    test "preserves prompt-like text inside a response and frames the next command" do
+      pid = start_fake_worker()
+
+      assert {:ok, response} = Port.execute(pid, "payload Maude> marker")
+      assert response =~ "echo:payload Maude> marker"
+
+      assert {:ok, next_response} = Port.execute(pid, "marker-b")
+      assert next_response =~ "echo:marker-b"
+      refute next_response =~ "payload"
+    end
+
+    test "an oversized response returns a structured error and retires the worker" do
+      pid = start_fake_worker(max_response_bytes: 64)
+      ref = Process.monitor(pid)
+
+      assert {:error, %Error{type: :response_too_large} = error} =
+               Port.execute(pid, "oversized")
+
+      assert error.details == %{max_response_bytes: 64}
+      assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, :response_too_large}}, 1_000
     end
   end
 

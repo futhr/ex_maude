@@ -17,9 +17,11 @@
  *
  * Protocol (v2 — every request carries a ref that is echoed back, so the
  * Elixir side can selectively receive its own reply and ignore stale ones):
- *   {execute, Ref, Command :: binary(), TimeoutMs :: integer()}
+ *   {execute, Ref, Command :: binary(), TimeoutMs :: integer(),
+ *             MaxResponseBytes :: integer()}
  *       -> {Ref, {:ok, Output :: binary()} | {:error, Reason}}
- *   {load_file, Ref, Path :: binary(), TimeoutMs :: integer()}
+ *   {load_file, Ref, Path :: binary(), TimeoutMs :: integer(),
+ *               MaxResponseBytes :: integer()}
  *       -> {Ref, :ok | {:error, Reason | Output :: binary()}}
  *   {ping, Ref} -> {Ref, :pong}
  *   stop -> ok   (bare atom, fire-and-forget from terminate)
@@ -28,6 +30,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdint.h>
@@ -45,7 +48,8 @@
 
 /* Forward declarations */
 static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf);
-static int read_until_prompt(char **output, size_t *capacity, int timeout_ms);
+static int read_until_prompt(char **output, size_t *capacity, int timeout_ms,
+                             size_t max_response_size);
 static int send_command(const char *cmd, size_t len);
 static int write_all(int fd, const char *data, size_t len);
 static int read_exact(int fd, void *data, size_t len);
@@ -55,14 +59,15 @@ static char *build_load_command(const char *path, size_t length,
 static void clear_secret(void *data, size_t len);
 static int64_t monotonic_ms(void);
 static int reap_with_timeout(pid_t pid, int timeout_ms);
+static char *find_prompt_boundary(char *output, size_t length);
 static void encode_ok(ei_x_buff *response, const char *data, int data_len);
 static void encode_error(ei_x_buff *response, const char *reason);
 
 #define INITIAL_BUFSIZE 65536
 #define MAX_COMMAND_SIZE (16UL * 1024 * 1024)
-#define MAX_RESPONSE_SIZE (16UL * 1024 * 1024)
-#define PROMPT "Maude>"
-#define PROMPT_LEN 6
+#define DEFAULT_MAX_RESPONSE_SIZE (16UL * 1024 * 1024)
+#define PROMPT "Maude> "
+#define PROMPT_LEN 7
 #define MAX_COOKIE_SIZE 255
 
 /* Maude process state */
@@ -310,8 +315,11 @@ static int64_t monotonic_ms(void) {
  *          -1 on timeout (no prompt found)
  *          -2 on read error
  *          -3 on EOF (Maude closed)
+ *          -4 when the configured response ceiling is exceeded
+ *          -5 on allocation failure
  */
-static int read_until_prompt(char **output, size_t *capacity, int timeout_ms) {
+static int read_until_prompt(char **output, size_t *capacity, int timeout_ms,
+                             size_t max_response_size) {
   size_t total = 0;
   fd_set readfds;
   struct timeval tv;
@@ -322,10 +330,10 @@ static int read_until_prompt(char **output, size_t *capacity, int timeout_ms) {
     *capacity = INITIAL_BUFSIZE;
     *output = malloc(*capacity);
     if (*output == NULL)
-      return -4;
+      return -5;
   }
 
-  while (running && total < MAX_RESPONSE_SIZE) {
+  while (running) {
     int64_t remaining = deadline - monotonic_ms();
     if (remaining <= 0)
       break;
@@ -368,20 +376,27 @@ static int read_until_prompt(char **output, size_t *capacity, int timeout_ms) {
       return -3;
     }
 
+    if ((size_t)n > SIZE_MAX - total - 1)
+      return -4;
     size_t needed = total + (size_t)n + 1;
-    if (needed > MAX_RESPONSE_SIZE)
+
+    if (max_response_size > SIZE_MAX - PROMPT_LEN - 1)
+      return -4;
+    size_t maximum_buffer_size = max_response_size + PROMPT_LEN + 1;
+
+    if (needed > maximum_buffer_size)
       return -4;
 
     if (needed > *capacity) {
       size_t new_capacity = *capacity;
-      while (new_capacity < needed)
+      while (new_capacity < needed && new_capacity <= SIZE_MAX / 2)
         new_capacity *= 2;
-      if (new_capacity > MAX_RESPONSE_SIZE)
-        new_capacity = MAX_RESPONSE_SIZE;
+      if (new_capacity < needed || new_capacity > maximum_buffer_size)
+        new_capacity = maximum_buffer_size;
 
       char *resized = realloc(*output, new_capacity);
       if (resized == NULL)
-        return -4;
+        return -5;
       *output = resized;
       *capacity = new_capacity;
     }
@@ -389,17 +404,14 @@ static int read_until_prompt(char **output, size_t *capacity, int timeout_ms) {
     memcpy(*output + total, buf, (size_t)n);
     total += (size_t)n;
 
-    /* Check for prompt - search entire buffer for small buffers,
-     * or just the tail for large buffers (optimization) */
     (*output)[total] = '\0';
 
-    if (strstr(*output, PROMPT) != NULL) {
-      /* Found prompt, remove it from output */
-      char *prompt_pos = strstr(*output, PROMPT);
-      if (prompt_pos != NULL) {
-        *prompt_pos = '\0';
-        total = (size_t)(prompt_pos - *output);
-      }
+    char *prompt_pos = find_prompt_boundary(*output, total);
+    if (prompt_pos != NULL) {
+      total = (size_t)(prompt_pos - *output);
+      if (total > max_response_size)
+        return -4;
+      *prompt_pos = '\0';
       prompt_found = 1;
       break;
     }
@@ -431,6 +443,23 @@ static int read_until_prompt(char **output, size_t *capacity, int timeout_ms) {
   return (int)total; /* Success - return output length (may be 0) */
 }
 
+/* A protocol prompt is complete only at the start of a line. Prompt-like
+ * bytes inside a valid Maude result remain part of that result. */
+static char *find_prompt_boundary(char *output, size_t length) {
+  if (length < PROMPT_LEN)
+    return NULL;
+
+  for (size_t index = 0; index <= length - PROMPT_LEN; index++) {
+    int at_line_start =
+        index == 0 || output[index - 1] == '\n' || output[index - 1] == '\r';
+
+    if (at_line_start && memcmp(output + index, PROMPT, PROMPT_LEN) == 0)
+      return output + index;
+  }
+
+  return NULL;
+}
+
 /* Wait for initial Maude prompt after startup */
 static int wait_for_ready(void) {
   char *buf = NULL;
@@ -439,7 +468,8 @@ static int wait_for_ready(void) {
   /* Interactive Maude emits its initial prompt without input. Sending a
    * newline here races that prompt and can leave a second empty response in
    * the pipe, where it would be mistaken for the first real command. */
-  int result = read_until_prompt(&buf, &capacity, 10000);
+  int result = read_until_prompt(&buf, &capacity, 10000,
+                                 DEFAULT_MAX_RESPONSE_SIZE);
   if (result >= 0) {
     fprintf(stderr, "Maude ready (startup output %d bytes): '%s'\n", result,
             buf);
@@ -477,6 +507,14 @@ static int clamp_timeout(long timeout_ms) {
   if (timeout_ms > 600000)
     return 600000;
   return (int)timeout_ms;
+}
+
+static size_t clamp_response_limit(long max_response_bytes) {
+  if (max_response_bytes <= 0)
+    return DEFAULT_MAX_RESPONSE_SIZE;
+  if (max_response_bytes > INT_MAX - PROMPT_LEN - 1)
+    return (size_t)(INT_MAX - PROMPT_LEN - 1);
+  return (size_t)max_response_bytes;
 }
 
 /* Handle incoming Erlang message */
@@ -569,6 +607,11 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
       timeout_ms = 30000;
     }
 
+    long max_response_bytes = DEFAULT_MAX_RESPONSE_SIZE;
+    if (ei_decode_long(buf->buff, &index, &max_response_bytes) < 0) {
+      max_response_bytes = DEFAULT_MAX_RESPONSE_SIZE;
+    }
+
     /* Send command to Maude */
     if (send_command(command, bin_size) < 0) {
       free(command);
@@ -580,8 +623,9 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
     /* Read response up to the caller's deadline */
     char *output = NULL;
     size_t output_capacity = 0;
-    int out_len =
-        read_until_prompt(&output, &output_capacity, clamp_timeout(timeout_ms));
+    int out_len = read_until_prompt(
+        &output, &output_capacity, clamp_timeout(timeout_ms),
+        clamp_response_limit(max_response_bytes));
 
     if (out_len == -1) {
       encode_error(&response, "read_timeout");
@@ -631,6 +675,11 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
       timeout_ms = 30000;
     }
 
+    long max_response_bytes = DEFAULT_MAX_RESPONSE_SIZE;
+    if (ei_decode_long(buf->buff, &index, &max_response_bytes) < 0) {
+      max_response_bytes = DEFAULT_MAX_RESPONSE_SIZE;
+    }
+
     size_t command_length;
     char *command = build_load_command(path, (size_t)bin_size, &command_length);
     free(path);
@@ -651,8 +700,9 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
     /* Read response */
     char *output = NULL;
     size_t output_capacity = 0;
-    int out_len =
-        read_until_prompt(&output, &output_capacity, clamp_timeout(timeout_ms));
+    int out_len = read_until_prompt(
+        &output, &output_capacity, clamp_timeout(timeout_ms),
+        clamp_response_limit(max_response_bytes));
 
     if (out_len == -1) {
       encode_error(&response, "read_timeout");

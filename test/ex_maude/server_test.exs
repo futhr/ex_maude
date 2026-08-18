@@ -110,14 +110,15 @@ defmodule ExMaude.ServerTest do
   end
 
   describe "prompt detection" do
-    test "detects Maude prompt" do
-      assert response_complete?("result Nat: 6\nMaude>")
-      assert response_complete?("some output Maude> ")
+    test "detects a complete Maude prompt at a line boundary" do
+      assert response_complete?("result Nat: 6\nMaude> ")
+      assert response_complete?("Maude> ")
     end
 
     test "incomplete without prompt" do
       refute response_complete?("result Nat: 6")
       refute response_complete?("processing...")
+      refute response_complete?("some output Maude> marker")
     end
   end
 
@@ -232,7 +233,7 @@ defmodule ExMaude.ServerTest do
   end
 
   defp response_complete?(buffer) do
-    String.contains?(buffer, "Maude>")
+    Regex.match?(~r/(?:\A|[\r\n])Maude> /, buffer)
   end
 
   describe "configuration edge cases" do
@@ -373,15 +374,15 @@ defmodule ExMaude.ServerTest do
 
   describe "prompt detection edge cases" do
     test "detects prompt at end of output" do
-      assert response_complete?("result Nat: 6\nMaude>")
+      assert response_complete?("result Nat: 6\nMaude> ")
     end
 
     test "detects prompt with spaces" do
       assert response_complete?("result Nat: 6\nMaude> ")
     end
 
-    test "detects prompt in middle of output" do
-      assert response_complete?("Maude> result Nat: 6")
+    test "ignores prompt-like text in output" do
+      refute response_complete?("payload Maude> marker")
     end
 
     test "does not detect partial prompt" do

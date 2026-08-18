@@ -7,4 +7,6 @@ while IFS= read -r _line; do
   :
 done
 
-sleep 600
+# If stdin closes before timeout cleanup reaches us, stop this process itself
+# rather than spawning a grandchild that can outlive the test runner.
+kill -STOP "$$"

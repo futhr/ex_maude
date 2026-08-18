@@ -11,6 +11,7 @@ defmodule ExMaude.Error do
     * `:module_not_found` - Referenced module doesn't exist
     * `:syntax_error` - Invalid Maude syntax
     * `:timeout` - Operation timed out
+    * `:response_too_large` - Backend output exceeded the configured ceiling
     * `:busy` - Worker already has a command in flight
     * `:maude_crash` - Maude process crashed
     * `:file_not_found` - File doesn't exist
@@ -52,6 +53,7 @@ defmodule ExMaude.Error do
           | :module_not_found
           | :syntax_error
           | :timeout
+          | :response_too_large
           | :busy
           | :maude_crash
           | :file_not_found
@@ -199,6 +201,24 @@ defmodule ExMaude.Error do
       type: :timeout,
       message: "Operation timed out after #{timeout_ms}ms",
       details: %{timeout_ms: timeout_ms}
+    }
+  end
+
+  @doc """
+  Creates an error for a response that exceeded the configured byte ceiling.
+
+  ## Examples
+
+      iex> error = ExMaude.Error.response_too_large(1024)
+      ...> {error.type, error.details}
+      {:response_too_large, %{max_response_bytes: 1024}}
+  """
+  @spec response_too_large(pos_integer()) :: t()
+  def response_too_large(max_response_bytes) do
+    %__MODULE__{
+      type: :response_too_large,
+      message: "Maude response exceeded #{max_response_bytes} bytes",
+      details: %{max_response_bytes: max_response_bytes}
     }
   end
 

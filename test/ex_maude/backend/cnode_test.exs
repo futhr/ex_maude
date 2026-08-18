@@ -37,6 +37,7 @@ defmodule ExMaude.Backend.CNodeTest do
       assert Map.has_key?(state, :maude_path)
       assert Map.has_key?(state, :cookie)
       assert Map.has_key?(state, :connected)
+      assert Map.has_key?(state, :max_response_bytes)
     end
 
     test "struct has correct defaults" do

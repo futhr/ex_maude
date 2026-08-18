@@ -19,8 +19,9 @@ defmodule ExMaude.Backend.NIFLifecycleTest do
   @fake_maude Path.expand("../../support/fake_maude.sh", __DIR__)
   @fake_silent Path.expand("../../support/fake_silent.sh", __DIR__)
 
-  defp start_fake_worker do
-    start_supervised!({NIF, maude_path: @fake_maude}, restart: :temporary)
+  defp start_fake_worker(opts \\ []) do
+    opts = Keyword.merge([maude_path: @fake_maude], opts)
+    start_supervised!({NIF, opts}, restart: :temporary)
   end
 
   describe "native timeout" do
@@ -67,6 +68,33 @@ defmodule ExMaude.Backend.NIFLifecycleTest do
       assert {:error, %Error{type: :maude_crash}} = NIF.execute(pid, "die", timeout: 1_000)
 
       assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, {:native_failure, :maude_crash}}},
+                     1_000
+    end
+  end
+
+  describe "response framing and limits" do
+    test "preserves prompt-like text inside a response and frames the next command" do
+      pid = start_fake_worker()
+
+      assert {:ok, response} = NIF.execute(pid, "payload Maude> marker")
+      assert response =~ "echo:payload Maude> marker"
+
+      assert {:ok, next_response} = NIF.execute(pid, "marker-b")
+      assert next_response =~ "echo:marker-b"
+      refute next_response =~ "payload"
+    end
+
+    test "an oversized response returns a structured error and retires the worker" do
+      pid = start_fake_worker(max_response_bytes: 64)
+      ref = Process.monitor(pid)
+
+      assert {:error, %Error{type: :response_too_large} = error} =
+               NIF.execute(pid, "oversized")
+
+      assert error.details == %{max_response_bytes: 64}
+
+      assert_receive {:DOWN, ^ref, :process, ^pid,
+                      {:shutdown, {:native_failure, :response_too_large}}},
                      1_000
     end
   end

@@ -268,7 +268,24 @@ defmodule ExMaude.MixProject do
     try do
       Mix.Task.run("compile", ["--force"])
       Mix.Task.reenable("test")
-      Mix.Task.run("test", ["--include", "nif", "--include", "integration" | args])
+
+      Mix.Task.run(
+        "test",
+        [
+          "--include",
+          "nif",
+          "--include",
+          "integration",
+          "--exclude",
+          "network",
+          "--exclude",
+          "cnode",
+          "test/ex_maude/backend/nif_test.exs",
+          "test/ex_maude/backend/nif_integration_test.exs",
+          "test/ex_maude/backend/nif_lifecycle_test.exs"
+          | args
+        ]
+      )
     after
       if previous,
         do: System.put_env("EX_MAUDE_BUILD", previous),

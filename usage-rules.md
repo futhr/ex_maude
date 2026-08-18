@@ -2,6 +2,11 @@
 
 Guidelines for AI agents and developers working with ExMaude - Elixir bindings for the Maude formal verification system.
 
+Every backend enforces the same `:max_response_bytes` ceiling (16 MiB by
+default). A response that crosses it returns
+`%ExMaude.Error{type: :response_too_large}` and retires the worker; retry only
+after reducing the Maude command's output or deliberately raising the limit.
+
 ## Overview
 
 ExMaude provides a high-level Elixir API for interacting with Maude, a formal

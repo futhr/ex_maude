@@ -9,8 +9,9 @@
 //! `Maude>` prompt **without a trailing newline**, so `read_line` would block
 //! forever while waiting for the next byte from the user.
 //!
-//! All blocking entry points (`start`, `execute_with_timeout`, `stop`) run on
-//! the `DirtyIo` scheduler — the work is I/O wait on the Maude pipe, not CPU.
+//! All blocking entry points (`start`, `execute_with_timeout`,
+//! `execute_with_limit`, `stop`) run on the `DirtyIo` scheduler — the work is
+//! I/O wait on the Maude pipe, not CPU.
 //!
 //! ## Safety
 //!
@@ -20,7 +21,7 @@
 //! but we still avoid `unwrap` and convert poisoned mutexes to returned
 //! errors as a matter of hygiene.
 
-use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender};
+use crossbeam_channel::{bounded, Receiver, RecvTimeoutError, Sender};
 use rustler::{Error, NifResult, ResourceArc};
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -32,14 +33,17 @@ use std::time::{Duration, Instant};
 mod atoms {
     rustler::atoms! {
         timeout,
+        response_too_large,
         eof,
         io_error,
         lock_poisoned,
     }
 }
 
-const PROMPT: &[u8] = b"Maude>";
+const PROMPT: &[u8] = b"Maude> ";
+const DEFAULT_MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const READER_BUF_SIZE: usize = 4096;
+const READER_CHANNEL_CAPACITY: usize = 64;
 const READER_JOIN_TIMEOUT: Duration = Duration::from_millis(200);
 const GRACEFUL_QUIT_WAIT: Duration = Duration::from_millis(50);
 const STARTUP_TIMEOUT_MS: u64 = 10_000;
@@ -125,7 +129,9 @@ fn start_process(
         return Err(io_error("failed to capture stdin"));
     };
 
-    let (tx, rx) = unbounded::<ReaderMsg>();
+    // Bound unread native output so a busy interpreter cannot outrun the NIF
+    // caller and allocate an unbounded queue between scheduler turns.
+    let (tx, rx) = bounded::<ReaderMsg>(READER_CHANNEL_CAPACITY);
     let output_handle = spawn_reader(Box::new(output_reader), tx, "output");
 
     let process = MaudeProcess {
@@ -136,7 +142,8 @@ fn start_process(
         pending: Mutex::new(Vec::new()),
     };
 
-    if let Err(error) = read_until_prompt(&process, startup_timeout_ms) {
+    if let Err(error) = read_until_prompt(&process, startup_timeout_ms, DEFAULT_MAX_RESPONSE_BYTES)
+    {
         shutdown_process(&process);
         return Err(error);
     }
@@ -163,7 +170,30 @@ fn execute_with_timeout(
             .map_err(|e| io_error(format!("flush failed: {e}")))?;
     }
 
-    read_until_prompt(&process, timeout_ms)
+    read_until_prompt(&process, timeout_ms, DEFAULT_MAX_RESPONSE_BYTES)
+}
+
+/// Execute with an explicit response-size ceiling supplied by the Elixir
+/// worker. The old three-argument NIF remains for compatibility with direct
+/// tests and defaults to the documented 16 MiB limit.
+#[rustler::nif(schedule = "DirtyIo")]
+fn execute_with_limit(
+    process: ResourceArc<MaudeProcess>,
+    command: String,
+    timeout_ms: u64,
+    max_response_bytes: u64,
+) -> NifResult<String> {
+    {
+        let mut stdin = process.stdin.lock().map_err(|_| poison_error("stdin"))?;
+        writeln!(stdin, "{command}").map_err(|e| io_error(format!("write failed: {e}")))?;
+        stdin
+            .flush()
+            .map_err(|e| io_error(format!("flush failed: {e}")))?;
+    }
+
+    let limit = usize::try_from(max_response_bytes)
+        .map_err(|_| response_too_large_error(DEFAULT_MAX_RESPONSE_BYTES))?;
+    read_until_prompt(&process, timeout_ms, limit)
 }
 
 /// Stop the subprocess.
@@ -236,8 +266,12 @@ fn spawn_reader(
     })
 }
 
-/// Drain stdout chunks into a rolling buffer until `"Maude>"` is found.
-fn read_until_prompt(process: &MaudeProcess, timeout_ms: u64) -> NifResult<String> {
+/// Drain stdout chunks until a line-boundary prompt is found.
+fn read_until_prompt(
+    process: &MaudeProcess,
+    timeout_ms: u64,
+    max_response_bytes: usize,
+) -> NifResult<String> {
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let mut buf = process
         .pending
@@ -246,6 +280,27 @@ fn read_until_prompt(process: &MaudeProcess, timeout_ms: u64) -> NifResult<Strin
         .split_off(0);
 
     loop {
+        if let Some(idx) = find_prompt_boundary(&buf) {
+            if idx > max_response_bytes {
+                return Err(response_too_large_error(max_response_bytes));
+            }
+
+            let prefix = &buf[..idx];
+            let text = String::from_utf8_lossy(prefix).trim().to_string();
+
+            let remainder = buf[(idx + PROMPT.len())..].to_vec();
+            *process
+                .pending
+                .lock()
+                .map_err(|_| poison_error("pending"))? = remainder;
+
+            return Ok(text);
+        }
+
+        if buf.len() > max_response_bytes.saturating_add(PROMPT.len()) {
+            return Err(response_too_large_error(max_response_bytes));
+        }
+
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err(timeout_error(timeout_ms));
@@ -254,19 +309,6 @@ fn read_until_prompt(process: &MaudeProcess, timeout_ms: u64) -> NifResult<Strin
         match process.rx.recv_timeout(remaining) {
             Ok(ReaderMsg::Data(chunk)) => {
                 buf.extend_from_slice(&chunk);
-
-                if let Some(idx) = find_subslice(&buf, PROMPT) {
-                    let prefix = &buf[..idx];
-                    let text = String::from_utf8_lossy(prefix).trim().to_string();
-
-                    let remainder = buf[(idx + PROMPT.len())..].to_vec();
-                    *process
-                        .pending
-                        .lock()
-                        .map_err(|_| poison_error("pending"))? = remainder;
-
-                    return Ok(text);
-                }
             }
             Ok(ReaderMsg::Eof) => return Err(eof_error()),
             Ok(ReaderMsg::Io(msg)) => return Err(io_error(msg)),
@@ -302,10 +344,14 @@ fn terminate_child(child: &mut Child) {
     wait_with_timeout(child, READER_JOIN_TIMEOUT);
 }
 
-fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+fn find_prompt_boundary(haystack: &[u8]) -> Option<usize> {
     haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
+        .windows(PROMPT.len())
+        .enumerate()
+        .find_map(|(idx, window)| {
+            let at_line_start = idx == 0 || matches!(haystack[idx - 1], b'\n' | b'\r');
+            (window == PROMPT && at_line_start).then_some(idx)
+        })
 }
 
 fn join_with_timeout(handle: JoinHandle<()>, timeout: Duration) {
@@ -328,6 +374,7 @@ fn join_with_timeout(handle: JoinHandle<()>, timeout: Duration) {
 // `Error::Term` wrapping), where `term` is one of:
 //
 //   * `{:timeout, ms}`
+//   * `{:response_too_large, max_response_bytes}`
 //   * `:eof`
 //   * `{:io_error, msg}`
 //   * `{:lock_poisoned, what}`
@@ -336,6 +383,13 @@ fn join_with_timeout(handle: JoinHandle<()>, timeout: Duration) {
 
 fn timeout_error(ms: u64) -> Error {
     Error::Term(Box::new((atoms::timeout(), ms)))
+}
+
+fn response_too_large_error(max_response_bytes: usize) -> Error {
+    Error::Term(Box::new((
+        atoms::response_too_large(),
+        max_response_bytes as u64,
+    )))
 }
 
 fn eof_error() -> Error {
@@ -352,19 +406,20 @@ fn poison_error(what: &'static str) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use super::find_subslice;
+    use super::find_prompt_boundary;
 
     #[test]
-    fn finds_prompt_at_each_boundary() {
-        assert_eq!(find_subslice(b"Maude>", b"Maude>"), Some(0));
-        assert_eq!(find_subslice(b"result\nMaude>", b"Maude>"), Some(7));
-        assert_eq!(find_subslice(b"Maude>trailing", b"Maude>"), Some(0));
+    fn finds_complete_prompt_at_line_boundaries() {
+        assert_eq!(find_prompt_boundary(b"Maude> "), Some(0));
+        assert_eq!(find_prompt_boundary(b"result\nMaude> "), Some(7));
+        assert_eq!(find_prompt_boundary(b"result\rMaude> "), Some(7));
     }
 
     #[test]
-    fn returns_none_for_partial_or_missing_prompt() {
-        assert_eq!(find_subslice(b"Maude", b"Maude>"), None);
-        assert_eq!(find_subslice(b"result only", b"Maude>"), None);
+    fn ignores_partial_and_prompt_like_payload_text() {
+        assert_eq!(find_prompt_boundary(b"Maude>"), None);
+        assert_eq!(find_prompt_boundary(b"payload Maude> marker"), None);
+        assert_eq!(find_prompt_boundary(b"result only"), None);
     }
 }
 

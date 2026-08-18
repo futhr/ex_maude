@@ -33,6 +33,7 @@ sobelow_command = [
     {:doctor, command: "mix doctor --summary --raise"},
     {:ex_doc, command: ["sh", "-c", "mix docs --warnings-as-errors --formatter html >/dev/null"]},
     {:ex_unit, command: "mix test --cover"},
+    {:test_nif, command: "mix test.nif"},
     {:test_cnode, command: "mix test.cnode", enabled: File.exists?("priv/maude_bridge")}
   ]
 ]

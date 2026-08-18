@@ -115,6 +115,9 @@ defmodule ExMaude.Backend.NIFTest do
         assert catch_error(NIF.Native.execute_with_timeout(make_ref(), "cmd", 10)) ==
                  :nif_not_loaded
 
+        assert catch_error(NIF.Native.execute_with_limit(make_ref(), "cmd", 10, 1024)) ==
+                 :nif_not_loaded
+
         assert catch_error(NIF.Native.stop(make_ref())) == :nif_not_loaded
         assert catch_error(NIF.Native.alive(make_ref())) == :nif_not_loaded
         assert catch_error(NIF.Native.child_pid(make_ref())) == :nif_not_loaded

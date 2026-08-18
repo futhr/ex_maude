@@ -22,6 +22,7 @@ defmodule ExMaude.Backend.Port do
 
       config :ex_maude,
         backend: :port,
+        max_response_bytes: 16_777_216,
         use_pty: false  # Set to true to wrap Maude in a PTY (script/unbuffer)
 
   ## Timeouts and worker lifecycle
@@ -42,8 +43,11 @@ defmodule ExMaude.Backend.Port do
   alias ExMaude.{Binary, Command, Config, Error, Preloads, Telemetry}
 
   @default_timeout_ms 5_000
+  @default_max_response_bytes 16 * 1024 * 1024
   @startup_timeout_ms 10_000
-  @prompt_marker "Maude>"
+  @prompt_marker "Maude> "
+  @prompt_marker_size byte_size(@prompt_marker)
+  @maximum_response_bytes 2_147_483_000
   @maude_args ["-no-banner", "-no-wrap", "-no-advise"]
 
   @typedoc """
@@ -65,13 +69,23 @@ defmodule ExMaude.Backend.Port do
   """
   @type t :: %__MODULE__{
           port: port() | nil,
-          buffer: String.t() | nil,
+          buffer: [binary()],
+          buffer_size: non_neg_integer(),
+          scan_tail: binary(),
           pending: pending() | nil,
           maude_path: String.t() | nil,
-          os_pid: non_neg_integer() | nil
+          os_pid: non_neg_integer() | nil,
+          max_response_bytes: pos_integer()
         }
 
-  defstruct [:port, :buffer, :pending, :maude_path, :os_pid]
+  defstruct port: nil,
+            buffer: [],
+            buffer_size: 0,
+            scan_tail: "",
+            pending: nil,
+            maude_path: nil,
+            os_pid: nil,
+            max_response_bytes: @default_max_response_bytes
 
   # Client API
 
@@ -125,15 +139,15 @@ defmodule ExMaude.Backend.Port do
     pool = Keyword.get(opts, :pool, :ex_maude_pool)
     preload_modules = Preloads.for_pool(pool, opts[:preload_modules])
     startup_timeout = opts[:startup_timeout_ms] || @startup_timeout_ms
+    max_response_bytes = response_limit(opts[:max_response_bytes])
 
     case start_maude_port(maude_path, opts) do
       {:ok, port} ->
         state = %__MODULE__{
           port: port,
-          buffer: "",
-          pending: nil,
           maude_path: maude_path,
-          os_pid: port_os_pid(port)
+          os_pid: port_os_pid(port),
+          max_response_bytes: max_response_bytes
         }
 
         case become_ready(state, preload_modules, startup_timeout) do
@@ -163,7 +177,7 @@ defmodule ExMaude.Backend.Port do
     Telemetry.command_started(:port, command)
 
     pending = %{from: from, ref: ref, timer: timer, timeout: timeout}
-    {:noreply, %{state | pending: pending, buffer: ""}}
+    {:noreply, reset_response(%{state | pending: pending})}
   end
 
   def handle_call({:execute, _, _}, _, state) do
@@ -179,24 +193,37 @@ defmodule ExMaude.Backend.Port do
 
   @impl GenServer
   def handle_info({port, {:data, data}}, %{port: port} = state) do
-    buffer = state.buffer <> to_string(data)
+    chunk = IO.iodata_to_binary(data)
+    chunks = [chunk | state.buffer]
+    buffer_size = state.buffer_size + byte_size(chunk)
 
-    if response_complete?(buffer) do
-      response = parse_response(buffer)
+    case prompt_offset(state.scan_tail, chunk, state.buffer_size) do
+      {:ok, offset} when offset <= state.max_response_bytes ->
+        raw = assemble_response(chunks, offset)
+        response = parse_response(raw)
+        reply_to_pending(state.pending, response)
 
-      if state.pending do
-        Process.cancel_timer(state.pending.timer)
-        GenServer.reply(state.pending.from, response)
-      end
+        emit_telemetry(:command_complete, %{
+          success: match?({:ok, _}, response),
+          response_size: byte_size(raw)
+        })
 
-      emit_telemetry(:command_complete, %{
-        success: match?({:ok, _}, response),
-        response_size: byte_size(buffer)
-      })
+        {:noreply, reset_response(%{state | pending: nil})}
 
-      {:noreply, %{state | pending: nil, buffer: ""}}
-    else
-      {:noreply, %{state | buffer: buffer}}
+      {:ok, _} ->
+        response_too_large(%{state | buffer_size: buffer_size})
+
+      :error when buffer_size > state.max_response_bytes + @prompt_marker_size ->
+        response_too_large(%{state | buffer_size: buffer_size})
+
+      :error ->
+        {:noreply,
+         %{
+           state
+           | buffer: chunks,
+             buffer_size: buffer_size,
+             scan_tail: next_scan_tail(state.scan_tail, chunk)
+         }}
     end
   end
 
@@ -215,7 +242,7 @@ defmodule ExMaude.Backend.Port do
     GenServer.reply(pending.from, {:error, Error.timeout(pending.timeout)})
 
     emit_telemetry(:timeout, %{
-      buffer_size: byte_size(state.buffer),
+      buffer_size: state.buffer_size,
       timeout_ms: pending.timeout
     })
 
@@ -369,21 +396,36 @@ defmodule ExMaude.Backend.Port do
   end
 
   defp wait_for_ready(state, startup_timeout) do
+    deadline = System.monotonic_time(:millisecond) + startup_timeout
+    wait_for_ready_until(state, "", deadline)
+  end
+
+  defp wait_for_ready_until(state, buffer, deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
     receive do
       {port, {:data, data}} when port == state.port ->
-        buffer = state.buffer <> to_string(data)
+        buffer = buffer <> to_string(data)
 
-        if String.contains?(buffer, @prompt_marker) do
-          {:ok, %{state | buffer: ""}}
-        else
-          wait_for_ready(%{state | buffer: buffer}, startup_timeout)
+        case prompt_offset("", buffer, 0) do
+          {:ok, offset} when offset <= state.max_response_bytes ->
+            {:ok, reset_response(state)}
+
+          {:ok, _} ->
+            {:error, :response_too_large}
+
+          :error when byte_size(buffer) > state.max_response_bytes + @prompt_marker_size ->
+            {:error, :response_too_large}
+
+          :error ->
+            wait_for_ready_until(state, buffer, deadline)
         end
 
       {port, {:exit_status, status}} when port == state.port ->
         {:error, {:exited_during_startup, status}}
     after
-      startup_timeout ->
-        Logger.error("Timeout waiting for Maude prompt (#{startup_timeout}ms)")
+      remaining ->
+        Logger.error("Timeout waiting for Maude prompt")
         {:error, :no_prompt}
     end
   end
@@ -404,14 +446,82 @@ defmodule ExMaude.Backend.Port do
     end
   end
 
-  defp response_complete?(buffer), do: String.contains?(buffer, @prompt_marker)
+  defp parse_response(buffer), do: ExMaude.Parser.parse_backend_response(buffer)
 
-  defp parse_response(buffer) do
-    buffer
-    |> String.split(@prompt_marker)
-    |> List.first()
-    |> ExMaude.Parser.parse_backend_response()
+  defp assemble_response(chunks, response_size) do
+    chunks
+    |> Enum.reverse()
+    |> IO.iodata_to_binary()
+    |> binary_part(0, response_size)
   end
+
+  defp response_limit(bytes)
+       when is_integer(bytes) and bytes in 1..@maximum_response_bytes,
+       do: bytes
+
+  defp response_limit(_), do: Config.max_response_bytes(@default_max_response_bytes)
+
+  defp response_too_large(state) do
+    error = Error.response_too_large(state.max_response_bytes)
+    reply_to_pending(state.pending, {:error, error})
+
+    emit_telemetry(:command_complete, %{
+      success: false,
+      response_size: state.buffer_size,
+      max_response_bytes: state.max_response_bytes
+    })
+
+    {:stop, {:shutdown, :response_too_large}, reset_response(%{state | pending: nil})}
+  end
+
+  defp reply_to_pending(nil, _), do: :ok
+
+  defp reply_to_pending(pending, response) do
+    Process.cancel_timer(pending.timer)
+    GenServer.reply(pending.from, response)
+  end
+
+  defp reset_response(state) do
+    %{state | buffer: [], buffer_size: 0, scan_tail: ""}
+  end
+
+  defp next_scan_tail(tail, chunk) do
+    combined = tail <> chunk
+    start = max(byte_size(combined) - @prompt_marker_size, 0)
+    binary_part(combined, start, byte_size(combined) - start)
+  end
+
+  defp prompt_offset(tail, chunk, preceding_size) do
+    candidate = tail <> chunk
+    base_offset = preceding_size - byte_size(tail)
+    find_prompt(candidate, base_offset, 0)
+  end
+
+  defp find_prompt(candidate, base_offset, search_start) do
+    scope_size = byte_size(candidate) - search_start
+
+    case :binary.match(candidate, @prompt_marker, scope: {search_start, scope_size}) do
+      {offset, _} ->
+        absolute_offset = base_offset + offset
+
+        if prompt_boundary?(candidate, offset, absolute_offset) do
+          {:ok, absolute_offset}
+        else
+          find_prompt(candidate, base_offset, offset + 1)
+        end
+
+      :nomatch ->
+        :error
+    end
+  end
+
+  defp prompt_boundary?(_, _, 0), do: true
+
+  defp prompt_boundary?(candidate, offset, _) when offset > 0 do
+    :binary.at(candidate, offset - 1) in [?\n, ?\r]
+  end
+
+  defp prompt_boundary?(_, _, _), do: false
 
   defp port_alive?(port), do: Port.info(port) != nil
 
