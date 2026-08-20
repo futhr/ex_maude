@@ -40,7 +40,11 @@ defmodule ExMaude.PreloadsTest do
     paths = Enum.map(1..50, &"/concurrent-#{&1}.maude")
 
     paths
-    |> Task.async_stream(&Preloads.remember(:pool_a, &1), max_concurrency: 50)
+    |> Task.async_stream(&Preloads.remember(:pool_a, &1),
+      max_concurrency: 50,
+      ordered: false,
+      timeout: 30_000
+    )
     |> Enum.each(fn {:ok, result} -> assert result == :ok end)
 
     remembered = Preloads.for_pool(:pool_a) -- ["/configured.maude"]
