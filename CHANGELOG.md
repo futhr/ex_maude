@@ -5,6 +5,17 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.4.1](https://github.com/futhr/ex_maude/compare/v0.4.0...v0.4.1) (2026-08-24)
+
+
+
+
+### Bug Fixes:
+
+* close concurrency and release gate gaps by Tobias Bohwalli
+
+* ci: extract the release version with valid sed escaping by futhr
+
 ## [v0.4.0](https://github.com/futhr/ex_maude/compare/v0.3.0...v0.4.0) (2026-08-18)
 ### Breaking Changes:
 
