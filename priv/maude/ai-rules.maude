@@ -65,14 +65,7 @@ fmod JURISDICTION is
 
   *** Equality
   op eqJurisdiction : Jurisdiction Jurisdiction -> Bool .
-  eq eqJurisdiction(eu, eu) = true .
-  eq eqJurisdiction(us, us) = true .
-  eq eqJurisdiction(cn, cn) = true .
-  eq eqJurisdiction(ch, ch) = true .
-  eq eqJurisdiction(uk, uk) = true .
-  eq eqJurisdiction(ca, ca) = true .
-  eq eqJurisdiction(au, au) = true .
-  eq eqJurisdiction(other, other) = true .
+  eq eqJurisdiction(J:Jurisdiction, J:Jurisdiction) = true .
   eq eqJurisdiction(J1:Jurisdiction, J2:Jurisdiction) = false [owise] .
 
   *** A jurisdiction set with closed-set membership semantics
