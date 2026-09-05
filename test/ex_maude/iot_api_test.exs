@@ -6,7 +6,7 @@ defmodule ExMaude.IoTAPITest do
   alias ExMaude.Error
   alias ExMaude.IoT
 
-  @fake_maude Path.expand("../support/fake_maude.sh", __DIR__)
+  @fake_maude Path.expand("../support/fake_conflicts.sh", __DIR__)
   @fake_pool :iot_api_test_pool
   @invalid_rules [%{}]
   @valid_rules [
