@@ -42,7 +42,9 @@ defmodule ExMaude.Pool do
   - `[:ex_maude, :pool, :checkout, :stop]` - Emitted when checkout completes
 
   Measurements include `:duration` in native time units.
-  Metadata includes `:result` (`:ok` or `:error`) and `:backend`.
+  Metadata includes `:pool` and `:backend` (`:unknown` until a worker is acquired).
+  The stop event reports the selected worker backend and `:result` (`:ok` or `:error`),
+  and is emitted before the transaction callback runs.
 
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
@@ -128,29 +130,28 @@ defmodule ExMaude.Pool do
 
     start_time = System.monotonic_time()
 
-    backend = config_backend()
-
     :telemetry.execute(
       [:ex_maude, :pool, :checkout, :start],
       %{system_time: System.system_time()},
-      %{backend: backend}
+      %{backend: :unknown, pool: pool}
     )
 
-    {result_atom, result} =
-      try do
-        value = :poolboy.transaction(pool, fn worker -> fun.(worker) end, timeout)
-        {:ok, value}
-      catch
-        :exit, reason -> {:error, {:error, Error.pool_error(reason)}}
-      end
+    case checkout(pool: pool, timeout: timeout) do
+      worker when is_pid(worker) ->
+        checkout_stopped(start_time, pool, :ok, worker_backend(worker))
 
-    :telemetry.execute(
-      [:ex_maude, :pool, :checkout, :stop],
-      %{duration: System.monotonic_time() - start_time},
-      %{result: result_atom, backend: backend}
-    )
+        try do
+          fun.(worker)
+        catch
+          :exit, reason -> {:error, Error.pool_error(reason)}
+        after
+          checkin(worker, pool: pool)
+        end
 
-    result
+      error ->
+        checkout_stopped(start_time, pool, :error, :unknown)
+        error
+    end
   end
 
   @doc """
@@ -285,8 +286,29 @@ defmodule ExMaude.Pool do
     Application.get_env(:ex_maude, :pool_max_overflow, @default_max_overflow)
   end
 
-  defp config_backend do
-    Application.get_env(:ex_maude, :backend, :port)
+  defp checkout_stopped(start_time, pool, result, backend) do
+    :telemetry.execute(
+      [:ex_maude, :pool, :checkout, :stop],
+      %{duration: System.monotonic_time() - start_time},
+      %{result: result, backend: backend, pool: pool}
+    )
+  end
+
+  defp worker_backend(worker) do
+    with {:dictionary, dictionary} <- Process.info(worker, :dictionary),
+         {module, :init, 1} <- Keyword.get(dictionary, :"$initial_call") do
+      Map.get(
+        %{
+          ExMaude.Backend.Port => :port,
+          ExMaude.Backend.CNode => :cnode,
+          ExMaude.Backend.NIF => :nif
+        },
+        module,
+        module
+      )
+    else
+      _ -> :unknown
+    end
   end
 
   # Poolboy does not expose worker enumeration as a public function, but its

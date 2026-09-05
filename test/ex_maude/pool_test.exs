@@ -105,6 +105,7 @@ defmodule ExMaude.PoolTest do
     end
   end
 
+  @tag capture_log: true
   test "broadcast callback failures cannot take down the caller" do
     config = [
       name: {:local, :broadcast_failure_pool},
@@ -125,6 +126,40 @@ defmodule ExMaude.PoolTest do
     end
 
     assert {:ok, [:ok]} = Pool.broadcast(fn _ -> :ok end, pool: :broadcast_failure_pool)
+  end
+
+  test "checkout telemetry completes before executing the transaction" do
+    name = :checkout_telemetry_pool
+
+    start_supervised!(
+      Pool.child_spec(
+        name: name,
+        pool_size: 1,
+        pool_max_overflow: 0,
+        maude_path: Path.expand("../support/fake_maude.sh", __DIR__)
+      )
+    )
+
+    handler = "checkout-order-#{System.unique_integer([:positive])}"
+    parent = self()
+
+    :telemetry.attach(
+      handler,
+      [:ex_maude, :pool, :checkout, :stop],
+      fn _, _, metadata, _ -> send(parent, {:checked_out, metadata}) end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    assert :ok =
+             Pool.transaction(
+               fn _ ->
+                 assert_receive {:checked_out, %{backend: :port, pool: ^name, result: :ok}}
+                 :ok
+               end,
+               pool: name
+             )
   end
 
   describe "checkout/1" do
