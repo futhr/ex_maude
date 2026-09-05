@@ -21,5 +21,5 @@ Enum.each(modules, &Code.ensure_loaded!/1)
 
 # Integration remains opt-in even when Maude happens to be installed on the
 # developer's machine. `mix test --include integration` enables it; MaudeCase
-# then skips it cleanly if no executable is available.
+# requires a working executable for tests that declare Maude availability.
 ExUnit.start(exclude: [:integration, :network, :cnode, :nif])

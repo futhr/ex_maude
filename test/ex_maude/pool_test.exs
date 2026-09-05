@@ -61,25 +61,6 @@ defmodule ExMaude.PoolTest do
     end
   end
 
-  describe "transaction/2" do
-    test "function type requirement" do
-      # Transaction requires a 1-arity function
-      fun = fn worker -> {:ok, worker} end
-      assert is_function(fun, 1)
-    end
-
-    test "timeout option is accepted" do
-      opts = [timeout: 10_000]
-      assert Keyword.get(opts, :timeout) == 10_000
-    end
-
-    test "default timeout is 5000ms" do
-      # Verified from module constant
-      default_timeout = 5_000
-      assert default_timeout == 5_000
-    end
-  end
-
   describe "broadcast/1" do
     test "returns a structured error when the pool is not running" do
       pool = :missing_ex_maude_pool
@@ -166,21 +147,6 @@ defmodule ExMaude.PoolTest do
     test "returns a structured error when the pool is not running" do
       assert {:error, %Error{type: :pool_error}} =
                Pool.checkout(pool: :missing_checkout_pool, timeout: 10)
-    end
-
-    test "accepts timeout option" do
-      opts = [timeout: 10_000]
-      assert Keyword.get(opts, :timeout) == 10_000
-    end
-
-    test "accepts block option" do
-      opts = [block: false]
-      assert Keyword.get(opts, :block) == false
-    end
-
-    test "default block is true" do
-      opts = []
-      assert Keyword.get(opts, :block, true) == true
     end
   end
 
@@ -414,42 +380,6 @@ defmodule ExMaude.PoolTest do
       error = Error.pool_error({:exit, {:shutdown, :timeout}})
       assert error.type == :pool_error
       assert String.contains?(error.message, "exited")
-    end
-  end
-
-  describe "transaction/2 error handling" do
-    test "function must be 1-arity" do
-      fun = fn _ -> :ok end
-      assert is_function(fun, 1)
-    end
-
-    test "timeout is passed through" do
-      opts = [timeout: 15_000]
-      assert Keyword.get(opts, :timeout) == 15_000
-    end
-  end
-
-  describe "broadcast/1 behavior" do
-    test "returns list of results" do
-      # Broadcast should return a list
-      fun = fn _ -> :result end
-      assert is_function(fun, 1)
-    end
-  end
-
-  describe "checkout/1 options" do
-    test "block option controls blocking behavior" do
-      # block: true waits for worker, block: false returns immediately
-      opts_blocking = [block: true]
-      opts_nonblocking = [block: false]
-
-      assert Keyword.get(opts_blocking, :block) == true
-      assert Keyword.get(opts_nonblocking, :block) == false
-    end
-
-    test "timeout option sets checkout timeout" do
-      opts = [timeout: 1000]
-      assert Keyword.get(opts, :timeout) == 1000
     end
   end
 

@@ -348,24 +348,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
     end
   end
 
-  describe "error handling" do
-    test "provides helpful message for unsupported platform" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "No Maude binary available for platform"
-      assert source =~ "build Maude from source"
-    end
-  end
-
-  describe "macOS security" do
-    @tag :integration
-    test "provides quarantine removal hint on macOS" do
-      if :os.type() == {:unix, :darwin} do
-        source = File.read!("lib/mix/tasks/maude.install.ex")
-        assert source =~ "xattr -d com.apple.quarantine"
-      end
-    end
-  end
-
   describe "path validation" do
     test "accepts a regular archive", %{tmp_dir: tmp_dir} do
       archive = create_archive!(tmp_dir, "valid.zip", [{~c"maude", "binary"}])
@@ -387,98 +369,12 @@ defmodule Mix.Tasks.Maude.InstallTest do
         Mix.Tasks.Maude.Install.validate_archive(archive)
       end
     end
-
-    test "file size limit is configured" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "@max_download_size"
-      assert source =~ "100 * 1024 * 1024"
-      assert source =~ "@max_extracted_size"
-      assert source =~ "@max_archive_entries"
-    end
-  end
-
-  describe "platform patterns" do
-    test "supports darwin-arm64" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "darwin-arm64"
-      assert source =~ ~r/macos-arm64/i
-    end
-
-    test "supports darwin-x86_64" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "darwin-x86_64"
-      assert source =~ ~r/macos-x86_64|darwin64/i
-    end
-
-    test "supports linux-x86_64" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "linux-x86_64"
-      assert source =~ ~r/linux-x86_64|linux64/i
-    end
-  end
-
-  describe "version tag normalization" do
-    test "normalization rules are documented" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      # Handles "3.5.1" -> "Maude3.5.1"
-      assert source =~ "normalize_version_tag"
-      assert source =~ "Maude"
-    end
-  end
-
-  describe "download methods" do
-    test "curl download with max-filesize" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "download_with_curl"
-      assert source =~ "--max-filesize"
-    end
-  end
-
-  describe "extraction methods" do
-    test "uses the Erlang extractor after validating archive entries" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "extract_with_erlang"
-      refute source =~ "extract_with_unzip"
-    end
-
-    test "binary renaming logic exists" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "rename_maude_binary"
-      assert source =~ "maude.darwin64" or source =~ "Maude"
-    end
   end
 
   defp create_archive!(directory, name, entries) do
     path = Path.join(directory, name)
     {:ok, _} = :zip.create(String.to_charlist(path), entries)
     path
-  end
-
-  describe "ssl configuration" do
-    test "uses secure ssl options" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "ssl_opts"
-      assert source =~ "verify: :verify_peer"
-      assert source =~ "cacerts"
-    end
-  end
-
-  describe "GitHub API" do
-    test "uses correct API endpoint" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "api.github.com/repos/maude-lang/Maude/releases"
-    end
-
-    test "sets proper user agent" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "ExMaude-Installer"
-    end
-
-    test "handles rate limiting" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "403"
-      assert source =~ "rate limit"
-    end
   end
 
   describe "module attributes" do
@@ -490,68 +386,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
     test "module is a Mix.Task" do
       behaviours = Mix.Tasks.Maude.Install.__info__(:attributes)[:behaviour] || []
       assert Mix.Task in behaviours
-    end
-  end
-
-  describe "timeout configuration" do
-    test "download timeout is configured" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "@download_timeout"
-      assert source =~ "120_000"
-    end
-
-    test "api timeout is configured" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "@api_timeout"
-      assert source =~ "30_000"
-    end
-  end
-
-  describe "error messages" do
-    test "provides installation path in success message" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "Maude installed successfully"
-    end
-
-    test "provides retry suggestion on failure" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "try again" or source =~ "Try again"
-    end
-  end
-
-  describe "default installation path" do
-    test "defaults to priv/maude/bin" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "priv/maude/bin"
-    end
-  end
-
-  describe "binary naming" do
-    test "handles multiple binary naming conventions" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "maude.darwin64" or source =~ "possible_names"
-      assert source =~ "maude.linux64" or source =~ "possible_names"
-    end
-  end
-
-  describe "post-install verification" do
-    test "verifies installation after download" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "verify_installation"
-      assert source =~ "Verifying"
-    end
-
-    test "makes binary executable" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "chmod" or source =~ "0o755"
-    end
-  end
-
-  describe "configuration suggestion" do
-    test "provides config example after installation" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "config :ex_maude"
-      assert source =~ "maude_path"
     end
   end
 end

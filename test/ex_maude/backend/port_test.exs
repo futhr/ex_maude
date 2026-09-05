@@ -29,16 +29,6 @@ defmodule ExMaude.Backend.PortTest do
   end
 
   describe "start_link/1" do
-    test "accepts maude_path option" do
-      opts = [maude_path: "/path/to/maude"]
-      assert Keyword.get(opts, :maude_path) == "/path/to/maude"
-    end
-
-    test "accepts preload_modules option" do
-      opts = [preload_modules: ["/path/to/module.maude"]]
-      assert Keyword.get(opts, :preload_modules) == ["/path/to/module.maude"]
-    end
-
     test "fails with non-existent maude path" do
       Process.flag(:trap_exit, true)
 

@@ -162,6 +162,10 @@ defmodule ExMaude.MixProject do
         "usage-rules.md": [title: "Usage Rules"],
         "THIRD_PARTY_NOTICES.md": [title: "Third-party Notices"],
         "bench/output/benchmarks.md": [title: "Benchmark Results"],
+        "bench/output/parser.md": [title: "Parser Benchmarks"],
+        "bench/output/reductions.md": [title: "Reduction Benchmarks"],
+        "bench/output/pool.md": [title: "Pool Benchmarks"],
+        "bench/output/concurrency.md": [title: "Concurrency Benchmarks"],
         LICENSE: [title: "License"]
       ],
       groups_for_extras: [
@@ -233,8 +237,7 @@ defmodule ExMaude.MixProject do
       # Start distribution so the C-Node backend can be included
       "bench.backends.all": ["cmd ./bin/bench_backends_all.sh"],
       "bench.all": ["bench", "bench.backends"],
-      # C-Node specific tests (requires distribution)
-      # C-Node integration tests
+      # C-Node integration tests require distribution.
       "test.cnode": ["cmd ./bin/test_cnode.sh"],
 
       # Release

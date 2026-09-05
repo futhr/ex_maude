@@ -74,7 +74,7 @@ end
 # =>*  zero or more steps (default)
 # =>!  to normal form only
 
-# BAD: Unbounded search can hang
+# Defaults: at most one solution, depth 100, and the configured command timeout
 {:ok, solutions} = ExMaude.search("MY-MOD", "init", "goal")
 ```
 
@@ -101,6 +101,11 @@ endfm
 # GOOD: Use bundled IoT module
 :ok = ExMaude.load_file(ExMaude.iot_rules_path())
 ```
+
+File loads retain their original paths so relative imports resolve correctly.
+Keep these files available for replacement workers. String modules use private
+cache files that are removed when the owning pool exits. Failed preloads prevent
+a worker from starting; correct the file before restarting the pool.
 
 ## IoT Conflict Detection
 

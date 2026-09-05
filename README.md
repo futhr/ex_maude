@@ -45,13 +45,13 @@ For ExMaude's IoT use case, Maude provides:
   potentially model-check temporal properties
 - **Executable specifications** - Run and analyze the same formal model
 
-For AI rules, ExMaude provides a deterministic safety envelope around
-probabilistic AI behavior. An AI model may propose different actions, while
+For AI rules, ExMaude checks structured policies against its explicit Maude model. An AI model may propose different actions, while
 Maude checks each structured rule or action for capability, authority,
 sovereignty, approval, and cross-rule conflicts. It can explore nondeterministic
 execution paths—what *could* happen—without estimating how probable each path
 is. Probability and model-confidence scoring remain outside the current AI-rule
-module.
+module. Verification results depend on the predicates and transitions represented
+in that model.
 
 You could implement the conflict detector in native Erlang, but you would also
 need to implement—and trust—your own term-rewriting engine, canonicalization

@@ -43,7 +43,7 @@ pool_size = ExMaude.Pool.status().size
 
 1..pool_size
 |> Task.async_stream(fn _ -> ExMaude.reduce("NAT", "1 + 1") end)
-|> Stream.run()
+|> Enum.each(fn {:ok, {:ok, _}} -> :ok end)
 
 ExMaude.Pool.status()
 ```
@@ -82,18 +82,18 @@ start_time = System.monotonic_time(:millisecond)
 end_time = start_time + duration_ms
 
 count =
-  Stream.repeatedly(fn -> ExMaude.reduce("NAT", "1 + 1") end)
+  Stream.repeatedly(fn -> {:ok, _} = ExMaude.reduce("NAT", "1 + 1") end)
   |> Stream.take_while(fn _ -> System.monotonic_time(:millisecond) < end_time end)
   |> Enum.count()
 
 IO.puts("Throughput (single caller): #{count} operations/second")
 ```
 
-## Concurrency: the Right Way and the Wrong Way
+## Concurrency and Scheduling Overhead
 
-The pool holds `pool_size` persistent Maude processes, plus a bounded *overflow*: extra workers spawned under pressure and torn down afterwards. Spawning a Maude OS process costs milliseconds — orders of magnitude more than the microsecond operations above. That leads to a perhaps surprising result.
+The pool holds `pool_size` persistent Maude processes, plus a bounded *overflow*: extra workers spawned under pressure and torn down afterwards. Starting overflow workers adds process startup costs to the measured workload.
 
-**Wrong way** — fire 50 unbounded tasks at once. Every task beyond the pool size forces an overflow spawn or queues up, and the spawn cost swamps the work:
+**Uncapped concurrency** starts 50 tasks. Calls beyond the persistent pool size may start overflow workers or wait for a worker:
 
 ```elixir
 expressions = for i <- 1..50, do: "#{i} + #{i}"
@@ -103,24 +103,25 @@ expressions = for i <- 1..50, do: "#{i} + #{i}"
     expressions
     |> Enum.map(&Task.async(fn -> ExMaude.reduce("NAT", &1) end))
     |> Task.await_many()
+    |> Enum.each(fn {:ok, _} -> :ok end)
   end)
 
 IO.puts("50 ops, uncapped Task.async: #{div(uncapped_us, 1000)} ms")
 ```
 
-**Right way** — cap concurrency at the pool size, so every operation lands on an already-warm worker:
+**Capped concurrency** limits active tasks to the persistent pool size:
 
 ```elixir
 {capped_us, _} =
   :timer.tc(fn ->
     expressions
     |> Task.async_stream(&ExMaude.reduce("NAT", &1), max_concurrency: pool_size)
-    |> Stream.run()
+    |> Enum.each(fn {:ok, {:ok, _}} -> :ok end)
   end)
 
 {sequential_us, _} =
   :timer.tc(fn ->
-    Enum.each(expressions, &ExMaude.reduce("NAT", &1))
+    Enum.each(expressions, fn expression -> {:ok, _} = ExMaude.reduce("NAT", expression) end)
   end)
 
 IO.puts("50 ops, capped at pool size: #{div(capped_us, 1000)} ms")
@@ -204,7 +205,10 @@ end
 :ok
 ```
 
-Note the growth is **superlinear** — verification explores interactions, not rules in isolation. This is the number to watch when sizing a deployment: small rule sets verify in milliseconds (fine for a synchronous API call), while large ones may belong in a background job. Since checks for independent rule sets parallelize across the pool, total throughput scales with `pool_size` for these heavier calls — this is exactly the workload the pool exists for.
+Pairwise detection examines each unordered pair once: `n * (n - 1) / 2` pairs.
+Rule complexity, result size, and Maude matching costs also affect elapsed time.
+Measure representative policies when choosing request deadlines and pool size.
+Independent rule sets can use separate workers, subject to available CPU and memory.
 
 ## Pool Health
 
@@ -214,12 +218,12 @@ After all of the above, the pool should be back at rest — all workers availabl
 ExMaude.Pool.status()
 ```
 
-## Summary
+## Interpreting Results
 
-* **Latency**: a Maude round trip runs in the tens-to-hundreds of microseconds; the pipe round trip, not the computation, dominates for small terms.
-* **Concurrency**: cap fan-out at the pool size (`Task.async_stream` + `max_concurrency`). Uncapped fan-out triggers overflow-worker churn and is slower than sequential execution.
-* **Parallelism pays for heavy calls**: deep searches and conflict detection scale across pool workers; microsecond reduces do not.
-* **Verification cost grows superlinearly with rule count** — verify early, verify incrementally, and budget accordingly.
+* Use the measured latency for your workload when setting request deadlines.
+* Compare capped, uncapped, and sequential execution on your deployment hardware.
+* Benchmark heavy searches separately from short reductions.
+* Include rule count and rule complexity in conflict-detection measurements.
 
 ## Next Steps
 

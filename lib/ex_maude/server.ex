@@ -23,7 +23,7 @@ defmodule ExMaude.Server do
 
     * `:maude_path` - Path to Maude executable (default: resolved by `ExMaude.Binary`)
     * `:preload_modules` - List of Maude files to load on startup
-    * `:timeout` - Default command timeout in ms (default: 5000)
+    * `:max_response_bytes` - Maximum response size (default: 16 MiB)
 
   ## Application Configuration
 
@@ -52,7 +52,9 @@ defmodule ExMaude.Server do
 
   ## Options
 
-    * `:timeout` - Maximum time to wait in ms (default: 5000)
+    * `:timeout` - Command deadline in ms, including pipe writes and reads.
+      Defaults to application `:timeout`, or the backend default (Port: 5000;
+      C-Node and NIF: 30000).
   """
   @spec execute(GenServer.server(), String.t(), keyword()) ::
           {:ok, String.t()} | {:error, term()}

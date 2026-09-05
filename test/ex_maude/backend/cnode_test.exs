@@ -73,18 +73,6 @@ defmodule ExMaude.Backend.CNodeTest do
     end
   end
 
-  describe "start_link/1 options" do
-    test "accepts maude_path option" do
-      opts = [maude_path: "/path/to/maude"]
-      assert Keyword.get(opts, :maude_path) == "/path/to/maude"
-    end
-
-    test "accepts cookie option" do
-      opts = [cookie: "secret_cookie"]
-      assert Keyword.get(opts, :cookie) == "secret_cookie"
-    end
-  end
-
   describe "startup failure" do
     test "fails cleanly when prerequisites are missing" do
       original_flag = Process.flag(:trap_exit, true)

@@ -3,15 +3,12 @@ defmodule ExMaude.Bench.Backends do
   Compares the available ExMaude backends with the same Maude workload.
 
   The benchmark starts each backend once before measurement. Timed scenarios
-  include command transport, Maude evaluation, and response parsing, but not
+  include command transport, Maude evaluation, and result validation, but not
   worker startup. C-Node is included only when its bridge is available and the
   current VM is running as a distributed node.
   """
 
   alias ExMaude.Backend
-
-  @warmup 2
-  @time 10
 
   @spec run() :: :ok
   def run do
@@ -24,14 +21,18 @@ defmodule ExMaude.Bench.Backends do
 
     try do
       Benchee.run(scenarios(servers),
-        warmup: @warmup,
-        time: @time,
+        warmup: seconds("BENCH_WARMUP", 2),
+        time: seconds("BENCH_TIME", 10),
         parallel: 1,
-        memory_time: 2,
+        memory_time: seconds("BENCH_MEMORY_TIME", 2),
         formatters: [
           Benchee.Formatters.Console,
           {Benchee.Formatters.Markdown,
-           file: "bench/output/backend_comparison.md",
+           file:
+             Path.join(
+               System.get_env("BENCH_OUTPUT_DIR", "bench/output"),
+               "backend_comparison.md"
+             ),
            description: benchmark_description(servers)}
         ]
       )
@@ -73,19 +74,22 @@ defmodule ExMaude.Bench.Backends do
     Enum.reduce(servers, %{}, fn {name, module, server}, scenarios ->
       Map.merge(scenarios, %{
         "#{name}: one reduce" => fn ->
-          module.execute(server, "reduce in NAT : 1 + 1 .")
+          {:ok, "2"} = module.execute(server, "reduce in NAT : 1 + 1 .")
         end,
         "#{name}: 100 reduces" => fn ->
           for i <- 1..100 do
-            module.execute(server, "reduce in NAT : #{i} + #{i} .")
+            expected = Integer.to_string(i * 2)
+            {:ok, ^expected} = module.execute(server, "reduce in NAT : #{i} + #{i} .")
           end
         end,
         "#{name}: large term" => fn ->
-          module.execute(server, "reduce in NAT : #{large_term} .")
+          {:ok, "100"} = module.execute(server, "reduce in NAT : #{large_term} .")
         end
       })
     end)
   end
+
+  defp seconds(name, default), do: String.to_float(System.get_env(name, "#{default}.0"))
 
   defp build_large_term(1), do: "1"
   defp build_large_term(n), do: "(#{build_large_term(n - 1)} + 1)"
@@ -105,7 +109,7 @@ defmodule ExMaude.Bench.Backends do
     Backends measured: #{backends}.
 
     Workers are started and made ready before Benchee begins. Timed functions
-    include command transport, Maude evaluation, and response parsing; they do
+    include command transport, Maude evaluation, and result validation; they do
     not include worker or Maude startup. Results are specific to this machine
     and should not be treated as a portable ranking.
     """
