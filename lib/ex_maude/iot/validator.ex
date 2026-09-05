@@ -118,7 +118,7 @@ defmodule ExMaude.IoT.Validator do
       |> validate_required(rule, :actions, "actions")
       |> validate_string_field(rule, :id, "id")
       |> validate_string_field(rule, :thing_id, "thing_id")
-      |> validate_priority(rule[:priority])
+      |> validate_priority(Map.get(rule, :priority, 1))
       |> validate_trigger(rule[:trigger], 0)
       |> validate_actions(rule[:actions])
 
@@ -150,6 +150,8 @@ defmodule ExMaude.IoT.Validator do
             Map.put(acc, error_key(rule, idx), errs)
         end
       end)
+
+    errors = Map.merge(errors, ExMaude.Validation.duplicate_ids(rules), fn _, a, b -> a ++ b end)
 
     case errors do
       empty when map_size(empty) == 0 -> :ok
@@ -187,8 +189,6 @@ defmodule ExMaude.IoT.Validator do
     end
   end
 
-  defp validate_priority(errors, nil), do: errors
-
   defp validate_priority(errors, priority) when is_integer(priority) and priority >= 0,
     do: errors
 
@@ -200,7 +200,7 @@ defmodule ExMaude.IoT.Validator do
     ["trigger nesting exceeds maximum depth of #{@max_trigger_depth}" | errors]
   end
 
-  defp validate_trigger(errors, nil, _), do: errors
+  defp validate_trigger(errors, nil, 0), do: errors
 
   defp validate_trigger(errors, {:prop_eq, prop, value}, _) when is_binary(prop) do
     if valid_string?(prop),
@@ -298,8 +298,11 @@ defmodule ExMaude.IoT.Validator do
   end
 
   defp validate_value(errors, value)
-       when is_boolean(value) or is_number(value) or is_atom(value),
+       when is_boolean(value) or is_number(value),
        do: errors
+
+  defp validate_value(errors, value) when is_atom(value),
+    do: validate_value(errors, Atom.to_string(value))
 
   defp validate_value(errors, _),
     do: ["value must be a boolean, number, string, or atom" | errors]
@@ -311,5 +314,5 @@ defmodule ExMaude.IoT.Validator do
   defp error_key(_, index), do: "rule_#{index}"
 
   defp valid_nonempty_string?(value), do: valid_string?(value) and value != ""
-  defp valid_string?(value), do: String.valid?(value)
+  defp valid_string?(value), do: ExMaude.Validation.string?(value)
 end

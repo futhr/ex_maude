@@ -102,6 +102,9 @@ defmodule ExMaude.AI.Validator do
         end
       end)
 
+    failures =
+      Map.merge(failures, ExMaude.Validation.duplicate_ids(rules), fn _, a, b -> a ++ b end)
+
     if failures == %{}, do: :ok, else: {:error, failures}
   end
 
@@ -198,62 +201,71 @@ defmodule ExMaude.AI.Validator do
 
   @doc false
   @spec validate_predicate(term()) :: :ok | {:error, String.t()}
-  def validate_predicate({:always}), do: :ok
+  def validate_predicate(predicate), do: validate_predicate(predicate, 0)
 
-  def validate_predicate({prop_op, key, value})
-      when prop_op in [:prop_eq, :prop_gt, :prop_lt, :prop_gte, :prop_lte] do
+  defp validate_predicate(_, depth) when depth > 10,
+    do: {:error, "predicate nesting exceeds maximum depth of 10"}
+
+  defp validate_predicate({:always}, _depth), do: :ok
+
+  defp validate_predicate({prop_op, key, value}, _depth)
+       when prop_op in [:prop_eq, :prop_gt, :prop_lt, :prop_gte, :prop_lte] do
     if valid_string?(key),
       do: validate_value(value),
       else: invalid_predicate({prop_op, key, value})
   end
 
-  def validate_predicate({:capability_required, name}) do
+  defp validate_predicate({:capability_required, name}, _depth) do
     if valid_nonempty_string?(name),
       do: :ok,
       else: invalid_predicate({:capability_required, name})
   end
 
-  def validate_predicate({:capability_granted, name}) do
+  defp validate_predicate({:capability_granted, name}, _depth) do
     if valid_nonempty_string?(name),
       do: :ok,
       else: invalid_predicate({:capability_granted, name})
   end
 
-  def validate_predicate({:budget_within, scope, {:interval, lo, hi}} = predicate) do
+  defp validate_predicate({:budget_within, scope, {:interval, lo, hi}} = predicate, _depth) do
     if valid_string?(scope) and is_integer(lo) and is_integer(hi) and lo >= 0 and hi >= lo,
       do: :ok,
       else: invalid_predicate(predicate)
   end
 
-  def validate_predicate({:authority_at_least, n}) when is_integer(n) and n >= 0, do: :ok
-  def validate_predicate({:authority_required, n}) when is_integer(n) and n >= 0, do: :ok
+  defp validate_predicate({:authority_at_least, n}, _depth) when is_integer(n) and n >= 0, do: :ok
+  defp validate_predicate({:authority_required, n}, _depth) when is_integer(n) and n >= 0, do: :ok
 
-  def validate_predicate({:jurisdiction_allowed, j}) when j in @all_jurisdictions, do: :ok
-  def validate_predicate({:jurisdiction_forbidden, j}) when j in @all_jurisdictions, do: :ok
+  defp validate_predicate({:jurisdiction_allowed, j}, _depth) when j in @all_jurisdictions,
+    do: :ok
 
-  def validate_predicate({:latency_at_most, ms}) when is_integer(ms) and ms >= 0, do: :ok
+  defp validate_predicate({:jurisdiction_forbidden, j}, _depth) when j in @all_jurisdictions,
+    do: :ok
 
-  def validate_predicate({:and, p1, p2}) do
-    with :ok <- validate_predicate(p1) do
-      validate_predicate(p2)
+  defp validate_predicate({:latency_at_most, ms}, _depth) when is_integer(ms) and ms >= 0, do: :ok
+
+  defp validate_predicate({:and, p1, p2}, depth) do
+    with :ok <- validate_predicate(p1, depth + 1) do
+      validate_predicate(p2, depth + 1)
     end
   end
 
-  def validate_predicate({:or, p1, p2}) do
-    with :ok <- validate_predicate(p1) do
-      validate_predicate(p2)
+  defp validate_predicate({:or, p1, p2}, depth) do
+    with :ok <- validate_predicate(p1, depth + 1) do
+      validate_predicate(p2, depth + 1)
     end
   end
 
-  def validate_predicate({:not, p}), do: validate_predicate(p)
+  defp validate_predicate({:not, p}, depth), do: validate_predicate(p, depth + 1)
 
-  def validate_predicate({:contains, _, _}),
+  defp validate_predicate({:contains, _, _}, _depth),
     do: {:error, "unsupported :contains predicate; ai-rules.maude does not implement it"}
 
-  def validate_predicate({:matches, _, _}),
+  defp validate_predicate({:matches, _, _}, _depth),
     do: {:error, "unsupported :matches predicate; ai-rules.maude does not implement it"}
 
-  def validate_predicate(other), do: {:error, "unsupported predicate shape: #{inspect(other)}"}
+  defp validate_predicate(other, _depth),
+    do: {:error, "unsupported predicate shape: #{inspect(other)}"}
 
   @doc false
   @spec validate_invocation(term()) :: :ok | {:error, String.t()}
@@ -278,9 +290,11 @@ defmodule ExMaude.AI.Validator do
   def validate_invocation(other), do: {:error, "unsupported invocation shape: #{inspect(other)}"}
 
   defp validate_arg_map(args) when is_map(args) do
-    Enum.reduce_while(args, :ok, fn {k, v}, _ ->
-      validate_arg_entry(k, v)
-    end)
+    result = Enum.reduce_while(args, :ok, fn {k, v}, _ -> validate_arg_entry(k, v) end)
+
+    if result == :ok and map_size(args) != length(Enum.uniq_by(Map.keys(args), &to_string/1)),
+      do: {:error, "argument keys must be unique after string conversion"},
+      else: result
   end
 
   defp rule_error_id(%{id: id}, _) when is_binary(id) and id != "", do: id
@@ -364,7 +378,7 @@ defmodule ExMaude.AI.Validator do
   defp valid_arg_key?(key), do: valid_string?(key)
 
   defp valid_nonempty_string?(value), do: valid_string?(value) and value != ""
-  defp valid_string?(value), do: is_binary(value) and String.valid?(value)
+  defp valid_string?(value), do: ExMaude.Validation.string?(value)
 
   defp invalid_predicate(predicate),
     do: {:error, "unsupported predicate shape: #{inspect(predicate)}"}

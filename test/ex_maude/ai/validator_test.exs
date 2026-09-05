@@ -549,4 +549,20 @@ defmodule ExMaude.AI.ValidatorTest do
       assert "priority must be a non-negative integer" in errs
     end
   end
+
+  test "rejects duplicate identities, nested nil, and control characters" do
+    rule = %{id: "r", agent_id: {"t", "a"}, trigger: {:always}, invocations: []}
+    assert {:error, _} = Validator.validate_rules([rule, rule])
+    assert {:error, _} = Validator.validate_rule(%{rule | trigger: {:not, nil}})
+    assert {:error, _} = Validator.validate_rule(%{rule | id: "bad\nname"})
+    nested = Enum.reduce(1..12, {:always}, fn _, p -> {:not, p} end)
+    assert {:error, _} = Validator.validate_rule(%{rule | trigger: nested})
+  end
+
+  test "rejects atom and string argument keys that encode identically" do
+    assert {:error, _} =
+             Validator.validate_invocation(
+               {:invoke_tool, "tool", %{:x => 1, "x" => 2}, "cap", :eu}
+             )
+  end
 end

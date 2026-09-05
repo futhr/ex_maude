@@ -309,4 +309,24 @@ defmodule ExMaude.IoT.ValidatorTest do
       assert {:error, %{"rules" => ["rules must be a list"]}} = Validator.validate_rules(%{})
     end
   end
+
+  test "rejects duplicate identities, nested nil, and control characters" do
+    rule = %{id: "r", thing_id: "t", trigger: {:always}, actions: []}
+    assert {:error, _} = Validator.validate_rules([rule, rule])
+    assert {:error, _} = Validator.validate_rule(%{rule | trigger: {:not, nil}})
+    assert {:error, _} = Validator.validate_rule(%{rule | id: "bad\nname"})
+    nested = Enum.reduce(1..12, {:always}, fn _, p -> {:not, p} end)
+    assert {:error, _} = Validator.validate_rule(%{rule | trigger: nested})
+  end
+
+  test "nil priority cannot pass validation then encode as a missing argument" do
+    assert {:error, _} =
+             Validator.validate_rule(%{
+               id: "r",
+               thing_id: "t",
+               trigger: {:always},
+               actions: [],
+               priority: nil
+             })
+  end
 end

@@ -476,11 +476,12 @@ defmodule ExMaude.IoT do
 
   defp valid_state_pred?(_), do: false
 
-  defp non_empty_string?(value), do: is_binary(value) and value != "" and String.valid?(value)
+  defp non_empty_string?(value), do: value != "" and ExMaude.Validation.string?(value)
 
   defp encodable_value?(value) do
     is_boolean(value) or is_number(value) or
-      (is_binary(value) and String.valid?(value)) or is_atom(value)
+      ExMaude.Validation.string?(value) or
+      (is_atom(value) and ExMaude.Validation.string?(Atom.to_string(value)))
   end
 
   defp validation_error(message) do
