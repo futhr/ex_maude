@@ -8,6 +8,32 @@ defmodule ExMaude.Backend.CNodeTest do
   alias ExMaude.Backend
   alias ExMaude.Backend.CNode
 
+  test "live workers reserve different bounded node slots" do
+    parent = self()
+
+    workers =
+      for _ <- 1..3 do
+        spawn_monitor(fn ->
+          send(parent, {self(), CNode.reserve_node_slot(0)})
+          receive do: (:stop -> :ok)
+        end)
+      end
+
+    slots =
+      for {pid, _} <- workers do
+        assert_receive {^pid, {:ok, slot}}
+        slot
+      end
+
+    assert length(Enum.uniq(slots)) == 3
+    assert Enum.all?(slots, &(&1 in 0..1023))
+
+    for {pid, ref} <- workers do
+      send(pid, :stop)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
+    end
+  end
+
   describe "module structure" do
     test "implements Backend behaviour" do
       behaviours = CNode.__info__(:attributes)[:behaviour] || []

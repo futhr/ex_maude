@@ -328,19 +328,11 @@ defmodule ExMaude.Backend.CNode do
         {:error, :node_not_distributed}
 
       true ->
-        # Generate both string (for args) and atom (for cnode_name) forms.
-        # The distribution cookie is deliberately not included in argv,
-        # where it would be visible to local process-listing tools.
-        {node_name_str, cnode_name_atom} = generate_node_name()
-        erlang_node = Atom.to_string(Node.self())
+        # Keep the distribution cookie out of process-listing arguments.
+        with {:ok, {node_name_str, cnode_name_atom}} <- generate_node_name(),
+             {:ok, cookie_frame} <- encode_cookie_handshake(state.cookie) do
+          args = [node_name_str, state.maude_path, Atom.to_string(Node.self())]
 
-        args = [
-          node_name_str,
-          state.maude_path,
-          erlang_node
-        ]
-
-        with {:ok, cookie_frame} <- encode_cookie_handshake(state.cookie) do
           port =
             Port.open(
               {:spawn_executable, bridge_path},
@@ -472,18 +464,32 @@ defmodule ExMaude.Backend.CNode do
   defp generate_node_name do
     # Distribution node names are atoms. Reuse a bounded set of slots so
     # worker restarts cannot grow the VM's atom table without limit.
-    id = rem(:erlang.unique_integer([:positive, :monotonic]), @node_name_slots)
-    node_str = "maude_bridge_#{id}"
-    # Extract hostname from current node (e.g., test@studio -> studio)
-    hostname =
-      Node.self()
-      |> Atom.to_string()
-      |> String.split("@")
-      |> List.last()
+    with {:ok, id} <- reserve_node_slot() do
+      node_str = "maude_bridge_#{id}"
+      # Extract hostname from current node (e.g., test@studio -> studio)
+      hostname =
+        Node.self()
+        |> Atom.to_string()
+        |> String.split("@")
+        |> List.last()
 
-    # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
-    node_atom = :"maude_bridge_#{id}@#{hostname}"
-    {node_str, node_atom}
+      # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
+      node_atom = :"maude_bridge_#{id}@#{hostname}"
+      {:ok, {node_str, node_atom}}
+    end
+  end
+
+  @doc false
+  @spec reserve_node_slot(non_neg_integer()) :: {:ok, non_neg_integer()} | {:error, atom()}
+  def reserve_node_slot(start \\ :erlang.unique_integer([:positive, :monotonic])) do
+    Enum.find_value(0..(@node_name_slots - 1), {:error, :node_slots_exhausted}, fn offset ->
+      slot = rem(start + offset, @node_name_slots)
+
+      case :global.register_name({__MODULE__, node(), slot}, self()) do
+        :yes -> {:ok, slot}
+        :no -> nil
+      end
+    end)
   end
 
   defp await_bridge_ready(state, timeout) do
