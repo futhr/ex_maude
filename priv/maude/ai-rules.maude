@@ -730,15 +730,15 @@ fmod AI-CONFLICT-DETECTOR is
     detectSovereigntyViolation(R:AIRule, JS:JurisdictionSet) ||c||
     detectApprovalGateBypass(R:AIRule) .
 
-  *** All-pairs conflict detection over a rule set
+  *** Visit each unordered pair once.
   op detectAllPairConflicts : RuleSet -> AIConflictSet .
+  op detectPairConflictsWith : AIRule RuleSet -> AIConflictSet .
   eq detectAllPairConflicts(emptyRules) = noAIConflict .
-  eq detectAllPairConflicts(R:AIRule) = noAIConflict .
-  eq detectAllPairConflicts(R1:AIRule ; R2:AIRule) = detectPairConflicts(R1:AIRule, R2:AIRule) .
-  eq detectAllPairConflicts(R1:AIRule ; R2:AIRule ; RS:RuleSet) =
-    detectPairConflicts(R1:AIRule, R2:AIRule) ||c||
-    detectAllPairConflicts(R1:AIRule ; RS:RuleSet) ||c||
-    detectAllPairConflicts(R2:AIRule ; RS:RuleSet) .
+  eq detectAllPairConflicts(R:AIRule ; RS:RuleSet) =
+    detectPairConflictsWith(R:AIRule, RS:RuleSet) ||c|| detectAllPairConflicts(RS:RuleSet) .
+  eq detectPairConflictsWith(R:AIRule, emptyRules) = noAIConflict .
+  eq detectPairConflictsWith(R1:AIRule, R2:AIRule ; RS:RuleSet) =
+    detectPairConflicts(R1:AIRule, R2:AIRule) ||c|| detectPairConflictsWith(R1:AIRule, RS:RuleSet) .
 
   *** All single-rule detection over a rule set against allowed jurisdictions
   op detectAllSingleRuleConflicts : RuleSet JurisdictionSet -> AIConflictSet .

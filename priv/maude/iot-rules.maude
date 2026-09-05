@@ -396,52 +396,43 @@ fmod CONFLICT-DETECTOR is
     detectStateEnvCascade(R1:Rule, R2:Rule) |
     detectStateEnvCascade(R2:Rule, R1:Rule) .
 
-  *** Detect all conflicts within a rule set
+  *** Visit each unordered pair once, retaining both directions for cascades.
   op detectConflicts : RuleSet -> ConflictSet .
+  op detectConflictsWith : Rule RuleSet -> ConflictSet .
   eq detectConflicts(empty) = noConflict .
-  eq detectConflicts(R:Rule) = noConflict .
-  eq detectConflicts(R1:Rule, R2:Rule) = detectStateConflict(R1:Rule, R2:Rule) .
-  eq detectConflicts(R1:Rule, R2:Rule, RS:RuleSet) =
-    detectStateConflict(R1:Rule, R2:Rule) |
-    detectConflicts(R1:Rule, RS:RuleSet) |
-    detectConflicts(R2:Rule, RS:RuleSet) .
+  eq detectConflicts(R1:Rule, RS:RuleSet) =
+    detectConflictsWith(R1:Rule, RS:RuleSet) | detectConflicts(RS:RuleSet) .
+  eq detectConflictsWith(R1:Rule, empty) = noConflict .
+  eq detectConflictsWith(R1:Rule, (R2:Rule, RS:RuleSet)) =
+    detectStateConflict(R1:Rule, R2:Rule) | detectConflictsWith(R1:Rule, RS:RuleSet) .
 
-  *** Detect only environment conflicts
   op detectEnvConflicts : RuleSet -> ConflictSet .
+  op detectEnvConflictsWith : Rule RuleSet -> ConflictSet .
   eq detectEnvConflicts(empty) = noConflict .
-  eq detectEnvConflicts(R:Rule) = noConflict .
-  eq detectEnvConflicts(R1:Rule, R2:Rule) = detectEnvConflict(R1:Rule, R2:Rule) .
-  eq detectEnvConflicts(R1:Rule, R2:Rule, RS:RuleSet) =
-    detectEnvConflict(R1:Rule, R2:Rule) |
-    detectEnvConflicts(R1:Rule, RS:RuleSet) |
-    detectEnvConflicts(R2:Rule, RS:RuleSet) .
+  eq detectEnvConflicts(R1:Rule, RS:RuleSet) =
+    detectEnvConflictsWith(R1:Rule, RS:RuleSet) | detectEnvConflicts(RS:RuleSet) .
+  eq detectEnvConflictsWith(R1:Rule, empty) = noConflict .
+  eq detectEnvConflictsWith(R1:Rule, (R2:Rule, RS:RuleSet)) =
+    detectEnvConflict(R1:Rule, R2:Rule) | detectEnvConflictsWith(R1:Rule, RS:RuleSet) .
 
-  *** Detect cascade conflicts (both types)
   op detectCascades : RuleSet -> ConflictSet .
+  op detectCascadesWith : Rule RuleSet -> ConflictSet .
   eq detectCascades(empty) = noConflict .
-  eq detectCascades(R:Rule) = noConflict .
-  eq detectCascades(R1:Rule, R2:Rule) =
-    detectStateCascade(R1:Rule, R2:Rule) |
-    detectStateCascade(R2:Rule, R1:Rule) |
-    detectStateEnvCascade(R1:Rule, R2:Rule) |
-    detectStateEnvCascade(R2:Rule, R1:Rule) .
-  eq detectCascades(R1:Rule, R2:Rule, RS:RuleSet) =
-    detectStateCascade(R1:Rule, R2:Rule) |
-    detectStateCascade(R2:Rule, R1:Rule) |
-    detectStateEnvCascade(R1:Rule, R2:Rule) |
-    detectStateEnvCascade(R2:Rule, R1:Rule) |
-    detectCascades(R1:Rule, RS:RuleSet) |
-    detectCascades(R2:Rule, RS:RuleSet) .
+  eq detectCascades(R1:Rule, RS:RuleSet) =
+    detectCascadesWith(R1:Rule, RS:RuleSet) | detectCascades(RS:RuleSet) .
+  eq detectCascadesWith(R1:Rule, empty) = noConflict .
+  eq detectCascadesWith(R1:Rule, (R2:Rule, RS:RuleSet)) =
+    detectStateCascade(R1:Rule, R2:Rule) | detectStateCascade(R2:Rule, R1:Rule) | detectStateEnvCascade(R1:Rule, R2:Rule) | detectStateEnvCascade(R2:Rule, R1:Rule) | detectCascadesWith(R1:Rule, RS:RuleSet) .
 
-  *** Detect all conflict types
   op detectAllConflicts : RuleSet -> ConflictSet .
+  op detectAllConflictsWith : Rule RuleSet -> ConflictSet .
   eq detectAllConflicts(empty) = noConflict .
-  eq detectAllConflicts(R:Rule) = noConflict .
-  eq detectAllConflicts(R1:Rule, R2:Rule) = detectPairConflicts(R1:Rule, R2:Rule) .
-  eq detectAllConflicts(R1:Rule, R2:Rule, RS:RuleSet) =
-    detectPairConflicts(R1:Rule, R2:Rule) |
-    detectAllConflicts(R1:Rule, RS:RuleSet) |
-    detectAllConflicts(R2:Rule, RS:RuleSet) .
+  eq detectAllConflicts(R1:Rule, RS:RuleSet) =
+    detectAllConflictsWith(R1:Rule, RS:RuleSet) | detectAllConflicts(RS:RuleSet) .
+  eq detectAllConflictsWith(R1:Rule, empty) = noConflict .
+  eq detectAllConflictsWith(R1:Rule, (R2:Rule, RS:RuleSet)) =
+    detectPairConflicts(R1:Rule, R2:Rule) | detectAllConflictsWith(R1:Rule, RS:RuleSet) .
+
 
 endfm
 
