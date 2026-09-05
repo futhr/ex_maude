@@ -338,4 +338,15 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
       end
     end
   end
+
+  test "blocked writes respect the command timeout" do
+    path = Path.expand("../../support/fake_blocked_input.sh", __DIR__)
+    pid = start_supervised!({ExMaude.Backend.CNode, maude_path: path}, restart: :temporary)
+    ref = Process.monitor(pid)
+
+    assert {:error, %ExMaude.Error{type: :timeout}} =
+             ExMaude.Backend.CNode.execute(pid, String.duplicate("x", 1_000_000), timeout: 50)
+
+    assert_receive {:DOWN, ^ref, :process, ^pid, _}, 2_000
+  end
 end

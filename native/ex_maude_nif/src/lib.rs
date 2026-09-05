@@ -45,7 +45,6 @@ const DEFAULT_MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const READER_BUF_SIZE: usize = 4096;
 const READER_CHANNEL_CAPACITY: usize = 64;
 const READER_JOIN_TIMEOUT: Duration = Duration::from_millis(200);
-const GRACEFUL_QUIT_WAIT: Duration = Duration::from_millis(50);
 const STARTUP_TIMEOUT_MS: u64 = 10_000;
 static LAST_SPAWNED_PID: AtomicU32 = AtomicU32::new(0);
 
@@ -62,8 +61,8 @@ enum ReaderMsg {
 /// user space, a prompt from stdout could overtake an error from stderr and
 /// leak that error into the following command's response.
 pub struct MaudeProcess {
-    child: Mutex<Child>,
-    stdin: Mutex<ChildStdin>,
+    child: Mutex<Option<Child>>,
+    writer: Mutex<Option<Sender<WriteRequest>>>,
     rx: Receiver<ReaderMsg>,
     readers: Mutex<Vec<JoinHandle<()>>>,
     pending: Mutex<Vec<u8>>,
@@ -72,9 +71,36 @@ pub struct MaudeProcess {
 #[rustler::resource_impl]
 impl rustler::Resource for MaudeProcess {}
 
+struct WriteRequest {
+    command: String,
+    reply: Sender<Result<(), String>>,
+}
+
 impl Drop for MaudeProcess {
     fn drop(&mut self) {
-        shutdown_process(self);
+        // Resource destructors may run on ordinary BEAM schedulers. Kill is
+        // nonblocking; process reaping and thread joins belong off-scheduler.
+        self.writer
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        let child = self
+            .child
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        let readers = std::mem::take(self.readers.get_mut().unwrap_or_else(|e| e.into_inner()));
+        if let Some(mut child) = child {
+            let _ = child.kill();
+            let _ = thread::Builder::new()
+                .name("maude-reaper".into())
+                .spawn(move || {
+                    terminate_child(&mut child);
+                    for reader in readers {
+                        join_with_timeout(reader, READER_JOIN_TIMEOUT);
+                    }
+                });
+        }
     }
 }
 
@@ -134,11 +160,13 @@ fn start_process(
     let (tx, rx) = bounded::<ReaderMsg>(READER_CHANNEL_CAPACITY);
     let output_handle = spawn_reader(Box::new(output_reader), tx, "output");
 
+    let (writer_tx, writer_rx) = bounded::<WriteRequest>(1);
+    let writer_handle = spawn_writer(stdin, writer_rx);
     let process = MaudeProcess {
-        child: Mutex::new(child),
-        stdin: Mutex::new(stdin),
+        child: Mutex::new(Some(child)),
+        writer: Mutex::new(Some(writer_tx)),
         rx,
-        readers: Mutex::new(vec![output_handle]),
+        readers: Mutex::new(vec![output_handle, writer_handle]),
         pending: Mutex::new(Vec::new()),
     };
 
@@ -162,15 +190,7 @@ fn execute_with_timeout(
     command: String,
     timeout_ms: u64,
 ) -> NifResult<String> {
-    {
-        let mut stdin = process.stdin.lock().map_err(|_| poison_error("stdin"))?;
-        writeln!(stdin, "{command}").map_err(|e| io_error(format!("write failed: {e}")))?;
-        stdin
-            .flush()
-            .map_err(|e| io_error(format!("flush failed: {e}")))?;
-    }
-
-    read_until_prompt(&process, timeout_ms, DEFAULT_MAX_RESPONSE_BYTES)
+    execute_command(&process, command, timeout_ms, DEFAULT_MAX_RESPONSE_BYTES)
 }
 
 /// Execute with an explicit response-size ceiling supplied by the Elixir
@@ -183,38 +203,22 @@ fn execute_with_limit(
     timeout_ms: u64,
     max_response_bytes: u64,
 ) -> NifResult<String> {
-    {
-        let mut stdin = process.stdin.lock().map_err(|_| poison_error("stdin"))?;
-        writeln!(stdin, "{command}").map_err(|e| io_error(format!("write failed: {e}")))?;
-        stdin
-            .flush()
-            .map_err(|e| io_error(format!("flush failed: {e}")))?;
-    }
-
     let limit = usize::try_from(max_response_bytes)
         .map_err(|_| response_too_large_error(DEFAULT_MAX_RESPONSE_BYTES))?;
-    read_until_prompt(&process, timeout_ms, limit)
+    execute_command(&process, command, timeout_ms, limit)
 }
 
 /// Stop the subprocess.
 #[rustler::nif(schedule = "DirtyIo")]
 fn stop(process: ResourceArc<MaudeProcess>) -> NifResult<()> {
-    // Best-effort graceful quit. The order matters:
-    //   1. Send `quit .` so Maude exits cleanly when its input parser settles.
-    //   2. Sleep briefly to let it finish.
-    //   3. Force-kill (idempotent if already exited).
-    //   4. Poll-wait with `try_wait` so we don't block forever if waitpid
-    //      hangs on a wedged child.
-    //   5. Join the reader threads (bounded).
-
     shutdown_process(&process);
     Ok(())
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn child_pid(process: ResourceArc<MaudeProcess>) -> NifResult<u32> {
     let child = process.child.lock().map_err(|_| poison_error("child"))?;
-    Ok(child.id())
+    child.as_ref().map(Child::id).ok_or_else(eof_error)
 }
 
 fn wait_with_timeout(child: &mut Child, timeout: Duration) {
@@ -229,13 +233,15 @@ fn wait_with_timeout(child: &mut Child, timeout: Duration) {
 }
 
 /// Check whether the subprocess is still running.
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn alive(process: ResourceArc<MaudeProcess>) -> bool {
     let Ok(mut child) = process.child.lock() else {
         return false;
     };
 
-    matches!(child.try_wait(), Ok(None))
+    child
+        .as_mut()
+        .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
 }
 
 fn spawn_reader(
@@ -266,13 +272,69 @@ fn spawn_reader(
     })
 }
 
+fn spawn_writer(mut stdin: ChildStdin, requests: Receiver<WriteRequest>) -> JoinHandle<()> {
+    thread::spawn(move || {
+        while let Ok(request) = requests.recv() {
+            let result = writeln!(stdin, "{}", request.command)
+                .and_then(|_| stdin.flush())
+                .map_err(|e| e.to_string());
+            let failed = result.is_err();
+            let _ = request.reply.send(result);
+            if failed {
+                return;
+            }
+        }
+    })
+}
+
+fn execute_command(
+    process: &MaudeProcess,
+    command: String,
+    timeout_ms: u64,
+    limit: usize,
+) -> NifResult<String> {
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    let writer = process
+        .writer
+        .lock()
+        .map_err(|_| poison_error("writer"))?
+        .as_ref()
+        .cloned()
+        .ok_or_else(eof_error)?;
+    let (reply, result) = bounded(1);
+    writer
+        .send_timeout(
+            WriteRequest { command, reply },
+            deadline.saturating_duration_since(Instant::now()),
+        )
+        .map_err(|_| timeout_error(timeout_ms))?;
+    match result.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(Ok(())) => read_until_deadline(process, timeout_ms, limit, deadline),
+        Ok(Err(error)) => Err(io_error(error)),
+        Err(_) => Err(timeout_error(timeout_ms)),
+    }
+}
+
 /// Drain stdout chunks until a line-boundary prompt is found.
 fn read_until_prompt(
     process: &MaudeProcess,
     timeout_ms: u64,
     max_response_bytes: usize,
 ) -> NifResult<String> {
-    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    read_until_deadline(
+        process,
+        timeout_ms,
+        max_response_bytes,
+        Instant::now() + Duration::from_millis(timeout_ms),
+    )
+}
+
+fn read_until_deadline(
+    process: &MaudeProcess,
+    timeout_ms: u64,
+    max_response_bytes: usize,
+    deadline: Instant,
+) -> NifResult<String> {
     let mut buf = process
         .pending
         .lock()
@@ -319,17 +381,19 @@ fn read_until_prompt(
 }
 
 fn shutdown_process(process: &MaudeProcess) {
-    if let Ok(mut stdin) = process.stdin.lock() {
-        let _ = writeln!(stdin, "quit .");
-        let _ = stdin.flush();
-    }
-
-    thread::sleep(GRACEFUL_QUIT_WAIT);
-
-    if let Ok(mut child) = process.child.lock() {
+    process
+        .writer
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    let child = process
+        .child
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    if let Some(mut child) = child {
         terminate_child(&mut child);
     }
-
     if let Ok(mut readers) = process.readers.lock() {
         for handle in readers.drain(..) {
             join_with_timeout(handle, READER_JOIN_TIMEOUT);

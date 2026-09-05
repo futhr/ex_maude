@@ -170,14 +170,12 @@ defmodule ExMaude.Backend.Port do
   @impl GenServer
   def handle_call({:execute, command, timeout}, from, %{pending: nil} = state) do
     command = Command.port_command(command)
-    Port.command(state.port, command)
-    ref = make_ref()
-    timer = Process.send_after(self(), {:command_timeout, ref}, timeout)
 
-    Telemetry.command_started(:port, command)
-
-    pending = %{from: from, ref: ref, timer: timer, timeout: timeout}
-    {:noreply, reset_response(%{state | pending: pending})}
+    if Port.command(state.port, command, [:nosuspend]) do
+      begin_command(command, timeout, from, state)
+    else
+      {:reply, {:error, Error.new(:busy, "Maude input pipe is full")}, state}
+    end
   end
 
   def handle_call({:execute, _, _}, _, state) do
@@ -271,12 +269,21 @@ defmodule ExMaude.Backend.Port do
 
   # Private functions
 
+  defp begin_command(command, timeout, from, state) do
+    ref = make_ref()
+    timer = Process.send_after(self(), {:command_timeout, ref}, timeout)
+
+    Telemetry.command_started(:port, command)
+
+    pending = %{from: from, ref: ref, timer: timer, timeout: timeout}
+    {:noreply, reset_response(%{state | pending: pending})}
+  end
+
   defp shutdown_maude(state) do
     if state.port do
       try do
         if port_alive?(state.port) do
-          Port.command(state.port, "quit\n")
-          Process.sleep(100)
+          Port.command(state.port, "quit\n", [:nosuspend])
           Port.close(state.port)
         end
       rescue
@@ -434,7 +441,7 @@ defmodule ExMaude.Backend.Port do
 
   defp preload_modules(state, [path | rest], startup_timeout) do
     if File.exists?(path) do
-      Port.command(state.port, Command.port_command(Command.load_file(path)))
+      Port.command(state.port, Command.port_command(Command.load_file(path)), [:nosuspend])
 
       with {:ok, state, output} <- wait_for_ready(state, startup_timeout),
            {:ok, _} <- parse_response(output) do

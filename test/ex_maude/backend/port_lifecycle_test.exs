@@ -22,6 +22,17 @@ defmodule ExMaude.Backend.PortLifecycleTest do
     start_supervised!({Port, opts}, restart: :temporary)
   end
 
+  test "a blocked input pipe cannot outlive its command deadline" do
+    path = Path.expand("../../support/fake_blocked_input.sh", __DIR__)
+    pid = start_supervised!({Port, maude_path: path}, restart: :temporary)
+    ref = Process.monitor(pid)
+
+    assert {:error, %Error{type: :timeout}} =
+             Port.execute(pid, String.duplicate("x", 1_000_000), timeout: 50)
+
+    assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1_000
+  end
+
   describe "command timeout" do
     test "reports the requested timeout value in the error" do
       pid = start_fake_worker()

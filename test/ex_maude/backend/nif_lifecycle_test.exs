@@ -33,6 +33,17 @@ defmodule ExMaude.Backend.NIFLifecycleTest do
     start_supervised!({NIF, opts}, restart: :temporary)
   end
 
+  test "a blocked input pipe cannot outlive its command deadline" do
+    path = Path.expand("../../support/fake_blocked_input.sh", __DIR__)
+    pid = start_supervised!({NIF, maude_path: path}, restart: :temporary)
+    ref = Process.monitor(pid)
+
+    assert {:error, %Error{type: :timeout}} =
+             NIF.execute(pid, String.duplicate("x", 1_000_000), timeout: 50)
+
+    assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1_000
+  end
+
   describe "native timeout" do
     test "replies with a timeout error and stops the worker" do
       pid = start_fake_worker()

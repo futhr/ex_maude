@@ -50,8 +50,8 @@
 static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf);
 static int read_until_prompt(char **output, size_t *capacity, int timeout_ms,
                              size_t max_response_size);
-static int send_command(const char *cmd, size_t len);
-static int write_all(int fd, const char *data, size_t len);
+static int send_command(const char *cmd, size_t len, int64_t deadline);
+static int write_all(int fd, const char *data, size_t len, int64_t deadline);
 static int read_exact(int fd, void *data, size_t len);
 static int read_cookie(char *cookie, size_t capacity);
 static char *build_load_command(const char *path, size_t length,
@@ -165,7 +165,8 @@ static int set_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags == -1)
     return -1;
-  return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+  return fcntl(fd, F_SETFL,
+               (int)((unsigned int)flags | (unsigned int)O_NONBLOCK));
 }
 
 /* Start the Maude subprocess */
@@ -224,6 +225,7 @@ static int start_maude(const char *maude_path) {
   maude.stdout_fd = stdout_pipe[0];
   /* Set stdout to non-blocking for select() */
   set_nonblocking(maude.stdout_fd);
+  set_nonblocking(maude.stdin_fd);
 
   return 0;
 }
@@ -231,13 +233,7 @@ static int start_maude(const char *maude_path) {
 /* Stop the Maude subprocess */
 static void stop_maude(void) {
   if (maude.pid > 0) {
-    /* Send quit command (ignore errors during shutdown) */
-    const char *quit_cmd = "quit\n";
-    /* GCC ignores (void) cast for warn_unused_result; use pragma */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-result"
-    write_all(maude.stdin_fd, quit_cmd, strlen(quit_cmd));
-#pragma GCC diagnostic pop
+    close(maude.stdin_fd);
 
     if (!reap_with_timeout(maude.pid, 100)) {
       kill(maude.pid, SIGTERM);
@@ -248,7 +244,6 @@ static void stop_maude(void) {
       }
     }
 
-    close(maude.stdin_fd);
     close(maude.stdout_fd);
     maude.pid = 0;
   }
@@ -270,15 +265,15 @@ static int reap_with_timeout(pid_t pid, int timeout_ms) {
 }
 
 /* Send command to Maude */
-static int send_command(const char *cmd, size_t len) {
-  if (write_all(maude.stdin_fd, cmd, len) < 0) {
+static int send_command(const char *cmd, size_t len, int64_t deadline) {
+  if (write_all(maude.stdin_fd, cmd, len, deadline) < 0) {
     perror("write to maude");
     return -1;
   }
 
   /* Ensure command ends with newline */
   if (len == 0 || cmd[len - 1] != '\n') {
-    if (write_all(maude.stdin_fd, "\n", 1) < 0) {
+    if (write_all(maude.stdin_fd, "\n", 1, deadline) < 0) {
       perror("write newline to maude");
       return -1;
     }
@@ -287,20 +282,39 @@ static int send_command(const char *cmd, size_t len) {
   return 0;
 }
 
-static int write_all(int fd, const char *data, size_t len) {
+static int write_all(int fd, const char *data, size_t len, int64_t deadline) {
   size_t total = 0;
-
-  while (total < len) {
+  while (total < len && running) {
+    int64_t remaining = deadline - monotonic_ms();
+    if (remaining <= 0) {
+      errno = ETIMEDOUT;
+      return -1;
+    }
+    fd_set writefds;
+    FD_ZERO(&writefds);
+    FD_SET(fd, &writefds);
+    struct timeval tv = {(long)(remaining / 1000),
+                         (suseconds_t)((remaining % 1000) * 1000)};
+    int ready = select(fd + 1, NULL, &writefds, NULL, &tv);
+    if (ready < 0 && errno == EINTR)
+      continue;
+    if (ready == 0) {
+      errno = ETIMEDOUT;
+      return -1;
+    }
+    if (ready < 0)
+      return -1;
     ssize_t written = write(fd, data + total, len - total);
     if (written < 0) {
-      if (errno == EINTR)
+      if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
         continue;
       return -1;
     }
+    if (written == 0)
+      return -1;
     total += (size_t)written;
   }
-
-  return 0;
+  return total == len ? 0 : -1;
 }
 
 static int64_t monotonic_ms(void) {
@@ -502,10 +516,10 @@ static void encode_error(ei_x_buff *response, const char *reason) {
 
 /* Clamp a requested per-command timeout to a sane range */
 static int clamp_timeout(long timeout_ms) {
-  if (timeout_ms < 100)
-    return 100;
-  if (timeout_ms > 600000)
-    return 600000;
+  if (timeout_ms < 1)
+    return 1;
+  if (timeout_ms > INT_MAX)
+    return INT_MAX;
   return (int)timeout_ms;
 }
 
@@ -613,9 +627,11 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
     }
 
     /* Send command to Maude */
-    if (send_command(command, bin_size) < 0) {
+    int64_t command_deadline = monotonic_ms() + clamp_timeout(timeout_ms);
+    if (send_command(command, bin_size, command_deadline) < 0) {
       free(command);
-      encode_error(&response, "send_failed");
+      encode_error(&response,
+                   errno == ETIMEDOUT ? "read_timeout" : "send_failed");
       goto send_response;
     }
     free(command);
@@ -623,9 +639,9 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
     /* Read response up to the caller's deadline */
     char *output = NULL;
     size_t output_capacity = 0;
-    int out_len =
-        read_until_prompt(&output, &output_capacity, clamp_timeout(timeout_ms),
-                          clamp_response_limit(max_response_bytes));
+    int out_len = read_until_prompt(&output, &output_capacity,
+                                    (int)(command_deadline - monotonic_ms()),
+                                    clamp_response_limit(max_response_bytes));
 
     if (out_len == -1) {
       encode_error(&response, "read_timeout");
@@ -690,9 +706,11 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
     }
 
     /* Send load command to Maude */
-    if (send_command(command, command_length) < 0) {
+    int64_t command_deadline = monotonic_ms() + clamp_timeout(timeout_ms);
+    if (send_command(command, command_length, command_deadline) < 0) {
       free(command);
-      encode_error(&response, "load_send_failed");
+      encode_error(&response,
+                   errno == ETIMEDOUT ? "read_timeout" : "load_send_failed");
       goto send_response;
     }
     free(command);
@@ -700,9 +718,9 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
     /* Read response */
     char *output = NULL;
     size_t output_capacity = 0;
-    int out_len =
-        read_until_prompt(&output, &output_capacity, clamp_timeout(timeout_ms),
-                          clamp_response_limit(max_response_bytes));
+    int out_len = read_until_prompt(&output, &output_capacity,
+                                    (int)(command_deadline - monotonic_ms()),
+                                    clamp_response_limit(max_response_bytes));
 
     if (out_len == -1) {
       encode_error(&response, "read_timeout");

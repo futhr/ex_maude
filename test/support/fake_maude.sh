@@ -27,6 +27,9 @@ while IFS= read -r line; do
     die*)
       exit 1
       ;;
+    Warning:*)
+      printf '%s\nMaude> ' "$line"
+      ;;
     oversized*)
       printf 'result String: "'
       count=0
