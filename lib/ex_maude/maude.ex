@@ -283,7 +283,15 @@ defmodule ExMaude.Maude do
   end
 
   defp load_cached_file(path, pool) do
-    case Pool.broadcast(fn worker -> Server.load_file(worker, path) end, pool: pool) do
+    case Pool.broadcast(
+           fn worker ->
+             case Server.load_file(worker, path) do
+               :ok -> Preloads.mark_loaded(pool, [path], worker)
+               error -> error
+             end
+           end,
+           pool: pool
+         ) do
       {:ok, results} ->
         if Enum.all?(results, &(&1 == :ok)) do
           :ok

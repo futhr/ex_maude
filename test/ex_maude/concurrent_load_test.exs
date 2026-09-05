@@ -95,4 +95,23 @@ defmodule ExMaude.ConcurrentLoadTest do
       end)
     end
   end
+
+  test "a new pool cannot inherit successful startup identities" do
+    path =
+      create_temp_module(
+        "fmod POOL-IDENTITY is protecting NAT . op answer : -> Nat . eq answer = 42 . endfm"
+      )
+
+    name = :pool_identity_audit
+    start_supervised!(ExMaude.Pool.child_spec(name: name, pool_size: 1, preload_modules: [path]))
+    assert :ok = Maude.ensure_file_loaded(path, pool: name)
+    stop_supervised!(name)
+
+    assert {:error, %ExMaude.Error{type: :pool_error}} =
+             Maude.ensure_file_loaded(path, pool: name)
+
+    start_supervised!(ExMaude.Pool.child_spec(name: name, pool_size: 1, preload_modules: []))
+    assert :ok = Maude.ensure_file_loaded(path, pool: name)
+    assert {:ok, "42"} = ExMaude.reduce("POOL-IDENTITY", "answer", pool: name)
+  end
 end

@@ -14,6 +14,18 @@ defmodule ExMaude.PreloadsTest do
     Application.delete_env(:ex_maude, :runtime_preload_modules_by_pool)
     Application.delete_env(:ex_maude, :loaded_module_identities_by_pool)
 
+    for pool <- [:pool_a, :pool_b] do
+      start_supervised!(
+        ExMaude.Pool.child_spec(
+          name: pool,
+          pool_size: 1,
+          pool_max_overflow: 0,
+          maude_path: Path.expand("../support/fake_maude.sh", __DIR__),
+          preload_modules: []
+        )
+      )
+    end
+
     on_exit(fn ->
       restore(:preload_modules, configured)
       restore(:runtime_preload_modules_by_pool, runtime)
@@ -57,7 +69,7 @@ defmodule ExMaude.PreloadsTest do
     File.write!(path, "fmod PRELOAD-IDENTITY is endfm")
     on_exit(fn -> File.rm(path) end)
 
-    assert :ok = Preloads.mark_loaded(:pool_a, [path])
+    assert :ok = Preloads.mark_loaded(:pool_a, [path], ExMaude.Pool.checkout(pool: :pool_a))
     assert {:ok, identity} = Preloads.identity(path)
     assert identity in Preloads.loaded_for_pool(:pool_a)
     refute path in Preloads.runtime_for_pool(:pool_a)
