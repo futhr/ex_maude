@@ -51,24 +51,25 @@ defmodule ExMaude.MaudeCase do
         {:ok, maude_available: false, maude_path: nil, maude_version: nil}
 
       path ->
-        # Start the caller-owned pool used by the high-level API.
-        Application.put_env(:ex_maude, :maude_path, path)
-
-        if Process.whereis(:ex_maude_pool) == nil do
-          start_supervised!(%{
-            id: :ex_maude_test_pool_supervisor,
-            start:
-              {Supervisor, :start_link,
-               [[ExMaude.Pool.child_spec(maude_path: path)], [strategy: :one_for_one]]},
-            type: :supervisor
-          })
-        end
-
         # Get Maude version
         version = get_maude_version(path)
 
         {:ok, maude_available: true, maude_path: path, maude_version: version}
     end
+  end
+
+  setup %{maude_path: path} do
+    if path do
+      start_supervised!(%{
+        id: :ex_maude_test_pool_supervisor,
+        start:
+          {Supervisor, :start_link,
+           [[ExMaude.Pool.child_spec(maude_path: path)], [strategy: :one_for_one]]},
+        type: :supervisor
+      })
+    end
+
+    :ok
   end
 
   # Find Maude binary - uses ExMaude.Binary for consistent detection
@@ -122,8 +123,8 @@ defmodule ExMaude.MaudeCase do
   end
 
   defp get_maude_version(path) do
-    case System.cmd(path, ["--version"], stderr_to_stdout: true) do
-      {output, 0} ->
+    case ExMaude.Subprocess.run(path, ["--version"], 5_000, 64 * 1024) do
+      {:ok, output, 0} ->
         output
         |> String.split("\n")
         |> List.first()

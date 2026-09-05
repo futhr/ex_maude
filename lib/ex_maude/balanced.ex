@@ -10,42 +10,42 @@ defmodule ExMaude.Balanced do
   @doc false
   @spec split(String.t(), String.t()) :: {:ok, [String.t()]} | :error
   def split(input, separator \\ ",") when is_binary(input) and separator != "" do
-    split_at(input, input, separator, 0, 0, false, false, [])
+    split_at(input, {input, separator}, {0, []}, {0, false, false})
   end
 
-  defp split_at("", original, _, start, 0, false, false, acc) do
+  defp split_at("", {original, _}, {start, acc}, {0, false, false}) do
     {:ok, Enum.reverse([binary_part(original, start, byte_size(original) - start) | acc])}
   end
 
-  defp split_at("", _, _, _, _, _, _, _), do: :error
+  defp split_at("", _, _, _), do: :error
 
-  defp split_at(<<_byte, rest::binary>>, original, sep, start, depth, true, true, acc),
-    do: split_at(rest, original, sep, start, depth, true, false, acc)
+  defp split_at(<<_, rest::binary>>, context, parts, {depth, true, true}),
+    do: split_at(rest, context, parts, {depth, true, false})
 
-  defp split_at(<<byte, rest::binary>>, original, sep, start, depth, true, false, acc),
-    do: split_at(rest, original, sep, start, depth, byte != ?", byte == ?\\, acc)
+  defp split_at(<<byte, rest::binary>>, context, parts, {depth, true, false}),
+    do: split_at(rest, context, parts, {depth, byte != ?", byte == ?\\})
 
-  defp split_at(remaining, original, sep, start, 0, false, false, acc) do
+  defp split_at(remaining, {original, sep} = context, {start, acc} = parts, {0, false, false}) do
     if String.starts_with?(remaining, sep) do
       position = byte_size(original) - byte_size(remaining)
       part = binary_part(original, start, position - start)
       rest = binary_part(remaining, byte_size(sep), byte_size(remaining) - byte_size(sep))
-      split_at(rest, original, sep, position + byte_size(sep), 0, false, false, [part | acc])
+      split_at(rest, context, {position + byte_size(sep), [part | acc]}, {0, false, false})
     else
-      split_byte(remaining, original, sep, start, 0, acc)
+      split_byte(remaining, context, parts, 0)
     end
   end
 
-  defp split_at(remaining, original, sep, start, depth, false, false, acc),
-    do: split_byte(remaining, original, sep, start, depth, acc)
+  defp split_at(remaining, context, parts, {depth, false, false}),
+    do: split_byte(remaining, context, parts, depth)
 
-  defp split_byte(<<byte, rest::binary>>, original, sep, start, depth, acc) do
+  defp split_byte(<<byte, rest::binary>>, context, parts, depth) do
     case byte do
-      ?" -> split_at(rest, original, sep, start, depth, true, false, acc)
-      ?( -> split_at(rest, original, sep, start, depth + 1, false, false, acc)
-      ?) when depth > 0 -> split_at(rest, original, sep, start, depth - 1, false, false, acc)
+      ?" -> split_at(rest, context, parts, {depth, true, false})
+      ?( -> split_at(rest, context, parts, {depth + 1, false, false})
+      ?) when depth > 0 -> split_at(rest, context, parts, {depth - 1, false, false})
       ?) -> :error
-      _ -> split_at(rest, original, sep, start, depth, false, false, acc)
+      _ -> split_at(rest, context, parts, {depth, false, false})
     end
   end
 

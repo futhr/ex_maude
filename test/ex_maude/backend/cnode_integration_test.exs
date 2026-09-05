@@ -339,6 +339,7 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
     end
   end
 
+  @tag skip: not @cnode_available
   test "blocked writes respect the command timeout" do
     path = Path.expand("../../support/fake_blocked_input.sh", __DIR__)
     pid = start_supervised!({ExMaude.Backend.CNode, maude_path: path}, restart: :temporary)

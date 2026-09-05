@@ -60,9 +60,14 @@ defmodule ExMaude.Parser do
     |> Regex.scan(output, return: :index)
     |> Enum.chunk_every(2, 1, [nil])
     |> Enum.map(fn [current, following] ->
-      [{start, _length}, {number_start, number_length}] = current
-      finish = if following, do: following |> hd() |> elem(0), else: byte_size(output)
-      number = output |> binary_part(number_start, number_length) |> String.to_integer()
+      [{start, _}, {number_start, number_length}] = current
+      finish = if following, do: elem(hd(following), 0), else: byte_size(output)
+
+      number =
+        output
+        |> binary_part(number_start, number_length)
+        |> String.to_integer()
+
       parse_solution(binary_part(output, start, finish - start), number)
     end)
   end

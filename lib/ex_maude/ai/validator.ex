@@ -206,43 +206,43 @@ defmodule ExMaude.AI.Validator do
   defp validate_predicate(_, depth) when depth > 10,
     do: {:error, "predicate nesting exceeds maximum depth of 10"}
 
-  defp validate_predicate({:always}, _depth), do: :ok
+  defp validate_predicate({:always}, _), do: :ok
 
-  defp validate_predicate({prop_op, key, value}, _depth)
+  defp validate_predicate({prop_op, key, value}, _)
        when prop_op in [:prop_eq, :prop_gt, :prop_lt, :prop_gte, :prop_lte] do
     if valid_string?(key),
       do: validate_value(value),
       else: invalid_predicate({prop_op, key, value})
   end
 
-  defp validate_predicate({:capability_required, name}, _depth) do
+  defp validate_predicate({:capability_required, name}, _) do
     if valid_nonempty_string?(name),
       do: :ok,
       else: invalid_predicate({:capability_required, name})
   end
 
-  defp validate_predicate({:capability_granted, name}, _depth) do
+  defp validate_predicate({:capability_granted, name}, _) do
     if valid_nonempty_string?(name),
       do: :ok,
       else: invalid_predicate({:capability_granted, name})
   end
 
-  defp validate_predicate({:budget_within, scope, {:interval, lo, hi}} = predicate, _depth) do
+  defp validate_predicate({:budget_within, scope, {:interval, lo, hi}} = predicate, _) do
     if valid_string?(scope) and is_integer(lo) and is_integer(hi) and lo >= 0 and hi >= lo,
       do: :ok,
       else: invalid_predicate(predicate)
   end
 
-  defp validate_predicate({:authority_at_least, n}, _depth) when is_integer(n) and n >= 0, do: :ok
-  defp validate_predicate({:authority_required, n}, _depth) when is_integer(n) and n >= 0, do: :ok
+  defp validate_predicate({:authority_at_least, n}, _) when is_integer(n) and n >= 0, do: :ok
+  defp validate_predicate({:authority_required, n}, _) when is_integer(n) and n >= 0, do: :ok
 
-  defp validate_predicate({:jurisdiction_allowed, j}, _depth) when j in @all_jurisdictions,
+  defp validate_predicate({:jurisdiction_allowed, j}, _) when j in @all_jurisdictions,
     do: :ok
 
-  defp validate_predicate({:jurisdiction_forbidden, j}, _depth) when j in @all_jurisdictions,
+  defp validate_predicate({:jurisdiction_forbidden, j}, _) when j in @all_jurisdictions,
     do: :ok
 
-  defp validate_predicate({:latency_at_most, ms}, _depth) when is_integer(ms) and ms >= 0, do: :ok
+  defp validate_predicate({:latency_at_most, ms}, _) when is_integer(ms) and ms >= 0, do: :ok
 
   defp validate_predicate({:and, p1, p2}, depth) do
     with :ok <- validate_predicate(p1, depth + 1) do
@@ -258,13 +258,13 @@ defmodule ExMaude.AI.Validator do
 
   defp validate_predicate({:not, p}, depth), do: validate_predicate(p, depth + 1)
 
-  defp validate_predicate({:contains, _, _}, _depth),
+  defp validate_predicate({:contains, _, _}, _),
     do: {:error, "unsupported :contains predicate; ai-rules.maude does not implement it"}
 
-  defp validate_predicate({:matches, _, _}, _depth),
+  defp validate_predicate({:matches, _, _}, _),
     do: {:error, "unsupported :matches predicate; ai-rules.maude does not implement it"}
 
-  defp validate_predicate(other, _depth),
+  defp validate_predicate(other, _),
     do: {:error, "unsupported predicate shape: #{inspect(other)}"}
 
   @doc false

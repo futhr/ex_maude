@@ -13,27 +13,35 @@ defmodule ExMaude.ConflictOutput do
         _ -> String.trim(output)
       end
 
-    with {:ok, parts} <- Balanced.split(value, separator) do
-      Enum.reduce_while(parts, {:ok, []}, fn part, {:ok, acc} ->
-        case String.trim(part) do
-          ^empty ->
-            {:cont, {:ok, acc}}
-
-          expression ->
-            case parser.(expression) do
-              nil -> {:halt, invalid_output()}
-              conflict -> {:cont, {:ok, [conflict | acc]}}
-            end
-        end
-      end)
-      |> case do
-        {:ok, conflicts} -> {:ok, conflicts |> Enum.reverse() |> Enum.uniq()}
-        error -> error
-      end
-    else
-      _ -> invalid_output()
+    case Balanced.split(value, separator) do
+      {:ok, parts} -> parse_parts(parts, empty, parser)
+      :error -> invalid_output()
     end
   end
+
+  defp parse_parts(parts, empty, parser) do
+    parts
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == empty))
+    |> Enum.reduce_while({:ok, []}, fn expression, {:ok, acc} ->
+      case parser.(expression) do
+        nil -> {:halt, invalid_output()}
+        conflict -> {:cont, {:ok, [conflict | acc]}}
+      end
+    end)
+    |> finish_parsing()
+  end
+
+  defp finish_parsing({:ok, conflicts}) do
+    conflicts =
+      conflicts
+      |> Enum.reverse()
+      |> Enum.uniq()
+
+    {:ok, conflicts}
+  end
+
+  defp finish_parsing(error), do: error
 
   @doc false
   @spec arguments(String.t(), String.t()) :: {:ok, [String.t()]} | :error

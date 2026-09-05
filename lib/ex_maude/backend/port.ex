@@ -401,7 +401,7 @@ defmodule ExMaude.Backend.Port do
   end
 
   defp become_ready(state, preload, startup_timeout) do
-    with {:ok, state, _output} <- wait_for_ready(state, startup_timeout) do
+    with {:ok, state, _} <- wait_for_ready(state, startup_timeout) do
       preload_modules(state, preload, startup_timeout)
     end
   end

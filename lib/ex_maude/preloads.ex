@@ -15,7 +15,7 @@ defmodule ExMaude.Preloads do
 
   @doc false
   @spec runtime_for_pool(atom()) :: [Path.t()]
-  def runtime_for_pool(pool \\ @default_pool), do: current(pool).paths
+  def runtime_for_pool(pool \\ @default_pool), do: Enum.reverse(current(pool).paths)
 
   @doc false
   @spec loaded_for_pool(atom()) :: [Path.t()]
@@ -37,7 +37,9 @@ defmodule ExMaude.Preloads do
   @doc false
   @spec remember(atom(), Path.t()) :: :ok
   def remember(pool, path) do
-    update(pool, fn state -> %{state | paths: Enum.uniq(state.paths ++ [path])} end)
+    update(pool, fn state ->
+      if path in state.paths, do: state, else: %{state | paths: [path | state.paths]}
+    end)
   end
 
   @doc false
@@ -74,24 +76,24 @@ defmodule ExMaude.Preloads do
   # Files live in a private random directory and are created exclusively.
   # sobelow_skip ["Traversal.FileModule"]
   def cache_source(pool, source) when is_binary(source) do
-    locked(fn ->
-      if Process.whereis(pool) do
-        with :ok <- ensure_cache_dir(pool),
-             path =
-               Path.join(
-                 current(pool).cache_dir,
-                 Base.encode16(:crypto.hash(:sha256, source)) <> ".maude"
-               ),
-             :ok <- write_source(path, source) do
-          {:ok, path}
-        else
-          {:error, reason} ->
-            {:error, ExMaude.Error.new(:load_error, "Could not cache module: #{inspect(reason)}")}
-        end
-      else
-        {:error, ExMaude.Error.pool_error(:not_started)}
-      end
-    end)
+    locked(fn -> cache_for_live_pool(Process.whereis(pool), pool, source) end)
+  end
+
+  defp cache_for_live_pool(nil, _, _), do: {:error, ExMaude.Error.pool_error(:not_started)}
+
+  defp cache_for_live_pool(_, pool, source) do
+    with :ok <- ensure_cache_dir(pool),
+         path =
+           Path.join(
+             current(pool).cache_dir,
+             Base.encode16(:crypto.hash(:sha256, source)) <> ".maude"
+           ),
+         :ok <- write_source(path, source) do
+      {:ok, path}
+    else
+      {:error, reason} ->
+        {:error, ExMaude.Error.new(:load_error, "Could not cache module: #{inspect(reason)}")}
+    end
   end
 
   defp ensure_cache_dir(pool) do
@@ -124,23 +126,20 @@ defmodule ExMaude.Preloads do
   end
 
   defp update(pool, fun) do
-    locked(fn ->
-      case Process.whereis(pool) do
-        nil ->
-          :ok
-
-        owner ->
-          all = Application.get_env(:ex_maude, @state_key, %{})
-
-          unless match?(%{owner: ^owner}, Map.get(all, pool)) do
-            spawn(fn -> cleanup_on_exit(pool, owner) end)
-          end
-
-          Application.put_env(:ex_maude, @state_key, Map.put(all, pool, fun.(current(pool))))
-      end
-    end)
-
+    locked(fn -> update_live_pool(Process.whereis(pool), pool, fun) end)
     :ok
+  end
+
+  defp update_live_pool(nil, _, _), do: :ok
+
+  defp update_live_pool(owner, pool, fun) do
+    all = Application.get_env(:ex_maude, @state_key, %{})
+
+    unless match?(%{owner: ^owner}, Map.get(all, pool)) do
+      spawn(fn -> cleanup_on_exit(pool, owner) end)
+    end
+
+    Application.put_env(:ex_maude, @state_key, Map.put(all, pool, fun.(current(pool))))
   end
 
   defp cleanup_on_exit(pool, owner) do
