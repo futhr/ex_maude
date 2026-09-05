@@ -36,6 +36,11 @@ jobs:
         run: |
           echo "PROJECT_VERSION=$(sed -n 's/^  @version "\(.*\)"/\1/p' mix.exs | head -n1)" >> "$GITHUB_ENV"
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: "1.91.1"
+
       - name: Add Rust target
         if: matrix.job.target != '' && !matrix.job.use-cross
         run: rustup target add ${{ matrix.job.target }}
@@ -50,6 +55,7 @@ jobs:
           nif-version: ${{ matrix.nif }}
           use-cross: ${{ matrix.job.use-cross }}
           project-version: ${{ env.PROJECT_VERSION }}
+          cargo-args: --locked
 
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

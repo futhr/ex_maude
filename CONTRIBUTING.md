@@ -87,3 +87,7 @@ The `v*` tag drives a two-stage pipeline:
 ## Questions?
 
 Open an issue for questions or discussions.
+
+The complete `mix check` gate includes Rust tests and RustSec advisory checks.
+Install the audit tool with `cargo install cargo-audit --locked --version 0.22.1`.
+Release artifacts and native CI use Rust 1.91.1 with the committed Cargo lockfile.
