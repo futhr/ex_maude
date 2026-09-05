@@ -74,11 +74,13 @@ defmodule ExMaude.Backend.CNodeTest do
   end
 
   describe "startup failure" do
-    test "fails cleanly when prerequisites are missing" do
+    test "checks prerequisites before starting a worker" do
       original_flag = Process.flag(:trap_exit, true)
 
       try do
-        case CNode.start_link(maude_path: "maude") do
+        path = Path.expand("../../support/fake_maude.sh", __DIR__)
+
+        case CNode.start_link(maude_path: path) do
           {:error, {:cnode_start_failed, reason}} ->
             assert reason in [:node_not_distributed] or match?({:missing_binary, _}, reason)
 
