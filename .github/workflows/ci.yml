@@ -123,7 +123,9 @@ jobs:
         run: mix credo --strict
 
       - name: Security audit
-        run: mix deps.audit
+        run: |
+          mix hex.audit
+          mix deps.audit
 
       - name: Sobelow security scan
         run: mix sobelow --config

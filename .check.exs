@@ -29,6 +29,7 @@ sobelow_command = [
      cd: "native/ex_maude_nif",
      enabled: File.dir?("native/ex_maude_nif") and System.find_executable("cargo") != nil},
     {:mix_audit, command: "mix deps.audit"},
+    {:hex_audit, command: "mix hex.audit"},
     {:dialyzer, command: "mix dialyzer"},
     {:doctor, command: "mix doctor --summary --raise"},
     {:ex_doc, command: ["sh", "-c", "mix docs --warnings-as-errors --formatter html >/dev/null"]},
