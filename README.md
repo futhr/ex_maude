@@ -238,7 +238,8 @@ endfm
 
 Use `preload_modules` for modules known when the pool starts. For dynamic
 paths, `ensure_file_loaded/2` serializes the first pool-wide load and remembers
-the loaded content for replacement workers; `load_file/2` deliberately
+source paths for replacement workers; keep those files available. String modules
+use private temporary files removed when the pool exits; `load_file/2` deliberately
 broadcasts every call and is appropriate when an explicit reload is required.
 
 ### Direct Execution

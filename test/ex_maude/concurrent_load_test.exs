@@ -114,4 +114,44 @@ defmodule ExMaude.ConcurrentLoadTest do
     assert :ok = Maude.ensure_file_loaded(path, pool: name)
     assert {:ok, "42"} = ExMaude.reduce("POOL-IDENTITY", "answer", pool: name)
   end
+
+  test "public file loading preserves relative imports", %{pool: pool} do
+    dir = Path.join(System.tmp_dir!(), "relative-load-#{System.unique_integer([:positive])}")
+    File.mkdir!(dir)
+    on_exit(fn -> File.rm_rf(dir) end)
+    File.write!(Path.join(dir, "child.maude"), "fmod RELATIVE-CHILD is protecting NAT . endfm")
+    parent = Path.join(dir, "parent.maude")
+
+    File.write!(
+      parent,
+      "load child.maude\nfmod RELATIVE-PARENT is protecting RELATIVE-CHILD . endfm"
+    )
+
+    assert :ok = ExMaude.load_file(parent, pool: pool)
+    assert {:ok, "3"} = ExMaude.reduce("RELATIVE-PARENT", "1 + 2", pool: pool)
+  end
+
+  test "string modules survive worker replacement and their files follow pool lifetime" do
+    name = :owned_source_pool
+    start_supervised!(ExMaude.Pool.child_spec(name: name, pool_size: 1, pool_max_overflow: 0))
+    assert :ok = ExMaude.load_module("fmod OWNED-SOURCE is protecting NAT . endfm", pool: name)
+    [path] = ExMaude.Preloads.runtime_for_pool(name)
+    assert Bitwise.band(File.stat!(Path.dirname(path)).mode, 0o777) == 0o700
+    worker = ExMaude.Pool.checkout(pool: name)
+    GenServer.stop(worker)
+    assert {:ok, "3"} = ExMaude.reduce("OWNED-SOURCE", "1 + 2", pool: name)
+    stop_supervised!(name)
+
+    Enum.reduce_while(1..100, nil, fn _, _ ->
+      if File.exists?(path),
+        do:
+          (
+            Process.sleep(10)
+            {:cont, nil}
+          ),
+        else: {:halt, :ok}
+    end)
+
+    refute File.exists?(path)
+  end
 end

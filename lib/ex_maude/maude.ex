@@ -243,42 +243,23 @@ defmodule ExMaude.Maude do
   end
 
   defp do_load_file(path, opts) do
-    if File.exists?(path) do
+    if File.regular?(path) do
       pool = Keyword.get(opts, :pool, :ex_maude_pool)
+      path = Path.expand(path)
 
-      with {:ok, cached_path} <- cache_module(path),
-           :ok <- load_cached_file(cached_path, pool) do
-        Preloads.remember(pool, cached_path)
+      with :ok <- load_cached_file(path, pool) do
+        Preloads.remember(pool, path)
       end
     else
       {:error, Error.file_not_found(path)}
     end
   end
 
-  # The path is generated entirely from the runtime temp directory and a
-  # unique integer, then checked again before either filesystem operation.
-  # sobelow_skip ["Traversal.FileModule"]
   defp do_load_module(source, opts) do
-    # The path is built from System.tmp_dir! and a unique integer (no user
-    # input), then expanded and bounds-checked as defense in depth before
-    # File.write!.
-    tmp_dir = System.tmp_dir!()
-    filename = "ex_maude_#{:erlang.unique_integer([:positive])}.maude"
-    tmp_path = Path.join(tmp_dir, filename)
+    pool = Keyword.get(opts, :pool, :ex_maude_pool)
 
-    expanded_path = Path.expand(tmp_path)
-    expanded_tmp = Path.expand(tmp_dir)
-
-    if String.starts_with?(expanded_path, expanded_tmp) do
-      try do
-        File.write!(expanded_path, source)
-        do_load_file(expanded_path, opts)
-      after
-        File.rm(expanded_path)
-      end
-    else
-      # Unreachable under normal Path.expand behavior.
-      {:error, Error.invalid_path("Generated path escapes temp directory")}
+    with {:ok, path} <- Preloads.cache_source(pool, source) do
+      do_load_file(path, opts)
     end
   end
 
@@ -302,24 +283,6 @@ defmodule ExMaude.Maude do
 
       {:error, %Error{} = error} ->
         {:error, error}
-    end
-  end
-
-  # `path` was validated by load_file/2. The cache directory comes from the
-  # runtime and the filename is a SHA-256 digest, so neither destination
-  # component contains caller-controlled path segments.
-  # sobelow_skip ["Traversal.FileModule"]
-  defp cache_module(path) do
-    with {:ok, source} <- File.read(path),
-         digest <- Base.encode16(:crypto.hash(:sha256, source), case: :lower),
-         cache_dir <- Path.join([System.tmp_dir!(), "ex_maude", "preloads"]),
-         :ok <- File.mkdir_p(cache_dir),
-         cached_path <- Path.join(cache_dir, digest <> ".maude"),
-         :ok <- File.write(cached_path, source, [:binary]) do
-      {:ok, cached_path}
-    else
-      {:error, reason} ->
-        {:error, Error.new(:load_error, "Could not cache Maude module: #{inspect(reason)}")}
     end
   end
 
