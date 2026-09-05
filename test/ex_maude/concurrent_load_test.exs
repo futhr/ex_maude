@@ -141,6 +141,10 @@ defmodule ExMaude.ConcurrentLoadTest do
     GenServer.stop(worker)
     assert {:ok, "3"} = ExMaude.reduce("OWNED-SOURCE", "1 + 2", pool: name)
     stop_supervised!(name)
+    start_supervised!(ExMaude.Pool.child_spec(name: name, pool_size: 1, pool_max_overflow: 0))
+    assert :ok = ExMaude.load_module("fmod NEW-SOURCE is protecting NAT . endfm", pool: name)
+    [new_path] = ExMaude.Preloads.runtime_for_pool(name)
+    refute new_path == path
 
     Enum.reduce_while(1..100, nil, fn _, _ ->
       if File.exists?(path),
@@ -153,5 +157,7 @@ defmodule ExMaude.ConcurrentLoadTest do
     end)
 
     refute File.exists?(path)
+    assert File.exists?(new_path)
+    assert {:ok, "3"} = ExMaude.reduce("NEW-SOURCE", "1 + 2", pool: name)
   end
 end

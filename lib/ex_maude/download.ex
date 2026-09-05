@@ -3,6 +3,9 @@ defmodule ExMaude.Download do
 
   @doc false
   @spec fetch(String.t(), Path.t(), keyword()) :: :ok | {:redirect, String.t()} | {:error, term()}
+  # The installer provides a path inside its private temporary directory.
+  # Exclusive creation prevents overwriting or following an existing file.
+  # sobelow_skip ["Traversal.FileModule"]
   def fetch(url, destination, opts) do
     deadline = System.monotonic_time(:millisecond) + Keyword.fetch!(opts, :timeout)
 

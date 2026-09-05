@@ -7,12 +7,8 @@ defmodule ExMaude.PreloadsTest do
 
   setup do
     configured = Application.get_env(:ex_maude, :preload_modules)
-    runtime = Application.get_env(:ex_maude, :runtime_preload_modules_by_pool)
-    loaded = Application.get_env(:ex_maude, :loaded_module_identities_by_pool)
 
     Application.put_env(:ex_maude, :preload_modules, ["/configured.maude"])
-    Application.delete_env(:ex_maude, :runtime_preload_modules_by_pool)
-    Application.delete_env(:ex_maude, :loaded_module_identities_by_pool)
 
     for pool <- [:pool_a, :pool_b] do
       start_supervised!(
@@ -28,8 +24,6 @@ defmodule ExMaude.PreloadsTest do
 
     on_exit(fn ->
       restore(:preload_modules, configured)
-      restore(:runtime_preload_modules_by_pool, runtime)
-      restore(:loaded_module_identities_by_pool, loaded)
     end)
   end
 

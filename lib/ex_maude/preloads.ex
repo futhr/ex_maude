@@ -81,11 +81,11 @@ defmodule ExMaude.Preloads do
 
   defp cache_for_live_pool(nil, _, _), do: {:error, ExMaude.Error.pool_error(:not_started)}
 
-  defp cache_for_live_pool(_, pool, source) do
-    with :ok <- ensure_cache_dir(pool),
+  defp cache_for_live_pool(owner, pool, source) do
+    with {:ok, directory} <- ensure_cache_dir(pool, owner),
          path =
            Path.join(
-             current(pool).cache_dir,
+             directory,
              Base.encode16(:crypto.hash(:sha256, source)) <> ".maude"
            ),
          :ok <- write_source(path, source) do
@@ -96,19 +96,37 @@ defmodule ExMaude.Preloads do
     end
   end
 
-  defp ensure_cache_dir(pool) do
-    if current(pool).cache_dir do
-      :ok
-    else
-      suffix = Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
-      dir = Path.join(System.tmp_dir!(), "ex_maude-" <> suffix)
-
-      with :ok <- File.mkdir(dir), :ok <- File.chmod(dir, 0o700) do
-        update(pool, &%{&1 | cache_dir: dir})
-      end
+  defp ensure_cache_dir(pool, owner) do
+    case current(pool).cache_dir do
+      nil -> create_cache_dir(pool, owner)
+      directory -> {:ok, directory}
     end
   end
 
+  # The path is generated internally under a private random directory.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp create_cache_dir(pool, owner) do
+    suffix = Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
+    dir = Path.join(System.tmp_dir!(), "ex_maude-" <> suffix)
+
+    with :ok <- File.mkdir(dir), :ok <- File.chmod(dir, 0o700) do
+      # Capture the directory independently of the pool-name map: a new pool
+      # can replace that entry before the old pool's DOWN is processed.
+      spawn(fn -> remove_cache_on_exit(owner, dir) end)
+      update_live_pool(owner, pool, &%{&1 | cache_dir: dir})
+      {:ok, dir}
+    end
+  end
+
+  # Only directories created above reach this private cleanup function.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp remove_cache_on_exit(owner, directory) do
+    ref = Process.monitor(owner)
+    receive do: ({:DOWN, ^ref, :process, ^owner, _} -> File.rm_rf(directory))
+  end
+
+  # The filename is a SHA-256 digest within the pool's private cache directory.
+  # sobelow_skip ["Traversal.FileModule"]
   defp write_source(path, source) do
     case File.write(path, source, [:binary, :exclusive]) do
       {:error, :eexist} -> :ok
@@ -117,8 +135,10 @@ defmodule ExMaude.Preloads do
   end
 
   defp current(pool) do
-    owner = Process.whereis(pool)
+    state_for_owner(pool, Process.whereis(pool))
+  end
 
+  defp state_for_owner(pool, owner) do
     case Map.get(Application.get_env(:ex_maude, @state_key, %{}), pool) do
       %{owner: ^owner} = state when is_pid(owner) -> state
       _ -> %{owner: owner, paths: [], loaded: %{}, cache_dir: nil}
@@ -139,7 +159,11 @@ defmodule ExMaude.Preloads do
       spawn(fn -> cleanup_on_exit(pool, owner) end)
     end
 
-    Application.put_env(:ex_maude, @state_key, Map.put(all, pool, fun.(current(pool))))
+    Application.put_env(
+      :ex_maude,
+      @state_key,
+      Map.put(all, pool, fun.(state_for_owner(pool, owner)))
+    )
   end
 
   defp cleanup_on_exit(pool, owner) do
@@ -151,8 +175,6 @@ defmodule ExMaude.Preloads do
           all = Application.get_env(:ex_maude, @state_key, %{})
 
           if match?(%{owner: ^owner}, Map.get(all, pool)) do
-            state = Map.fetch!(all, pool)
-            if state.cache_dir, do: File.rm_rf(state.cache_dir)
             Application.put_env(:ex_maude, @state_key, Map.delete(all, pool))
           end
         end)
