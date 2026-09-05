@@ -373,7 +373,7 @@ defmodule ExMaude.Backend.Port do
         {unbuffer, [executable | @maude_args]}
 
       script = finder.("script") ->
-        cmd = Enum.join([executable | @maude_args], " ")
+        cmd = Enum.map_join([executable | @maude_args], " ", &shell_quote/1)
         {script, ["-qc", cmd, "/dev/null"]}
 
       true ->
@@ -383,6 +383,10 @@ defmodule ExMaude.Backend.Port do
 
   def resolve_launcher(true, _, executable, _) do
     {executable, ["-interactive" | @maude_args]}
+  end
+
+  defp shell_quote(argument) do
+    "'" <> String.replace(argument, "'", "'\\''") <> "'"
   end
 
   defp find_executable(path) do

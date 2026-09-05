@@ -235,6 +235,21 @@ defmodule ExMaude.Backend.PortLifecycleTest do
                Port.resolve_launcher(true, {:unix, :linux}, "/bin/maude", fn _ -> nil end)
     end
 
+    test "linux script preserves shell metacharacters in executable paths" do
+      executable = "/tmp/Maude's $(printf injected); executable"
+
+      finder = fn
+        "script" -> "/usr/bin/script"
+        _ -> nil
+      end
+
+      {_, ["-qc", command, _]} = Port.resolve_launcher(true, {:unix, :linux}, executable, finder)
+
+      # Let the shell parse the generated arguments without executing them.
+      {parsed, 0} = System.cmd("sh", ["-c", "set -- " <> command <> "; printf '%s' \"$1\""])
+      assert parsed == executable
+    end
+
     test "non-unix platforms use -interactive" do
       assert {"maude.exe", ["-interactive" | _]} =
                Port.resolve_launcher(true, {:win32, :nt}, "maude.exe", fn _ -> nil end)
