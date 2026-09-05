@@ -59,7 +59,7 @@ static char *build_load_command(const char *path, size_t length,
 static void clear_secret(void *data, size_t len);
 static int64_t monotonic_ms(void);
 static int reap_with_timeout(pid_t pid, int timeout_ms);
-static char *find_prompt_boundary(char *output, size_t length);
+static char *find_prompt_boundary(char *output, size_t length, size_t start);
 static void encode_ok(ei_x_buff *response, const char *data, int data_len);
 static void encode_error(ei_x_buff *response, const char *reason);
 
@@ -415,12 +415,13 @@ static int read_until_prompt(char **output, size_t *capacity, int timeout_ms,
       *capacity = new_capacity;
     }
 
+    size_t scan_start = total >= PROMPT_LEN ? total - PROMPT_LEN + 1 : 0;
     memcpy(*output + total, buf, (size_t)n);
     total += (size_t)n;
 
     (*output)[total] = '\0';
 
-    char *prompt_pos = find_prompt_boundary(*output, total);
+    char *prompt_pos = find_prompt_boundary(*output, total, scan_start);
     if (prompt_pos != NULL) {
       total = (size_t)(prompt_pos - *output);
       if (total > max_response_size)
@@ -459,11 +460,11 @@ static int read_until_prompt(char **output, size_t *capacity, int timeout_ms,
 
 /* A protocol prompt is complete only at the start of a line. Prompt-like
  * bytes inside a valid Maude result remain part of that result. */
-static char *find_prompt_boundary(char *output, size_t length) {
+static char *find_prompt_boundary(char *output, size_t length, size_t start) {
   if (length < PROMPT_LEN)
     return NULL;
 
-  for (size_t index = 0; index <= length - PROMPT_LEN; index++) {
+  for (size_t index = start; index <= length - PROMPT_LEN; index++) {
     int at_line_start =
         index == 0 || output[index - 1] == '\n' || output[index - 1] == '\r';
 

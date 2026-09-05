@@ -341,8 +341,9 @@ fn read_until_deadline(
         .map_err(|_| poison_error("pending"))?
         .split_off(0);
 
+    let mut scan_start = 0;
     loop {
-        if let Some(idx) = find_prompt_boundary(&buf) {
+        if let Some(idx) = find_prompt_boundary(&buf, scan_start) {
             if idx > max_response_bytes {
                 return Err(response_too_large_error(max_response_bytes));
             }
@@ -370,6 +371,7 @@ fn read_until_deadline(
 
         match process.rx.recv_timeout(remaining) {
             Ok(ReaderMsg::Data(chunk)) => {
+                scan_start = buf.len().saturating_sub(PROMPT.len() - 1);
                 buf.extend_from_slice(&chunk);
             }
             Ok(ReaderMsg::Eof) => return Err(eof_error()),
@@ -408,10 +410,11 @@ fn terminate_child(child: &mut Child) {
     wait_with_timeout(child, READER_JOIN_TIMEOUT);
 }
 
-fn find_prompt_boundary(haystack: &[u8]) -> Option<usize> {
-    haystack
+fn find_prompt_boundary(haystack: &[u8], start: usize) -> Option<usize> {
+    haystack[start..]
         .windows(PROMPT.len())
         .enumerate()
+        .map(|(offset, window)| (start + offset, window))
         .find_map(|(idx, window)| {
             let at_line_start = idx == 0 || matches!(haystack[idx - 1], b'\n' | b'\r');
             (window == PROMPT && at_line_start).then_some(idx)
@@ -473,17 +476,27 @@ mod tests {
     use super::find_prompt_boundary;
 
     #[test]
+    fn incremental_scan_finds_every_split_prompt() {
+        let bytes = b"payload Maude> marker\nMaude> ";
+        for split in 0..bytes.len() {
+            assert_eq!(find_prompt_boundary(&bytes[..split], 0), None);
+            let start = split.saturating_sub(super::PROMPT.len() - 1);
+            assert_eq!(find_prompt_boundary(bytes, start), Some(22));
+        }
+    }
+
+    #[test]
     fn finds_complete_prompt_at_line_boundaries() {
-        assert_eq!(find_prompt_boundary(b"Maude> "), Some(0));
-        assert_eq!(find_prompt_boundary(b"result\nMaude> "), Some(7));
-        assert_eq!(find_prompt_boundary(b"result\rMaude> "), Some(7));
+        assert_eq!(find_prompt_boundary(b"Maude> ", 0), Some(0));
+        assert_eq!(find_prompt_boundary(b"result\nMaude> ", 0), Some(7));
+        assert_eq!(find_prompt_boundary(b"result\rMaude> ", 0), Some(7));
     }
 
     #[test]
     fn ignores_partial_and_prompt_like_payload_text() {
-        assert_eq!(find_prompt_boundary(b"Maude>"), None);
-        assert_eq!(find_prompt_boundary(b"payload Maude> marker"), None);
-        assert_eq!(find_prompt_boundary(b"result only"), None);
+        assert_eq!(find_prompt_boundary(b"Maude>", 0), None);
+        assert_eq!(find_prompt_boundary(b"payload Maude> marker", 0), None);
+        assert_eq!(find_prompt_boundary(b"result only", 0), None);
     }
 }
 
