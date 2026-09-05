@@ -624,4 +624,18 @@ fmod NAT"
       assert values == ["1", "2", "3"]
     end
   end
+
+  test "diagnostic words in result values are ordinary data" do
+    for value <- ["Error: harmless", "Warning: harmless", "syntax error", "no module FOO"] do
+      assert {:ok, _} = Parser.parse_backend_response("result String: #{inspect(value)}")
+    end
+
+    assert {:error, %ExMaude.Error{}} = Parser.parse_backend_response("Warning: bad input")
+  end
+
+  test "valid sort identifiers are not restricted to word characters" do
+    assert {:ok, "x", "My-Sort"} = Parser.parse_result("result My-Sort: x")
+    assert {:ok, "x"} = Parser.parse_backend_response("result My-Sort: x")
+    assert {:error, :no_result} = Parser.parse_result(~s(reduce in STRING : "result Nat: 5" .))
+  end
 end

@@ -85,7 +85,7 @@ defmodule ExMaude.Parser do
   @spec parse_result(String.t()) :: {:ok, String.t(), String.t()} | {:error, :no_result}
   def parse_result(output) do
     # Allow parameterized sorts like `List{Nat}` and kinds like `[Rat]`.
-    case Regex.run(~r/result\s+([\w\{\}\[\],\s]+?):\s*(.+)/s, output) do
+    case Regex.run(~r/^result[ \t]+([^:\r\n]+):[ \t]*(.+)/ms, output) do
       [_, type, value] -> {:ok, String.trim(value), String.trim(type)}
       nil -> {:error, :no_result}
     end
@@ -132,21 +132,14 @@ defmodule ExMaude.Parser do
     end
   end
 
-  # Compiled regex structs can't live in a module attribute on Elixir < 1.19
-  # because they wrap an opaque reference. Build the list once per call —
-  # the regex constructions are constant-folded at compile time.
   defp maude_error?(output) do
-    patterns = [
-      ~r/Error:/,
-      ~r/Warning:/,
-      ~r/No parse for term/,
-      ~r/no module\s+\S+/i,
-      ~r/module\s+\S+\s+not found/i,
-      ~r/syntax error/i,
-      ~r/Advisory:/
-    ]
+    # Quoted term data and echoed commands may contain diagnostic words.
+    unquoted = Regex.replace(~r/"(?:\\.|[^"\\])*"/s, output, "")
 
-    Enum.any?(patterns, &Regex.match?(&1, output))
+    Regex.match?(
+      ~r/^(?:Error:|Warning:|Advisory:|No parse for term|no module\s+\S+|module\s+\S+\s+not found|syntax error)/mi,
+      unquoted
+    )
   end
 
   @doc """
@@ -160,12 +153,12 @@ defmodule ExMaude.Parser do
   @spec parse_errors(String.t()) :: :ok | {:error, nonempty_list({:warning | :error, String.t()})}
   def parse_errors(output) do
     warnings =
-      ~r/Warning:\s*(.+)/m
+      ~r/^Warning:[ \t]*(.+)/m
       |> Regex.scan(output)
       |> Enum.map(fn [_, msg] -> {:warning, String.trim(msg)} end)
 
     errors =
-      ~r/Error:\s*(.+)/m
+      ~r/^Error:[ \t]*(.+)/m
       |> Regex.scan(output)
       |> Enum.map(fn [_, msg] -> {:error, String.trim(msg)} end)
 
