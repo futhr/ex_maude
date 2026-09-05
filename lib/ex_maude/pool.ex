@@ -186,15 +186,25 @@ defmodule ExMaude.Pool do
 
     with {:ok, workers} <- pool_workers(pool),
          :ok <- ensure_workers_present(workers) do
-      results =
-        workers
-        |> Task.async_stream(fun, timeout: timeout, on_timeout: :kill_task, ordered: true)
-        |> Enum.map(fn
-          {:ok, value} -> value
-          {:exit, reason} -> {:error, Error.pool_error({:broadcast_failed, reason})}
-        end)
+      {:ok, supervisor} = Task.Supervisor.start_link()
 
-      {:ok, results}
+      try do
+        results =
+          supervisor
+          |> Task.Supervisor.async_stream_nolink(workers, fun,
+            timeout: timeout,
+            on_timeout: :kill_task,
+            ordered: true
+          )
+          |> Enum.map(fn
+            {:ok, value} -> value
+            {:exit, reason} -> {:error, Error.pool_error({:broadcast_failed, reason})}
+          end)
+
+        {:ok, results}
+      after
+        Supervisor.stop(supervisor)
+      end
     end
   end
 

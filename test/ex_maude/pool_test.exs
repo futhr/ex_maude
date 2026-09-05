@@ -105,6 +105,28 @@ defmodule ExMaude.PoolTest do
     end
   end
 
+  test "broadcast callback failures cannot take down the caller" do
+    config = [
+      name: {:local, :broadcast_failure_pool},
+      worker_module: ExMaude.PoolTest.Worker,
+      size: 1,
+      max_overflow: 0
+    ]
+
+    start_supervised!({ExMaude.PoolTest.PoolOwner, {config, []}})
+
+    for fun <- [
+          fn _ -> exit(:boom) end,
+          fn _ -> raise "boom" end,
+          fn _ -> Process.exit(self(), :kill) end
+        ] do
+      assert {:ok, [{:error, %Error{type: :pool_error}}]} =
+               Pool.broadcast(fun, pool: :broadcast_failure_pool)
+    end
+
+    assert {:ok, [:ok]} = Pool.broadcast(fn _ -> :ok end, pool: :broadcast_failure_pool)
+  end
+
   describe "checkout/1" do
     test "returns a structured error when the pool is not running" do
       assert {:error, %Error{type: :pool_error}} =
