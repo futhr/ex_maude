@@ -262,6 +262,7 @@ endfm
 *** ============================================================
 
 fmod PREDICATE is
+  protecting CAPABILITY .
   protecting PREDICATE-VALUE .
   protecting AGENT-ID .
   protecting JURISDICTION .
@@ -317,6 +318,14 @@ fmod PREDICATE is
   eq predicateValue(propGt(P:String, V:PredicateValue)) = V:PredicateValue .
   eq predicateValue(propLt(P:String, V:PredicateValue)) = V:PredicateValue .
   eq predicateValue(P:Predicate) = null [owise] .
+  *** A possible dependency edge exists for any positive capability reference.
+  op requiresGrantedCapability : Predicate CapabilitySet -> Bool .
+  eq requiresGrantedCapability(capabilityRequired(C:String), CS:CapabilitySet) = containsCap(C:String, CS:CapabilitySet) .
+  eq requiresGrantedCapability(andP(P1:Predicate, P2:Predicate), CS:CapabilitySet) =
+    requiresGrantedCapability(P1:Predicate, CS:CapabilitySet) or requiresGrantedCapability(P2:Predicate, CS:CapabilitySet) .
+  eq requiresGrantedCapability(orP(P1:Predicate, P2:Predicate), CS:CapabilitySet) =
+    requiresGrantedCapability(P1:Predicate, CS:CapabilitySet) or requiresGrantedCapability(P2:Predicate, CS:CapabilitySet) .
+  eq requiresGrantedCapability(P:Predicate, CS:CapabilitySet) = false [owise] .
 endfm
 
 *** ============================================================
@@ -630,20 +639,9 @@ fmod AUTHORITY-CHECK is
   *** Does R1's invocation list grant the capability R2 requires?
   *** (Reuse trigger semantics from iot-rules-style cascade detection.)
   op grantsRequired : AIRule AIRule -> Bool .
-  op authorityPredicateRequiresCap : Predicate -> String .
-  eq authorityPredicateRequiresCap(capabilityRequired(C:String)) = C:String .
-  eq authorityPredicateRequiresCap(andP(P1:Predicate, P2:Predicate)) =
-    if authorityPredicateRequiresCap(P1:Predicate) =/= ""
-    then authorityPredicateRequiresCap(P1:Predicate)
-    else authorityPredicateRequiresCap(P2:Predicate)
-    fi .
-  eq authorityPredicateRequiresCap(P:Predicate) = "" [owise] .
-
   eq grantsRequired(R1:AIRule, R2:AIRule) =
     eqTenantId(tenantOf(ruleAgent(R1:AIRule)), tenantOf(ruleAgent(R2:AIRule))) and
-    authorityPredicateRequiresCap(ruleTrigger(R2:AIRule)) =/= "" and
-    containsCap(authorityPredicateRequiresCap(ruleTrigger(R2:AIRule)),
-                ruleCapabilityGrants(R1:AIRule)) .
+    requiresGrantedCapability(ruleTrigger(R2:AIRule), ruleCapabilityGrants(R1:AIRule)) .
 
   op detectAuthorityEscalation : AIRule AIRule -> AIConflictSet .
   eq detectAuthorityEscalation(R1:AIRule, R2:AIRule) =
@@ -666,24 +664,10 @@ endfm
 fmod CASCADE-DETECTOR is
   protecting AI-CONFLICT .
 
-  *** Does a predicate require a capability that a CapabilitySet
-  *** grants?
-  op predicateRequiresCap : Predicate -> String .
-  eq predicateRequiresCap(capabilityRequired(C:String)) = C:String .
-  eq predicateRequiresCap(andP(P1:Predicate, P2:Predicate)) =
-    if predicateRequiresCap(P1:Predicate) =/= ""
-    then predicateRequiresCap(P1:Predicate)
-    else predicateRequiresCap(P2:Predicate)
-    fi .
-  eq predicateRequiresCap(P:Predicate) = "" [owise] .
-
-  *** Does R1's capability grants satisfy R2's trigger's
-  *** capability_required predicate?
   op cascadeFires : AIRule AIRule -> Bool .
   eq cascadeFires(R1:AIRule, R2:AIRule) =
     eqTenantId(tenantOf(ruleAgent(R1:AIRule)), tenantOf(ruleAgent(R2:AIRule))) and
-    predicateRequiresCap(ruleTrigger(R2:AIRule)) =/= "" and
-    containsCap(predicateRequiresCap(ruleTrigger(R2:AIRule)), ruleCapabilityGrants(R1:AIRule)) .
+    requiresGrantedCapability(ruleTrigger(R2:AIRule), ruleCapabilityGrants(R1:AIRule)) .
 
   op detectAgentLoopCascade : AIRule AIRule -> AIConflictSet .
   eq detectAgentLoopCascade(R1:AIRule, R2:AIRule) =

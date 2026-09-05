@@ -27,4 +27,19 @@ defmodule ExMaude.ModelSemanticsTest do
     assert {:ok, "true"} =
              Port.execute(worker, "reduce in JURISDICTION : inJurisdictionSet(de, eu) .")
   end
+
+  test "compound triggers inspect every positive capability", %{worker: worker} do
+    for operator <- ["andP", "orP"], granted <- ["a", "z"] do
+      term =
+        ~s|requiresGrantedCapability(#{operator}(capabilityRequired("a"), capabilityRequired("z")), cap("#{granted}", "v1"))|
+
+      assert {:ok, "true"} = Port.execute(worker, "reduce in PREDICATE : #{term} .")
+    end
+
+    assert {:ok, "false"} =
+             Port.execute(
+               worker,
+               ~s|reduce in PREDICATE : requiresGrantedCapability(notP(capabilityRequired("a")), cap("a", "v1")) .|
+             )
+  end
 end
