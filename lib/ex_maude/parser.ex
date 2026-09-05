@@ -56,12 +56,14 @@ defmodule ExMaude.Parser do
   """
   @spec parse_search_results(String.t()) :: list(map())
   def parse_search_results(output) do
-    output
-    |> String.split(~r/Solution \d+/)
-    |> Enum.drop(1)
-    |> Enum.with_index(1)
-    |> Enum.map(fn {solution_text, index} ->
-      parse_solution(solution_text, index)
+    ~r/^Solution (\d+)(?: \(state \d+\))?[ \t]*\r?$/m
+    |> Regex.scan(output, return: :index)
+    |> Enum.chunk_every(2, 1, [nil])
+    |> Enum.map(fn [current, following] ->
+      [{start, _length}, {number_start, number_length}] = current
+      finish = if following, do: following |> hd() |> elem(0), else: byte_size(output)
+      number = output |> binary_part(number_start, number_length) |> String.to_integer()
+      parse_solution(binary_part(output, start, finish - start), number)
     end)
   end
 

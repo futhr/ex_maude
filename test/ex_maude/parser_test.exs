@@ -638,4 +638,11 @@ fmod NAT"
     assert {:ok, "x"} = Parser.parse_backend_response("result My-Sort: x")
     assert {:error, :no_result} = Parser.parse_result(~s(reduce in STRING : "result Nat: 5" .))
   end
+
+  test "search headers preserve actual numbering and ignore markers inside values" do
+    output = "Solution 7 (state 8)\nS:String --> \"Solution 99\"\n"
+
+    assert [%{solution: 7, state_num: 8, substitution: %{"S:String" => ~s("Solution 99")}}] =
+             Parser.parse_search_results(output)
+  end
 end

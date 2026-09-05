@@ -158,14 +158,14 @@ defmodule ExMaude.Result.Search do
   end
 
   defp parse_states_explored(output) do
-    case Regex.run(~r/states:\s*(\d+)/, output) do
+    case Regex.scan(~r/^states:\s*(\d+)/m, output) |> List.last() do
       [_, count] -> String.to_integer(count)
       nil -> nil
     end
   end
 
   defp parse_time(output) do
-    case Regex.run(~r/in\s*(\d+)ms/, output) do
+    case Regex.scan(~r/\bin\s*(\d+)ms/, output) |> List.last() do
       [_, ms] -> String.to_integer(ms)
       nil -> nil
     end

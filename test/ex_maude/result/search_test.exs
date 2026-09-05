@@ -269,4 +269,11 @@ defmodule ExMaude.Result.SearchTest do
       assert inspected == "#ExMaude.Result.Search<1 solution(s), states: 10, time: 50ms>"
     end
   end
+
+  test "statistics describe the final search progress" do
+    output =
+      "Solution 1 (state 1)\nstates: 2 rewrites: 3 in 1ms cpu\nSolution 2 (state 5)\nstates: 6 rewrites: 8 in 4ms cpu\n"
+
+    assert {:ok, %{states_explored: 6, time_ms: 4}} = ExMaude.Result.Search.parse(output)
+  end
 end
