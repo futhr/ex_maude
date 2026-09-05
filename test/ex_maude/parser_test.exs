@@ -476,11 +476,9 @@ fmod NAT"
 
   describe "parse_term/1 complex cases" do
     test "parses function with nested comma arguments" do
-      # Note: The simple comma-split parser doesn't handle nested parens well
       result = Parser.parse_term("pair(f(a, b), g(c, d))")
       assert {:app, "pair", args} = result
-      # The simple parser splits on all commas, so it finds 4 args
-      assert length(args) == 4
+      assert [{:app, "f", [const: "a", const: "b"]}, {:app, "g", [const: "c", const: "d"]}] = args
     end
 
     test "parses chained operators" do
@@ -644,5 +642,12 @@ fmod NAT"
 
     assert [%{solution: 7, state_num: 8, substitution: %{"S:String" => ~s("Solution 99")}}] =
              Parser.parse_search_results(output)
+  end
+
+  test "nested and quoted arguments stay intact" do
+    assert {:app, "f", [{:app, "g", [{:const, "a"}, {:const, "b"}]}, {:const, "c"}]} =
+             Parser.parse_term("f(g(a, b), c)")
+
+    assert {:app, "f", [{:const, ~s("a,b")}, {:const, "c"}]} = Parser.parse_term(~s|f("a,b", c)|)
   end
 end

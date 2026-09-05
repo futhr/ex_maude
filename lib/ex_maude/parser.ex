@@ -35,9 +35,9 @@ defmodule ExMaude.Parser do
   ## Limitations
 
   The term parser (`parse_term/1`) provides basic parsing but does not handle
-  all Maude syntax. Complex nested terms with parentheses in arguments may
-  not parse correctly. For full parsing, consider using NimbleParsec-based
-  parsers or Maude's own `parse` command.
+  all Maude syntax or module-defined operator precedence. Nested prefix
+  applications and quoted arguments are supported. Use Maude's own `parse`
+  command when the module's full grammar is required.
   """
 
   @doc """
@@ -256,11 +256,12 @@ defmodule ExMaude.Parser do
     end
   end
 
-  # Naive comma split — does not handle commas nested inside parens.
+  # Split only between arguments, preserving nested terms and quoted commas.
   defp parse_args(args_str) do
-    args_str
-    |> String.split(",")
-    |> Enum.map(&parse_one_arg/1)
+    case ExMaude.Balanced.split(args_str) do
+      {:ok, args} -> Enum.map(args, &parse_one_arg/1)
+      :error -> [{:const, args_str}]
+    end
   end
 
   defp parse_one_arg(arg) do
