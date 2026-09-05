@@ -21,13 +21,13 @@ defmodule ExMaude.MixProject do
       test_coverage: [tool: ExCoveralls],
       elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
-      # C-Node compilation (conditional - only if c_src exists and erl_interface available)
+      # Optional C-Node bridge; Make handles incremental rebuilds.
       compilers: maybe_add_make_compiler(),
       make_targets: ["all"],
       make_clean: ["clean"],
       make_cwd: "c_src",
       make_error_message: """
-      C-Node compilation skipped or failed. This is optional - the Port backend works without it.
+      C-Node compilation failed. Set EX_MAUDE_BUILD_CNODE=0 for a Port-only installation.
 
       For C-Node support, ensure erl_interface is available:
         erl -noshell -eval 'io:format("~p~n", [code:lib_dir(erl_interface)]), halt().'
@@ -39,40 +39,20 @@ defmodule ExMaude.MixProject do
     ]
   end
 
-  # Only add elixir_make compiler if c_src exists, erl_interface is available,
-  # and the binary actually needs (re)building
+  # Automatic builds require a C toolchain; Port-only installs can opt out.
   defp maybe_add_make_compiler do
-    if File.dir?("c_src") and erl_interface_available?() and needs_compilation?() do
-      [:elixir_make] ++ Mix.compilers()
-    else
-      Mix.compilers()
+    available? =
+      File.dir?("c_src") and match?({:unix, _}, :os.type()) and
+        System.find_executable("make") != nil and
+        System.find_executable(System.get_env("CC", "cc")) != nil and
+        match?(path when is_list(path), :code.lib_dir(:erl_interface))
+
+    case System.get_env("EX_MAUDE_BUILD_CNODE") do
+      "0" -> Mix.compilers()
+      "1" -> [:elixir_make | Mix.compilers()]
+      _ when available? -> [:elixir_make | Mix.compilers()]
+      _ -> Mix.compilers()
     end
-  end
-
-  defp needs_compilation? do
-    binary = "priv/maude_bridge"
-
-    not File.exists?(binary) or
-      Enum.any?(Path.wildcard("c_src/*.c") ++ Path.wildcard("c_src/*.h"), fn src ->
-        File.stat!(src).mtime > File.stat!(binary).mtime
-      end)
-  end
-
-  defp erl_interface_available? do
-    case System.cmd(
-           "erl",
-           [
-             "-noshell",
-             "-eval",
-             "case code:lib_dir(erl_interface) of {error, _} -> halt(1); _ -> halt(0) end."
-           ],
-           stderr_to_stdout: true
-         ) do
-      {_, 0} -> true
-      _ -> false
-    end
-  rescue
-    _ -> false
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]

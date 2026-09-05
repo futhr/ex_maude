@@ -496,6 +496,12 @@ mix bench.backends     # Benchmark every backend available in this VM
 mix bench.backends.all # Start distribution, then benchmark available backends
 ```
 
+The C bridge builds automatically when a C compiler, Make, and Erlang's
+`erl_interface` are available. Set `EX_MAUDE_BUILD_CNODE=0` to skip it for a
+Port-only installation, or `EX_MAUDE_BUILD_CNODE=1` to require a build and
+surface missing tools as errors. `CC`, `CFLAGS`, and `LDFLAGS` can customize
+the native build.
+
 **C-Node Testing:**
 ```bash
 mix test.cnode # Run C-Node integration tests

@@ -59,19 +59,12 @@ EI_LIB := $(EI_DIR)/lib
 
 # Compiler settings
 # -D_REENTRANT is required for OTP 21+ to use __erl_errno_place() instead of __erl_errno symbol
-CC := cc
-CFLAGS := -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -O2 -D_REENTRANT -isystem $(EI_INCLUDE) -isystem $(ERTS_INCLUDE)
-LDFLAGS := -L$(EI_LIB) -lei -lpthread
+CC ?= cc
+CFLAGS ?= -O2
+CFLAGS += -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -D_REENTRANT -isystem $(EI_INCLUDE) -isystem $(ERTS_INCLUDE)
+LDFLAGS += -L$(EI_LIB) -lei -lpthread
 
-# Platform-specific settings
 UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
-    # macOS - no additional flags needed
-endif
-ifeq ($(UNAME_S),Linux)
-    # Linux needs pthread
-    LDFLAGS += -lpthread
-endif
 
 # Target binary (goes in priv/)
 PRIV_DIR := ../priv
@@ -97,7 +90,7 @@ $(TARGET): $(OBJS) | $(PRIV_DIR)
 	@echo "Built: $@"
 
 # Compile C files
-%.o: %.c
+%.o: %.c Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Clean build artifacts
