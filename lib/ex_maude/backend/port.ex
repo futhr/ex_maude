@@ -390,7 +390,7 @@ defmodule ExMaude.Backend.Port do
   end
 
   defp become_ready(state, preload, startup_timeout) do
-    with {:ok, state} <- wait_for_ready(state, startup_timeout) do
+    with {:ok, state, _output} <- wait_for_ready(state, startup_timeout) do
       preload_modules(state, preload, startup_timeout)
     end
   end
@@ -409,7 +409,7 @@ defmodule ExMaude.Backend.Port do
 
         case prompt_offset("", buffer, 0) do
           {:ok, offset} when offset <= state.max_response_bytes ->
-            {:ok, reset_response(state)}
+            {:ok, reset_response(state), binary_part(buffer, 0, offset)}
 
           {:ok, _} ->
             {:error, :response_too_large}
@@ -436,13 +436,14 @@ defmodule ExMaude.Backend.Port do
     if File.exists?(path) do
       Port.command(state.port, Command.port_command(Command.load_file(path)))
 
-      case wait_for_ready(state, startup_timeout) do
-        {:ok, state} -> preload_modules(state, rest, startup_timeout)
+      with {:ok, state, output} <- wait_for_ready(state, startup_timeout),
+           {:ok, _} <- parse_response(output) do
+        preload_modules(state, rest, startup_timeout)
+      else
         {:error, reason} -> {:error, {:preload_failed, path, reason}}
       end
     else
-      Logger.warning("Preload module not found: #{path}")
-      preload_modules(state, rest, startup_timeout)
+      {:error, {:preload_failed, path, Error.file_not_found(path)}}
     end
   end
 

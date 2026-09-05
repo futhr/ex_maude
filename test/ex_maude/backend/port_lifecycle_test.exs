@@ -300,4 +300,32 @@ defmodule ExMaude.Backend.PortLifecycleTest do
     end) ||
       flunk("OS process #{os_pid} still alive after timeout-triggered worker stop")
   end
+
+  describe "startup preloads" do
+    @tag :integration
+    test "rejects invalid Maude source instead of recording success" do
+      Process.flag(:trap_exit, true)
+
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "invalid-preload-#{System.unique_integer([:positive])}.maude"
+        )
+
+      File.write!(path, "fmod INVALID-PRELOAD is protecting NONEXISTENT-PRELOAD . endfm")
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:error, {:maude_start_failed, {:preload_failed, ^path, %Error{}}}} =
+               Port.start_link(maude_path: ExMaude.Binary.path(), preload_modules: [path])
+    end
+
+    test "rejects missing preload files" do
+      Process.flag(:trap_exit, true)
+      path = "/nonexistent/ex-maude-preload.maude"
+
+      assert {:error,
+              {:maude_start_failed, {:preload_failed, ^path, %Error{type: :file_not_found}}}} =
+               Port.start_link(maude_path: @fake_maude, preload_modules: [path])
+    end
+  end
 end
