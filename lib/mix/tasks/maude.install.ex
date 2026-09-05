@@ -505,7 +505,7 @@ defmodule Mix.Tasks.Maude.Install do
     with :ok <- validate_https_url(url),
          :ok <- validate_download_path(destination) do
       case System.find_executable("curl") do
-        nil -> download_with_httpc(url, destination)
+        nil -> download_with_mint(url, destination)
         curl -> download_with_curl(curl, url, destination)
       end
     end
@@ -535,6 +535,10 @@ defmodule Mix.Tasks.Maude.Install do
       "--proto-redir",
       "=https",
       "--progress-bar",
+      "--connect-timeout",
+      "30",
+      "--max-time",
+      Integer.to_string(div(@download_timeout, 1000)),
       "--max-filesize",
       Integer.to_string(@max_download_size),
       "-o",
@@ -579,71 +583,34 @@ defmodule Mix.Tasks.Maude.Install do
     end
   end
 
-  defp download_with_httpc(url, destination, redirects_left \\ 5)
+  defp download_with_mint(url, destination, redirects_left \\ 5, deadline \\ nil)
 
-  defp download_with_httpc(_, _, 0) do
+  defp download_with_mint(_, _, 0, _) do
     Mix.raise("Failed to download Maude: too many redirects")
   end
 
-  defp download_with_httpc(url, destination, redirects_left) do
-    url_charlist = String.to_charlist(url)
+  defp download_with_mint(url, destination, redirects_left, deadline) do
+    deadline = deadline || System.monotonic_time(:millisecond) + @download_timeout
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
 
-    http_opts = [
-      ssl: ssl_opts(),
-      timeout: @download_timeout,
-      autoredirect: false
-    ]
+    case ExMaude.Download.fetch(url, destination,
+           timeout: remaining,
+           max_bytes: @max_download_size
+         ) do
+      :ok ->
+        validate_downloaded_file(destination)
 
-    case :httpc.request(:get, {url_charlist, []}, http_opts, body_format: :binary) do
-      {:ok, {{_, 200, _}, _, body}} when byte_size(body) > @max_download_size ->
-        Mix.raise("""
-        Downloaded file exceeds maximum size limit.
+      {:redirect, location} ->
+        location =
+          url
+          |> URI.merge(location)
+          |> URI.to_string()
 
-        Size: #{div(byte_size(body), 1024 * 1024)} MB
-        Limit: #{div(@max_download_size, 1024 * 1024)} MB
-        """)
-
-      {:ok, {{_, 200, _}, _, body}} ->
-        File.write!(destination, body)
-        size_kb = div(byte_size(body), 1024)
-        Mix.shell().info("Downloaded #{size_kb} KB")
-        :ok
-
-      {:ok, {{_, status, _}, headers, _}} when status in [301, 302, 303, 307, 308] ->
-        handle_redirect(headers, destination, redirects_left - 1)
-
-      {:ok, {{_, status, reason}, _, _}} ->
-        Mix.raise("""
-        Failed to download Maude: HTTP #{status} #{reason}
-
-        URL: #{url}
-
-        This may be a temporary issue. Please try again later.
-        """)
-
-      {:error, {:failed_connect, _}} ->
-        Mix.raise("""
-        Failed to connect to download server.
-
-        Please check:
-          * Your internet connection
-          * Firewall or proxy settings
-          * That github.com is accessible
-        """)
-
-      {:error, :timeout} ->
-        Mix.raise("""
-        Download timed out after #{div(@download_timeout, 1000)} seconds.
-
-        The file may be large or your connection slow. Try again or download manually.
-        """)
+        :ok = validate_https_url(location)
+        download_with_mint(location, destination, redirects_left - 1, deadline)
 
       {:error, reason} ->
-        Mix.raise("""
-        Failed to download Maude: #{inspect(reason)}
-
-        URL: #{url}
-        """)
+        Mix.raise("Failed to download Maude: #{inspect(reason)}")
     end
   end
 
@@ -656,20 +623,6 @@ defmodule Mix.Tasks.Maude.Install do
         match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
       ]
     ]
-  end
-
-  defp handle_redirect(headers, destination, redirects_left) do
-    case Enum.find(headers, fn {key, _} -> String.downcase(to_string(key)) == "location" end) do
-      {_, location} ->
-        location = to_string(location)
-
-        with :ok <- validate_https_url(location) do
-          download_with_httpc(location, destination, redirects_left)
-        end
-
-      nil ->
-        {:error, "no Location header in redirect response"}
-    end
   end
 
   defp validate_https_url(url) do
@@ -909,7 +862,7 @@ defmodule Mix.Tasks.Maude.Install do
   defp verify_installation(maude_binary) do
     Mix.shell().info("Verifying installation...")
 
-    verify_commands = [["--version"], ["--help"], []]
+    verify_commands = [["--version"], ["--help"]]
 
     result =
       Enum.find_value(verify_commands, fn args ->
@@ -956,9 +909,10 @@ defmodule Mix.Tasks.Maude.Install do
   end
 
   defp verify_command(maude_binary, args) do
-    case System.cmd(maude_binary, args, stderr_to_stdout: true) do
-      {output, 0} -> {:ok, output}
-      {output, _} -> maude_banner(output)
+    case ExMaude.Subprocess.run(maude_binary, args, 5_000, 64 * 1024) do
+      {:ok, output, 0} -> {:ok, output}
+      {:ok, output, _} -> maude_banner(output)
+      {:error, _} -> nil
     end
   end
 

@@ -349,12 +349,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
   end
 
   describe "error handling" do
-    test "fails gracefully on network error" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "Failed to connect"
-      assert source =~ "internet connection"
-    end
-
     test "provides helpful message for unsupported platform" do
       source = File.read!("lib/mix/tasks/maude.install.ex")
       assert source =~ "No Maude binary available for platform"
@@ -437,16 +431,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
       source = File.read!("lib/mix/tasks/maude.install.ex")
       assert source =~ "download_with_curl"
       assert source =~ "--max-filesize"
-    end
-
-    test "httpc fallback exists" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "download_with_httpc"
-    end
-
-    test "redirect handling exists" do
-      source = File.read!("lib/mix/tasks/maude.install.ex")
-      assert source =~ "handle_redirect"
     end
   end
 

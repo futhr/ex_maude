@@ -86,6 +86,7 @@ defmodule ExMaude.MixProject do
       {:poolboy, "~> 1.5"},
       {:telemetry, "~> 1.2"},
       {:jason, "~> 1.4"},
+      {:mint, "~> 1.10"},
       # Native code compilation
       {:elixir_make, "~> 0.8", runtime: false},
       # NIF — precompiled binaries downloaded at install time
