@@ -101,6 +101,38 @@ defmodule ExMaude.AI.ConflictParser do
     end
   end
 
+  @doc "Parses a complete conflict result, returning an error for malformed or unreduced output."
+  @spec parse_result(String.t()) :: {:ok, [conflict()]} | {:error, ExMaude.Error.t()}
+  def parse_result(output),
+    do: ExMaude.ConflictOutput.parse(output, "noAIConflict", "||c||", &parse_complete/1)
+
+  defp parse_complete(expression) do
+    alias ExMaude.ConflictOutput, as: Output
+
+    with {:ok, [type, first, second, reason]} <- Output.arguments(expression, "aiConflict"),
+         parsed_type when parsed_type != :unknown_conflict <- parse_conflict_type(type),
+         {:ok, first_id} <- Output.rule_id(first, "aiRule", 7),
+         {:ok, second_id} <- Output.rule_id(second, "aiRule", 7),
+         {:ok, reason} <- Output.string(reason) do
+      %{type: parsed_type, rule1: first_id, rule2: second_id, reason: reason}
+    else
+      _ -> parse_complete_single(expression)
+    end
+  end
+
+  defp parse_complete_single(expression) do
+    alias ExMaude.ConflictOutput, as: Output
+
+    with {:ok, [type, rule, reason]} <- Output.arguments(expression, "aiConflictSingle"),
+         parsed_type when parsed_type != :unknown_conflict <- parse_conflict_type(type),
+         {:ok, id} <- Output.rule_id(rule, "aiRule", 7),
+         {:ok, reason} <- Output.string(reason) do
+      %{type: parsed_type, rule1: id, rule2: nil, reason: reason}
+    else
+      _ -> nil
+    end
+  end
+
   defp parse_conflict_list(output) do
     pairwise = ExMaude.Balanced.extract(output, "aiConflict(")
     single = ExMaude.Balanced.extract(output, "aiConflictSingle(")

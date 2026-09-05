@@ -166,7 +166,7 @@ defmodule ExMaude.AI do
            {:ok, maude_rules} <- Encoder.encode_rules(rules),
            jurisdiction_set = Encoder.encode_jurisdiction_set(jurisdictions),
            {:ok, output} <- run_detection(maude_rules, jurisdiction_set, timeout, opts) do
-        {:ok, ConflictParser.parse_conflicts(output)}
+        ConflictParser.parse_result(output)
       end
 
     duration = System.monotonic_time() - start_time
@@ -202,7 +202,7 @@ defmodule ExMaude.AI do
          command =
            "reduce in AI-CONFLICT-DETECTOR : detectAllPairConflicts(#{maude_rules}) .",
          {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
-      {:ok, ConflictParser.parse_conflicts(output)}
+      ConflictParser.parse_result(output)
     end
   end
 
@@ -227,7 +227,7 @@ defmodule ExMaude.AI do
          command =
            "reduce in AI-CONFLICT-DETECTOR : detectAllSingleRuleConflicts(#{maude_rules}, #{jurisdiction_set}) .",
          {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
-      {:ok, ConflictParser.parse_conflicts(output)}
+      ConflictParser.parse_result(output)
     end
   end
 

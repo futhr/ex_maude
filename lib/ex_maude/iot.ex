@@ -147,8 +147,9 @@ defmodule ExMaude.IoT do
            :ok <- ensure_iot_module_loaded(opts),
            {:ok, maude_rules} <- Encoder.encode_rules(rules),
            {:ok, output} <- run_detection(maude_rules, timeout, opts) do
-        conflicts = ConflictParser.parse_conflicts(output)
-        filter_conflicts(conflicts, Keyword.get(opts, :conflict_types))
+        with {:ok, conflicts} <- ConflictParser.parse_result(output) do
+          filter_conflicts(conflicts, Keyword.get(opts, :conflict_types))
+        end
       end
 
     duration = System.monotonic_time() - start_time
@@ -187,7 +188,7 @@ defmodule ExMaude.IoT do
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command = "reduce in CONFLICT-DETECTOR : detectConflicts(#{maude_rules}) .",
          {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
-      {:ok, ConflictParser.parse_conflicts(output)}
+      ConflictParser.parse_result(output)
     end
   end
 
@@ -206,7 +207,7 @@ defmodule ExMaude.IoT do
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command = "reduce in CONFLICT-DETECTOR : detectEnvConflicts(#{maude_rules}) .",
          {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
-      {:ok, ConflictParser.parse_conflicts(output)}
+      ConflictParser.parse_result(output)
     end
   end
 
@@ -224,7 +225,7 @@ defmodule ExMaude.IoT do
          {:ok, maude_rules} <- Encoder.encode_rules(rules),
          command = "reduce in CONFLICT-DETECTOR : detectCascades(#{maude_rules}) .",
          {:ok, output} <- Maude.execute(command, maude_opts(opts, timeout)) do
-      {:ok, ConflictParser.parse_conflicts(output)}
+      ConflictParser.parse_result(output)
     end
   end
 

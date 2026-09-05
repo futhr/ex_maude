@@ -440,4 +440,10 @@ defmodule ExMaude.IoT.ConflictParserTest do
       assert length(conflicts) == 1
     end
   end
+
+  test "strict parsing rejects incomplete and unevaluated results" do
+    for output <- ["", "detectAllConflicts(empty)", "conflict(stateConflict,", "garbage"] do
+      assert {:error, %ExMaude.Error{type: :parse_error}} = ConflictParser.parse_result(output)
+    end
+  end
 end

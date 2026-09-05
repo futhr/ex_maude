@@ -107,13 +107,17 @@ defmodule ExMaude.AITest do
                AI.detect_single_rule_conflicts([:bad])
     end
 
-    test "detectors encode and execute through a fake Maude pool" do
+    test "detectors reject echoed commands as unverified output" do
       pool = start_fake_pool()
       rules = [%{id: "r", agent_id: {"a", "b"}, trigger: {:always}, invocations: []}]
 
-      assert {:ok, []} = AI.detect_conflicts(rules, pool: pool)
-      assert {:ok, []} = AI.detect_pair_conflicts(rules, pool: pool)
-      assert {:ok, []} = AI.detect_single_rule_conflicts(rules, pool: pool)
+      assert {:error, %ExMaude.Error{type: :parse_error}} = AI.detect_conflicts(rules, pool: pool)
+
+      assert {:error, %ExMaude.Error{type: :parse_error}} =
+               AI.detect_pair_conflicts(rules, pool: pool)
+
+      assert {:error, %ExMaude.Error{type: :parse_error}} =
+               AI.detect_single_rule_conflicts(rules, pool: pool)
     end
   end
 
@@ -386,7 +390,8 @@ defmodule ExMaude.AITest do
         }
       ]
 
-      assert {:ok, []} = AI.detect_pair_conflicts(rules, pool: pool)
+      assert {:ok, []} =
+               AI.detect_pair_conflicts(rules, pool: pool)
     end
 
     test "skips single-rule sovereignty conflict", %{maude_available: true} do
