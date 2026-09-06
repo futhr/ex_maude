@@ -120,6 +120,9 @@ jobs:
       - name: Run Credo
         run: mix credo --strict
 
+      - name: Benchmark regression tests
+        run: mix test --include benchmark test/ex_maude/benchmark_regression_test.exs
+
       - name: Security audit
         run: |
           mix hex.audit

@@ -40,6 +40,8 @@ sobelow_command = [
     {:dialyzer, command: "mix dialyzer"},
     {:doctor, command: "mix doctor --summary --raise"},
     {:ex_doc, command: ["sh", "-c", "mix docs --warnings-as-errors --formatter html >/dev/null"]},
+    {:benchmark_regressions,
+     command: "mix test --include benchmark test/ex_maude/benchmark_regression_test.exs"},
     {:ex_unit, command: "mix test --cover"},
     {:test_nif, command: "mix test.nif"},
     {:test_cnode, command: "mix test.cnode", enabled: File.exists?("priv/maude_bridge")}
