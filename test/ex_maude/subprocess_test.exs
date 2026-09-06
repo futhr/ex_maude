@@ -11,18 +11,23 @@ defmodule ExMaude.SubprocessTest do
              )
   end
 
-  test "terminates a child that never exits" do
+  @tag :tmp_dir
+  test "terminates a child that never exits", %{tmp_dir: dir} do
+    pid_file = Path.join(dir, "child.pid")
     started = System.monotonic_time(:millisecond)
 
     assert {:error, :timeout} =
              ExMaude.Subprocess.run(
-               Path.expand("test/support/fake_blocked_input.sh"),
-               [],
-               50,
+               System.find_executable("sh"),
+               ["-c", ~s(printf '%s' "$$" > "$1"; kill -STOP "$$"), "child", pid_file],
+               1000,
                100
              )
 
-    assert System.monotonic_time(:millisecond) - started < 1000
+    assert System.monotonic_time(:millisecond) - started < 3000
+    pid = File.read!(pid_file)
+    {_, status} = System.cmd("kill", ["-0", pid], stderr_to_stdout: true)
+    assert status != 0
   end
 
   test "caps command output" do
