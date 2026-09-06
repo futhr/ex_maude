@@ -650,4 +650,26 @@ fmod NAT"
 
     assert {:app, "f", [{:const, ~s("a,b")}, {:const, "c"}]} = Parser.parse_term(~s|f("a,b", c)|)
   end
+
+  test "search state numbers come from the header, never substitution values" do
+    output = "Solution 7\nS:String --> \"literal (state 99)\"\n"
+    assert [%{solution: 7, state_num: nil}] = Parser.parse_search_results(output)
+  end
+
+  test "escaped quotes do not hide a real diagnostic on the following line" do
+    result = ~S(result String: "say \"Error: safe\" and Warning: safe")
+    assert {:ok, _} = Parser.parse_backend_response(result)
+
+    assert {:error, %ExMaude.Error{}} =
+             Parser.parse_backend_response(result <> "\nWarning: bad input")
+  end
+
+  test "argument scanning respects escaped quotes and rejects unbalanced expressions" do
+    assert {:app, "f", [{:const, ~S("quoted \"x,y\"")}, {:const, "z"}]} =
+             Parser.parse_term(~S|f("quoted \"x,y\"", z)|)
+
+    for malformed <- ["f(g(a, b)", ~S|f("unfinished, z)|] do
+      assert {:const, ^malformed} = Parser.parse_term(malformed)
+    end
+  end
 end

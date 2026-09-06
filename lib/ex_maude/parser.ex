@@ -229,7 +229,7 @@ defmodule ExMaude.Parser do
 
   defp parse_solution(text, index) do
     state_num =
-      case Regex.run(~r/\(state (\d+)\)/, text) do
+      case Regex.run(~r/\ASolution \d+ \(state (\d+)\)/, text) do
         [_, num] -> String.to_integer(num)
         nil -> nil
       end
@@ -250,7 +250,7 @@ defmodule ExMaude.Parser do
 
       match = Regex.run(~r/^(\w+)\((.+)\)$/, input) ->
         [_, func, args_str] = match
-        {:app, func, parse_args(args_str)}
+        parse_application(input, func, args_str)
 
       match = Regex.run(~r/^(.+?)\s+(and|or|xor|\+|\*|-|\/|<|>|<=|>=|==|neq)\s+(.+)$/, input) ->
         [_, left, op, right] = match
@@ -262,10 +262,10 @@ defmodule ExMaude.Parser do
   end
 
   # Split only between arguments, preserving nested terms and quoted commas.
-  defp parse_args(args_str) do
+  defp parse_application(input, func, args_str) do
     case ExMaude.Balanced.split(args_str) do
-      {:ok, args} -> Enum.map(args, &parse_one_arg/1)
-      :error -> [{:const, args_str}]
+      {:ok, args} -> {:app, func, Enum.map(args, &parse_one_arg/1)}
+      :error -> {:const, input}
     end
   end
 
