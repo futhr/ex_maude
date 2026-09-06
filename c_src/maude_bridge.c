@@ -80,6 +80,10 @@ typedef struct {
 static MaudeProcess maude = {0};
 static volatile sig_atomic_t running = 1;
 
+#ifdef EX_MAUDE_TEST
+static size_t scanned_windows = 0;
+#endif
+
 static int read_exact(int fd, void *data, size_t len) {
   size_t offset = 0;
   char *buffer = data;
@@ -465,6 +469,9 @@ static char *find_prompt_boundary(char *output, size_t length, size_t start) {
     return NULL;
 
   for (size_t index = start; index <= length - PROMPT_LEN; index++) {
+#ifdef EX_MAUDE_TEST
+    scanned_windows++;
+#endif
     int at_line_start =
         index == 0 || output[index - 1] == '\n' || output[index - 1] == '\r';
 

@@ -410,12 +410,19 @@ fn terminate_child(child: &mut Child) {
     wait_with_timeout(child, READER_JOIN_TIMEOUT);
 }
 
+#[cfg(test)]
+thread_local! {
+    static SCANNED_WINDOWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn find_prompt_boundary(haystack: &[u8], start: usize) -> Option<usize> {
     haystack[start..]
         .windows(PROMPT.len())
         .enumerate()
         .map(|(offset, window)| (start + offset, window))
         .find_map(|(idx, window)| {
+            #[cfg(test)]
+            SCANNED_WINDOWS.with(|count| count.set(count.get() + 1));
             let at_line_start = idx == 0 || matches!(haystack[idx - 1], b'\n' | b'\r');
             (window == PROMPT && at_line_start).then_some(idx)
         })
@@ -474,6 +481,30 @@ fn poison_error(what: &'static str) -> Error {
 #[cfg(test)]
 mod tests {
     use super::find_prompt_boundary;
+
+    #[test]
+    fn response_reader_scans_fragmented_output_in_linear_work() {
+        use super::*;
+        let (tx, rx) = bounded(64);
+        let size = 128 * 1024;
+        for _ in 0..32 {
+            tx.send(ReaderMsg::Data(vec![b'x'; 4096])).unwrap();
+        }
+        for byte in b"\nMaude> " {
+            tx.send(ReaderMsg::Data(vec![*byte])).unwrap();
+        }
+        let process = MaudeProcess {
+            child: Mutex::new(None),
+            writer: Mutex::new(None),
+            rx,
+            readers: Mutex::new(Vec::new()),
+            pending: Mutex::new(Vec::new()),
+        };
+        SCANNED_WINDOWS.with(|count| count.set(0));
+        let output = read_until_prompt(&process, 1000, size + 1).unwrap();
+        assert_eq!(output, "x".repeat(size));
+        SCANNED_WINDOWS.with(|count| assert!(count.get() < size * 2));
+    }
 
     #[test]
     fn incremental_scan_finds_every_split_prompt() {

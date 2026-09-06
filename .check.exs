@@ -11,6 +11,7 @@ sobelow_command = [
     {:deps_get, command: "mix deps.get"},
     {:compiler, command: "mix compile --warnings-as-errors"},
     {:c_compile, command: "make -C c_src", enabled: File.dir?("c_src")},
+    {:c_test, command: "make -C c_src test", enabled: File.dir?("c_src")},
     {:formatter, command: "mix format --check-formatted"},
     {:c_format_check,
      command: "make -C c_src format-check",

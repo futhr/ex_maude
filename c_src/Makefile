@@ -89,13 +89,20 @@ $(TARGET): $(OBJS) | $(PRIV_DIR)
 	$(CC) -o $@ $(OBJS) $(LDFLAGS)
 	@echo "Built: $@"
 
+.PHONY: test
+test: maude_bridge_test
+	./maude_bridge_test
+
+maude_bridge_test: maude_bridge_test.c maude_bridge.c Makefile
+	$(CC) $(CFLAGS) -UNDEBUG -o $@ maude_bridge_test.c $(LDFLAGS)
+
 # Compile C files
 %.o: %.c Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Clean build artifacts
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(TARGET) maude_bridge_test
 
 # Install target (for mix compile)
 install: all
@@ -130,7 +137,7 @@ lint:
 # Format check with clang-format (optional)
 format-check:
 	@if command -v clang-format >/dev/null 2>&1; then \
-		clang-format --dry-run --Werror $(SRCS); \
+		clang-format --dry-run --Werror $(SRCS) $(wildcard maude_bridge_test.c); \
 	else \
 		echo "clang-format not found, skipping format check"; \
 	fi
@@ -138,7 +145,7 @@ format-check:
 # Format code with clang-format
 format:
 	@if command -v clang-format >/dev/null 2>&1; then \
-		clang-format -i $(SRCS); \
+		clang-format -i $(SRCS) $(wildcard maude_bridge_test.c); \
 	else \
 		echo "clang-format not found"; \
 	fi

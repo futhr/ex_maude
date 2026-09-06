@@ -345,3 +345,4 @@ jobs:
           make -C c_src format-check
           make -C c_src lint
           make -C c_src
+          make -C c_src test
