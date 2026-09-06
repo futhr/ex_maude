@@ -115,11 +115,21 @@ defmodule ExMaude.PoolTest do
     start_supervised!(
       Pool.child_spec(
         name: name,
+        worker_module: ExMaude.Backend.Port,
         pool_size: 1,
         pool_max_overflow: 0,
         maude_path: Path.expand("../support/fake_maude.sh", __DIR__)
       )
     )
+
+    configured_backend = Application.get_env(:ex_maude, :backend)
+    Application.put_env(:ex_maude, :backend, :nif)
+
+    on_exit(fn ->
+      if configured_backend,
+        do: Application.put_env(:ex_maude, :backend, configured_backend),
+        else: Application.delete_env(:ex_maude, :backend)
+    end)
 
     handler = "checkout-order-#{System.unique_integer([:positive])}"
     parent = self()
