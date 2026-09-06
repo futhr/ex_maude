@@ -32,6 +32,20 @@ defmodule ExMaude.Backend.CNodeTest do
       send(pid, :stop)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
     end
+
+    # The registry processes monitor exits asynchronously.
+    released = hd(slots)
+
+    assert Enum.reduce_while(1..100, false, fn _, _ ->
+             if :global.whereis_name({CNode, node(), released}) == :undefined do
+               {:halt, true}
+             else
+               Process.sleep(10)
+               {:cont, false}
+             end
+           end)
+
+    assert {:ok, ^released} = CNode.reserve_node_slot(released)
   end
 
   describe "module structure" do
