@@ -69,6 +69,51 @@ defmodule ExMaude.PreloadsTest do
     refute path in Preloads.runtime_for_pool(:pool_a)
   end
 
+  @tag :tmp_dir
+  test "loaded identities require every live worker and exclude replacements", %{tmp_dir: dir} do
+    pool = :partial_identity_pool
+
+    start_supervised!(
+      ExMaude.Pool.child_spec(
+        name: pool,
+        pool_size: 2,
+        pool_max_overflow: 0,
+        preload_modules: [],
+        worker_module: ExMaude.Backend.Port,
+        maude_path: Path.expand("../support/fake_maude.sh", __DIR__)
+      )
+    )
+
+    path = Path.join(dir, "module.maude")
+    File.write!(path, "fmod IDENTITY is endfm")
+    {:ok, identity} = Preloads.identity(path)
+    first = ExMaude.Pool.checkout(pool: pool)
+    second = ExMaude.Pool.checkout(pool: pool)
+
+    assert :ok = Preloads.mark_loaded(pool, [path], first)
+    refute identity in Preloads.loaded_for_pool(pool)
+    assert :ok = Preloads.mark_loaded(pool, [path], second)
+    assert identity in Preloads.loaded_for_pool(pool)
+
+    GenServer.stop(first)
+    replacement = ExMaude.Pool.checkout(pool: pool)
+    refute replacement in [first, second]
+    refute identity in Preloads.loaded_for_pool(pool)
+    assert :ok = Preloads.mark_loaded(pool, [path], replacement)
+    assert identity in Preloads.loaded_for_pool(pool)
+  end
+
+  test "identical source has distinct pool-owned files" do
+    source = "fmod PRIVATE-SOURCE is endfm"
+    assert {:ok, first} = Preloads.cache_source(:pool_a, source)
+    assert {:ok, ^first} = Preloads.cache_source(:pool_a, source)
+    assert {:ok, second} = Preloads.cache_source(:pool_b, source)
+    refute Path.dirname(first) == Path.dirname(second)
+    assert File.read!(first) == source
+    assert File.read!(second) == source
+    assert Bitwise.band(File.stat!(Path.dirname(first)).mode, 0o777) == 0o700
+  end
+
   defp restore(key, nil), do: Application.delete_env(:ex_maude, key)
   defp restore(key, value), do: Application.put_env(:ex_maude, key, value)
 end
