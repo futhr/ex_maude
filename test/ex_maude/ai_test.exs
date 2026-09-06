@@ -534,4 +534,34 @@ defmodule ExMaude.AITest do
       :telemetry.detach("ai-unit-start-#{inspect(ref)}")
     end
   end
+
+  @tag :integration
+  test "compound capability requirements reach authority and cascade detectors" do
+    for operator <- [:and, :or], granted <- ["first", "second"] do
+      grant = %{
+        id: "grant",
+        agent_id: {"tenant", "producer"},
+        trigger: {:always},
+        invocations: [],
+        capability_grants: [{:cap, granted, "v1"}],
+        authority_required: 0
+      }
+
+      use = %{
+        id: "use",
+        agent_id: {"tenant", "consumer"},
+        invocations: [],
+        authority_required: 5,
+        trigger: {operator, {:capability_required, "first"}, {:capability_required, "second"}}
+      }
+
+      assert {:ok, conflicts} = AI.detect_pair_conflicts([grant, use])
+      edges = Enum.map(conflicts, &{&1.type, &1.rule1, &1.rule2})
+      assert {:authority_escalation, "grant", "use"} in edges
+      assert {:agent_loop_cascade, "grant", "use"} in edges
+
+      assert {:ok, []} =
+               AI.detect_pair_conflicts([grant, %{use | agent_id: {"other", "consumer"}}])
+    end
+  end
 end
