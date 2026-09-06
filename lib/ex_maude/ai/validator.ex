@@ -374,7 +374,7 @@ defmodule ExMaude.AI.Validator do
     {:error, ExMaude.Error.new(:validation, "jurisdictions must be a list")}
   end
 
-  defp valid_arg_key?(key) when is_atom(key), do: true
+  defp valid_arg_key?(key) when is_atom(key), do: valid_string?(Atom.to_string(key))
   defp valid_arg_key?(key), do: valid_string?(key)
 
   defp valid_nonempty_string?(value), do: valid_string?(value) and value != ""
