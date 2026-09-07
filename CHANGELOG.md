@@ -5,6 +5,61 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.4.2](https://github.com/futhr/ex_maude/compare/v0.4.1...v0.4.2) (2026-09-07)
+
+
+
+
+### Bug Fixes:
+
+* validation: validate normalized atom argument keys by Tobias Bohwalli
+
+* parser: preserve solution and argument boundaries by Tobias Bohwalli
+
+* preloads: retain cache ownership across rapid pool restarts by Tobias Bohwalli
+
+* installer: bound downloads and executable verification by Tobias Bohwalli
+
+* build: make C bridge compilation optional and incremental by Tobias Bohwalli
+
+* port: quote executable paths for Linux PTY launchers by Tobias Bohwalli
+
+* cnode: reserve node names for live workers by Tobias Bohwalli
+
+* native: bound pipe writes and process shutdown by Tobias Bohwalli
+
+* telemetry: measure checkout before transaction execution by Tobias Bohwalli
+
+* pool: isolate broadcast task failures by Tobias Bohwalli
+
+* ai: inspect all compound capability dependencies by Tobias Bohwalli
+
+* ai: make subjurisdiction equality reflexive by Tobias Bohwalli
+
+* validation: reject inconsistent and ambiguous rule inputs by Tobias Bohwalli
+
+* conflicts: reject malformed and unevaluated results by Tobias Bohwalli
+
+* parser: split nested term arguments structurally by Tobias Bohwalli
+
+* search: parse complete headers and final statistics by Tobias Bohwalli
+
+* parser: distinguish diagnostics from term data by Tobias Bohwalli
+
+* loader: preserve imports and own temporary module files by Tobias Bohwalli
+
+* preloads: scope loaded identities to live pool workers by Tobias Bohwalli
+
+* port: reject failed startup preloads by Tobias Bohwalli
+
+* deps: update vulnerable HTTP client and compatible tooling by Tobias Bohwalli
+
+### Performance Improvements:
+
+* native: scan only new output for prompt boundaries by Tobias Bohwalli
+
+* models: evaluate each rule pair once by Tobias Bohwalli
+
 ## [v0.4.1](https://github.com/futhr/ex_maude/compare/v0.4.0...v0.4.1) (2026-08-24)
 
 
