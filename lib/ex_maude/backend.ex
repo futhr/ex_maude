@@ -37,8 +37,11 @@ defmodule ExMaude.Backend do
   ## Options
 
     * `:maude_path` - Path to Maude executable (optional)
-    * `:timeout` - Default command timeout in ms
+    * `:startup_timeout_ms` - Backend-specific startup wait in ms
     * `:preload_modules` - List of Maude files to load on startup
+
+  Default command timeouts come from application configuration `:timeout`,
+  with per-command overrides in `execute/3`.
 
   """
   @callback start_link(opts :: keyword()) :: GenServer.on_start()

@@ -28,7 +28,7 @@ defmodule ExMaude.Backend.CNode do
 
       config :ex_maude,
         backend: :cnode,
-        cnode_timeout: 30_000,
+        timeout: 30_000,
         max_response_bytes: 16_777_216
 
   """

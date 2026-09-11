@@ -167,7 +167,9 @@ See `ExMaude.Telemetry.events/0` for programmatic access.
 
 ## Error Handling
 
-All errors use `ExMaude.Error` struct with standardized types:
+Command and backend errors normally use `ExMaude.Error` with the types below.
+Rule validators return field-error lists or maps; verification APIs also return
+counterexample tuples. Match the documented return type of each function.
 
 | Type | Description |
 |------|-------------|

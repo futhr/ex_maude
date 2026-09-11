@@ -198,7 +198,7 @@ config :ex_maude, backend: :cnode
 ```
 
 Changing `:backend` does not replace workers already running in the pool.
-Restart the ExMaude supervision tree after changing it.
+Restart the host application's affected pools after changing it.
 
 ---
 
@@ -362,7 +362,8 @@ See `ExMaude.AI` for the full rule schema, predicate vocabulary, and invocation 
 ## Telemetry
 
 ExMaude emits telemetry events compatible with Prometheus, OpenTelemetry, and other exporters.
-All measurements use native time units for precision.
+Durations and system timestamps use native time units. Counts and byte sizes
+retain their stated units.
 
 ### Events
 

@@ -200,9 +200,8 @@ defmodule ExMaude.Backend.NIF do
   @doc """
   Loads a Maude file via NIF.
 
-  ## Options
-
-    * `:timeout` - Maximum time to wait in milliseconds (default: 30000)
+  Uses application configuration `:timeout`, with a 30,000 ms fallback when
+  unset. This function does not accept per-call options.
   """
   @spec load_file(GenServer.server(), Path.t()) :: :ok | {:error, term()}
   def load_file(server, path) do

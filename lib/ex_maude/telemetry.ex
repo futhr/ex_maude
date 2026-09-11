@@ -73,11 +73,12 @@ defmodule ExMaude.Telemetry do
 
   `[:ex_maude, :pool, :checkout, :start]`
   - Measurements: `%{system_time: integer}`
-  - Metadata: `%{backend: :port | :cnode | :nif}`
+  - Metadata: `%{backend: :unknown, pool: pool_name}` (no worker is checked out yet)
 
   `[:ex_maude, :pool, :checkout, :stop]`
   - Measurements: `%{duration: integer}`
-  - Metadata: `%{result: :ok | :error, backend: :port | :cnode | :nif}`
+  - Metadata: `%{result: :ok | :error, backend: :port | :cnode | :nif | :unknown,
+    pool: pool_name}` (`:unknown` when checkout failed)
 
   ### IoT Events
 

@@ -242,9 +242,10 @@ config :ex_maude,
 children = [
   ExMaude.Pool.child_spec(name: :verification_pool, pool_size: 4)
 ]
+{:ok, supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
 
 # GOOD: Let the pool manage workers automatically
-{:ok, result} = ExMaude.reduce("NAT", "1 + 2")
+{:ok, result} = ExMaude.reduce("NAT", "1 + 2", pool: :verification_pool)
 
 # GOOD: Use transaction for multiple operations on same worker
 ExMaude.Pool.transaction(fn worker ->
@@ -255,7 +256,7 @@ end, pool: :verification_pool)
 # GOOD: Broadcast to all workers for module loading
 {:ok, results} = ExMaude.Pool.broadcast(fn worker ->
   ExMaude.Server.load_file(worker, path)
-end)
+end, pool: :verification_pool)
 
 # GOOD: high-level loading supports named pools; use the idempotent form on
 # concurrent runtime paths
