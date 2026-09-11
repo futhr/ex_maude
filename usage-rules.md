@@ -155,6 +155,13 @@ rules = [
 
 ### Rule Structure
 
+Validation checks proper lists at collection boundaries. AI tool arguments
+must be plain maps, with distinct keys after atom-to-string conversion.
+Batch validation retains all errors when rule IDs or diagnostic keys collide.
+Safety targets accept a predicate or a proper list of predicates; an empty list
+retains its meaning as an empty conjunction. Liveness requires one predicate.
+Malformed targets return `:validation` errors before accessing a pool.
+
 ```elixir
 # Rule map structure
 %{

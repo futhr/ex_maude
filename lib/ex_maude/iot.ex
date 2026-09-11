@@ -133,7 +133,7 @@ defmodule ExMaude.IoT do
   @spec detect_conflicts([rule()], keyword()) :: {:ok, [conflict()]} | {:error, term()}
   def detect_conflicts(rules, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
-    rule_count = if is_list(rules), do: length(rules), else: 0
+    rule_count = ExMaude.Validation.list_count(rules)
     start_time = System.monotonic_time()
 
     :telemetry.execute(
@@ -301,7 +301,8 @@ defmodule ExMaude.IoT do
       bug in the input, not an inconclusive search
 
   `bad_state` is a `state_pred` or a list of them (a list means "all present in
-  the same reachable world").
+  the same reachable world"). An empty list matches every world. Malformed
+  targets return a validation error before pool access.
 
   ## Examples
 
@@ -321,7 +322,7 @@ defmodule ExMaude.IoT do
     timeout = Keyword.get(opts, :timeout, Config.timeout(30_000))
 
     with :ok <- Validator.validate_rules(rules),
-         :ok <- validate_world_inputs(bad_state, opts),
+         :ok <- validate_world_inputs(bad_state, opts, :safety),
          :ok <- ensure_iot_module_loaded(opts),
          {:ok, init} <- build_world(rules, opts),
          pattern = bad_state_pattern(bad_state),
@@ -352,6 +353,9 @@ defmodule ExMaude.IoT do
   (infinite progress that never reaches the goal), which need full LTL model
   checking.
 
+  `goal_state` must be one state predicate; lists and `nil` return a validation
+  error before pool access.
+
   Returns:
 
     * `{:error, :deadlock_possible}` - a reachable terminal world misses the goal
@@ -373,7 +377,7 @@ defmodule ExMaude.IoT do
     timeout = Keyword.get(opts, :timeout, Config.timeout(30_000))
 
     with :ok <- Validator.validate_rules(rules),
-         :ok <- validate_world_inputs(goal_state, opts),
+         :ok <- validate_world_inputs(goal_state, opts, :liveness),
          :ok <- ensure_iot_module_loaded(opts),
          {:ok, init} <- build_world(rules, opts),
          condition = goal_violation_condition(goal_state),
@@ -440,7 +444,7 @@ defmodule ExMaude.IoT do
     ~s|holdsFor(#{term}, thing(""), S:WState) =/= true|
   end
 
-  defp validate_world_inputs(predicate, opts) do
+  defp validate_world_inputs(predicate, opts, operation) do
     initial_state = Keyword.get(opts, :initial_state, [])
     max_depth = Keyword.get(opts, :max_depth, 50)
     timeout = Keyword.get(opts, :timeout, Config.timeout(30_000))
@@ -452,19 +456,25 @@ defmodule ExMaude.IoT do
       not (is_integer(timeout) and timeout > 0) ->
         validation_error("timeout must be a positive integer")
 
-      not is_list(initial_state) ->
+      not ExMaude.Validation.proper_list?(initial_state) ->
         validation_error("initial_state must be a list of state predicates")
 
       not Enum.all?(initial_state, &valid_state_pred?/1) ->
         validation_error("initial_state contains an invalid state predicate")
 
-      not Enum.all?(List.wrap(predicate), &valid_state_pred?/1) ->
+      not valid_target?(predicate, operation) ->
         validation_error("verification target contains an invalid state predicate")
 
       true ->
         :ok
     end
   end
+
+  defp valid_target?(predicates, :safety) when is_list(predicates) do
+    ExMaude.Validation.proper_list?(predicates) and Enum.all?(predicates, &valid_state_pred?/1)
+  end
+
+  defp valid_target?(predicate, _), do: valid_state_pred?(predicate)
 
   defp valid_state_pred?({:thing_state, thing_id, property, value}) do
     non_empty_string?(thing_id) and non_empty_string?(property) and encodable_value?(value)
@@ -508,7 +518,7 @@ defmodule ExMaude.IoT do
 
   defp filter_conflicts(conflicts, nil), do: {:ok, conflicts}
 
-  defp filter_conflicts(conflicts, types) when is_list(types) do
+  defp filter_conflicts(conflicts, types) when is_list(types) and is_integer(length(types)) do
     if Enum.all?(types, &(&1 in @conflict_types)) do
       {:ok, Enum.filter(conflicts, &(&1.type in types))}
     else

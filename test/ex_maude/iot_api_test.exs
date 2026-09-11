@@ -124,6 +124,24 @@ defmodule ExMaude.IoTAPITest do
   end
 
   describe "bounded verification input validation" do
+    test "rejects nil and operation-specific target shapes before pool access" do
+      for target <- [nil, [{:env_state, "x", 1} | :bad]] do
+        assert {:error, %Error{type: :validation}} =
+                 IoT.verify_safety([], target, pool: :missing_validation_pool)
+      end
+
+      for target <- [nil, [], [{:env_state, "x", 1}]] do
+        assert {:error, %Error{type: :validation}} =
+                 IoT.verify_liveness([], target, pool: :missing_validation_pool)
+      end
+
+      assert {:error, %Error{type: :validation}} =
+               IoT.verify_safety([], {:env_state, "x", 1},
+                 initial_state: [{:env_state, "x", 1} | :bad],
+                 pool: :missing_validation_pool
+               )
+    end
+
     test "rejects invalid max_depth" do
       assert {:error, %Error{type: :validation, message: message}} =
                IoT.verify_safety(@valid_rules, {:thing_state, "door", "state", "open"},

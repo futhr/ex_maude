@@ -119,8 +119,8 @@ defmodule ExMaude.IoT.Validator do
       |> validate_string_field(rule, :id, "id")
       |> validate_string_field(rule, :thing_id, "thing_id")
       |> validate_priority(Map.get(rule, :priority, 1))
-      |> validate_trigger(rule[:trigger], 0)
-      |> validate_actions(rule[:actions])
+      |> validate_trigger(Map.get(rule, :trigger), 0)
+      |> validate_actions(Map.get(rule, :actions))
 
     case errors do
       [] -> :ok
@@ -134,10 +134,10 @@ defmodule ExMaude.IoT.Validator do
   Validates a list of rules.
 
   Returns `:ok` if all rules are valid, or `{:error, errors}` with a map
-  of rule IDs to their validation errors.
+  of rule IDs to their validation errors. Errors sharing a key are combined.
   """
   @spec validate_rules([map()]) :: :ok | {:error, %{String.t() => [String.t()]}}
-  def validate_rules(rules) when is_list(rules) do
+  def validate_rules(rules) when is_list(rules) and is_integer(length(rules)) do
     errors =
       rules
       |> Enum.with_index()
@@ -147,9 +147,10 @@ defmodule ExMaude.IoT.Validator do
             acc
 
           {:error, errs} ->
-            Map.put(acc, error_key(rule, idx), errs)
+            Map.update(acc, error_key(rule, idx), Enum.reverse(errs), &Enum.reverse(errs, &1))
         end
       end)
+      |> Map.new(fn {key, errors} -> {key, Enum.reverse(errors)} end)
 
     errors = Map.merge(errors, ExMaude.Validation.duplicate_ids(rules), fn _, a, b -> a ++ b end)
 
@@ -164,7 +165,7 @@ defmodule ExMaude.IoT.Validator do
   # Private validation functions
 
   defp validate_required(errors, map, key, name) do
-    if Map.has_key?(map, key) and not is_nil(map[key]) do
+    if Map.has_key?(map, key) and not is_nil(Map.get(map, key)) do
       errors
     else
       ["missing required field: #{name}" | errors]
@@ -263,7 +264,7 @@ defmodule ExMaude.IoT.Validator do
 
   defp validate_actions(errors, nil), do: errors
 
-  defp validate_actions(errors, actions) when is_list(actions) do
+  defp validate_actions(errors, actions) when is_list(actions) and is_integer(length(actions)) do
     Enum.reduce(actions, errors, &validate_action/2)
   end
 

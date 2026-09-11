@@ -85,10 +85,10 @@ defmodule ExMaude.AI.Validator do
   @doc """
   Validates a list of rules. Returns `:ok` if all rules pass, or
   `{:error, %{rule_id => errors}}` mapping failing rule ids to
-  their error lists.
+  their error lists. Errors sharing a key are combined.
   """
   @spec validate_rules([term()]) :: :ok | {:error, %{String.t() => [String.t()]}}
-  def validate_rules(rules) when is_list(rules) do
+  def validate_rules(rules) when is_list(rules) and is_integer(length(rules)) do
     failures =
       rules
       |> Enum.with_index()
@@ -98,9 +98,10 @@ defmodule ExMaude.AI.Validator do
             acc
 
           {:error, errs} ->
-            Map.put(acc, rule_error_id(rule, idx), errs)
+            Map.update(acc, rule_error_id(rule, idx), Enum.reverse(errs), &Enum.reverse(errs, &1))
         end
       end)
+      |> Map.new(fn {key, errors} -> {key, Enum.reverse(errors)} end)
 
     failures =
       Map.merge(failures, ExMaude.Validation.duplicate_ids(rules), fn _, a, b -> a ++ b end)
@@ -147,7 +148,8 @@ defmodule ExMaude.AI.Validator do
 
   defp validate_trigger(errors, _), do: errors
 
-  defp validate_invocations(errors, %{invocations: invocations}) when is_list(invocations) do
+  defp validate_invocations(errors, %{invocations: invocations})
+       when is_list(invocations) and is_integer(length(invocations)) do
     invocations
     |> Enum.with_index()
     |> Enum.reduce(errors, fn {inv, idx}, acc ->
@@ -164,7 +166,8 @@ defmodule ExMaude.AI.Validator do
 
   defp validate_invocations(errors, _), do: errors
 
-  defp validate_capability_grants(errors, %{capability_grants: grants}) when is_list(grants) do
+  defp validate_capability_grants(errors, %{capability_grants: grants})
+       when is_list(grants) and is_integer(length(grants)) do
     grants
     |> Enum.with_index()
     |> Enum.reduce(errors, fn {grant, idx}, acc ->
@@ -270,7 +273,7 @@ defmodule ExMaude.AI.Validator do
   @doc false
   @spec validate_invocation(term()) :: :ok | {:error, String.t()}
   def validate_invocation({:invoke_tool, name, args, cap_required, jurisdiction} = invocation) do
-    if valid_nonempty_string?(name) and is_map(args) and
+    if valid_nonempty_string?(name) and is_map(args) and not is_struct(args) and
          valid_nonempty_string?(cap_required) and jurisdiction in @all_jurisdictions do
       case validate_arg_map(args) do
         :ok -> :ok
@@ -358,7 +361,8 @@ defmodule ExMaude.AI.Validator do
 
   @doc false
   @spec validate_jurisdictions(term()) :: :ok | {:error, ExMaude.Error.t()}
-  def validate_jurisdictions(jurisdictions) when is_list(jurisdictions) do
+  def validate_jurisdictions(jurisdictions)
+      when is_list(jurisdictions) and is_integer(length(jurisdictions)) do
     if Enum.all?(jurisdictions, &(&1 in @all_jurisdictions)) do
       :ok
     else

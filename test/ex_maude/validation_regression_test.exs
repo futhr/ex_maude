@@ -6,6 +6,55 @@ defmodule ExMaude.ValidationRegressionTest do
     {ExMaude.AI, %{id: "r", agent_id: {"tenant", "agent"}, trigger: {:always}, invocations: []}}
   ]
 
+  test "improper rule and nested lists return validation errors" do
+    for {domain, rule} <- @rules do
+      assert {:error, _} = domain.validate_rules([rule | :invalid])
+      assert {:error, _} = domain.detect_conflicts([rule | :invalid])
+      assert {:error, _} = domain.validate_rule(%URI{})
+    end
+
+    [{_, iot}, {_, ai}] = @rules
+
+    assert {:error, _} =
+             ExMaude.IoT.validate_rule(Map.put(iot, :actions, [{:invoke, "d", "a"} | nil]))
+
+    assert {:error, _} =
+             ExMaude.AI.validate_rule(Map.put(ai, :invocations, [{:require_approval, "a"} | nil]))
+
+    assert {:error, _} =
+             ExMaude.AI.validate_rule(Map.put(ai, :capability_grants, ["cap" | :bad]))
+
+    assert {:error, _} = ExMaude.AI.Validator.validate_jurisdictions([:eu | :bad])
+
+    assert {:error, _} =
+             ExMaude.AI.Validator.validate_invocation({:invoke_tool, "t", %URI{}, "cap", :eu})
+  end
+
+  test "duplicate identifiers retain the diagnostics of every invalid rule" do
+    for {domain, rule} <- @rules do
+      first = Map.delete(rule, :trigger)
+      second = Map.put(rule, :priority, -1)
+      assert {:error, expected_first} = domain.validate_rule(first)
+      assert {:error, expected_second} = domain.validate_rule(second)
+      assert {:error, errors} = domain.validate_rules([first, second])
+
+      assert errors[rule.id] ==
+               expected_first ++ expected_second ++ ["rule ids must be unique"]
+    end
+  end
+
+  test "fallback diagnostic keys cannot overwrite errors for an explicit ID" do
+    for {domain, rule, key} <- [
+          {ExMaude.IoT, elem(hd(@rules), 1), "rule_0"},
+          {ExMaude.AI, elem(List.last(@rules), 1), "<index 0>"}
+        ] do
+      invalid = rule |> Map.put(:id, key) |> Map.put(:priority, -1)
+      assert {:error, errors} = domain.validate_rules([%{}, invalid])
+      assert "missing required field: id" in errors[key]
+      assert "priority must be a non-negative integer" in errors[key]
+    end
+  end
+
   test "both domains accept the depth limit and reject the next level" do
     for {domain, rule} <- @rules do
       at_limit = Enum.reduce(1..10, {:always}, fn _, child -> {:not, child} end)

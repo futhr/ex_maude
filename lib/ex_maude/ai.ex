@@ -150,7 +150,7 @@ defmodule ExMaude.AI do
   def detect_conflicts(rules, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, Config.timeout(10_000))
     jurisdictions = Keyword.get(opts, :jurisdictions, [])
-    rule_count = if is_list(rules), do: length(rules), else: 0
+    rule_count = ExMaude.Validation.list_count(rules)
     start_time = System.monotonic_time()
 
     :telemetry.execute(

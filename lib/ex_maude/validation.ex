@@ -9,6 +9,16 @@ defmodule ExMaude.Validation do
   def string?(_), do: false
 
   @doc false
+  @spec proper_list?(term()) :: boolean()
+  def proper_list?(value) when is_list(value) and is_integer(length(value)), do: true
+  def proper_list?(_), do: false
+
+  @doc false
+  @spec list_count(term()) :: non_neg_integer()
+  def list_count(value) when is_list(value) and is_integer(length(value)), do: length(value)
+  def list_count(_), do: 0
+
+  @doc false
   @spec duplicate_ids([term()]) :: map()
   def duplicate_ids(rules) do
     rules
