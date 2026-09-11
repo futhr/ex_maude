@@ -118,6 +118,11 @@ is not atomic: some workers may change before another worker reports an error.
 
 ExMaude includes an equational conflict model for IoT automation rules.
 
+Numeric ordering preserves arbitrary-size integers. Floats retain their IEEE
+754 value when compared with integers or other floats. Equality of wrapped
+values remains representation-sensitive: integer `1` and float `1.0` encode
+differently and are distinct property values.
+
 ### Using the High-Level API
 
 ```elixir
