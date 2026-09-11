@@ -208,8 +208,8 @@ defmodule ExMaude.Backend.CNode do
       :ok ->
         {:reply, :ok, state}
 
-      {:ok, _} ->
-        {:reply, :ok, state}
+      {:ok, output} ->
+        {:reply, parse_load_response(output), state}
 
       {:error, output} when is_binary(output) ->
         # Semantic load failure (Maude warning/error text) — the session is
@@ -543,14 +543,24 @@ defmodule ExMaude.Backend.CNode do
       :ok ->
         preload_cnode_modules(state, paths)
 
-      {:ok, _} ->
-        preload_cnode_modules(state, paths)
+      {:ok, output} ->
+        case parse_load_response(output) do
+          :ok -> preload_cnode_modules(state, paths)
+          {:error, error} -> {:error, {:preload_failed, path, error}, state}
+        end
 
       {:error, output} when is_binary(output) ->
         {:error, {:preload_failed, path, Error.from_output(output)}, state}
 
       {:error, reason} ->
         {:error, {:preload_failed, path, reason}, state}
+    end
+  end
+
+  defp parse_load_response(output) do
+    case Parser.parse_backend_response(output) do
+      {:ok, _} -> :ok
+      {:error, error} -> {:error, error}
     end
   end
 

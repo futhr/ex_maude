@@ -30,6 +30,9 @@ while IFS= read -r line; do
     Warning:*)
       printf '%s\nMaude> ' "$line"
       ;;
+    invalid_utf8*)
+      printf 'result String: "\377"\nMaude> '
+      ;;
     oversized*)
       printf 'result String: "'
       count=0

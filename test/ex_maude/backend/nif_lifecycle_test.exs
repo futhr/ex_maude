@@ -93,6 +93,15 @@ defmodule ExMaude.Backend.NIFLifecycleTest do
   end
 
   describe "response framing and limits" do
+    test "invalid UTF-8 returns an error and retires the worker" do
+      pid = start_fake_worker()
+      ref = Process.monitor(pid)
+
+      assert {:error, %Error{type: :nif_error} = error} = NIF.execute(pid, "invalid_utf8")
+      assert error.message =~ "invalid UTF-8"
+      assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1_000
+    end
+
     test "preserves prompt-like text inside a response and frames the next command" do
       pid = start_fake_worker()
 

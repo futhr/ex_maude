@@ -272,6 +272,11 @@ config :ex_maude, backend: :cnode   # C bridge over Erlang distribution
 config :ex_maude, backend: :nif     # Rustler NIF managing subprocess pipes
 ```
 
+Backend load responses use the shared Maude diagnostic parser. Words such as
+`Warning` or `Error` inside valid result values do not make a load fail. The NIF
+requires UTF-8 response text and returns a structured `:nif_error` for malformed
+bytes, retiring the worker rather than silently replacing those bytes.
+
 | Backend | When to choose it |
 |---|---|
 | `:port` | Default. Safest. Works on any platform with a Maude binary. Maude crash never affects the BEAM. |

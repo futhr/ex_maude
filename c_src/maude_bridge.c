@@ -738,15 +738,8 @@ static void handle_message(int fd, erlang_msg *emsg, ei_x_buff *buf) {
       encode_error(&response,
                    out_len == -4 ? "response_too_large" : "read_failed");
     } else {
-      /* Check for errors in output */
-      if (strstr(output, "Error") != NULL ||
-          strstr(output, "Warning") != NULL) {
-        ei_x_encode_tuple_header(&response, 2);
-        ei_x_encode_atom(&response, "error");
-        ei_x_encode_binary(&response, output, out_len);
-      } else {
-        ei_x_encode_atom(&response, "ok");
-      }
+      /* Leave semantic diagnostics to the shared Elixir parser. */
+      encode_ok(&response, output, out_len);
     }
     free(output);
 

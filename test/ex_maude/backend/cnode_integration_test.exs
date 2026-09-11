@@ -16,6 +16,18 @@ defmodule ExMaude.Backend.CNodeIntegrationTest do
     @fake_drip Path.expand("../../support/fake_drip_maude.sh", __DIR__)
     @fake_maude Path.expand("../../support/fake_maude.sh", __DIR__)
 
+    @tag :tmp_dir
+    test "load diagnostics distinguish result text from warnings", %{tmp_dir: tmp_dir} do
+      path = Path.join(tmp_dir, "quoted.maude")
+      File.write!(path, ~s|reduce in STRING : "Warning and Error" .|)
+      pid = start_supervised!({CNode, preload_modules: [path]})
+      assert :ok = CNode.load_file(pid, path)
+
+      File.write!(path, "fmod INVALID-IMPORT is protecting ABSENT-MODULE . endfm")
+      assert {:error, %ExMaude.Error{}} = CNode.load_file(pid, path)
+      assert {:ok, "3"} = CNode.execute(pid, "reduce in NAT : 1 + 2 .")
+    end
+
     describe "struct" do
       test "has expected fields" do
         state = %CNode{}

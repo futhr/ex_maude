@@ -349,7 +349,10 @@ fn read_until_deadline(
             }
 
             let prefix = &buf[..idx];
-            let text = String::from_utf8_lossy(prefix).trim().to_string();
+            let text = std::str::from_utf8(prefix)
+                .map_err(|error| io_error(format!("invalid UTF-8 in Maude output: {error}")))?
+                .trim()
+                .to_string();
 
             let remainder = buf[(idx + PROMPT.len())..].to_vec();
             *process
