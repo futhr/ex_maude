@@ -20,6 +20,10 @@ defmodule ExMaude.Binary do
   4. `System.find_executable("maude")` - System PATH
   5. Raises error with install instructions
 
+  Configured and local candidates must resolve to regular files with an execute
+  permission bit. Symlinks to such files are accepted; directories are skipped.
+  Discovery is a usability check, not protection from concurrent filesystem changes.
+
   ## Examples
 
       # Get the Maude binary path
@@ -196,9 +200,11 @@ defmodule ExMaude.Binary do
     if File.exists?(expanded) and executable?(expanded), do: expanded
   end
 
-  defp executable?(path) do
+  @doc false
+  @spec executable?(Path.t()) :: boolean()
+  def executable?(path) do
     case File.stat(path) do
-      {:ok, %{mode: mode}} -> Bitwise.band(mode, 0o111) > 0
+      {:ok, %{type: :regular, mode: mode}} -> Bitwise.band(mode, 0o111) > 0
       _ -> false
     end
   end

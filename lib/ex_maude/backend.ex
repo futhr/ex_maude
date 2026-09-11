@@ -121,7 +121,7 @@ defmodule ExMaude.Backend do
 
   def available?(:cnode) do
     bridge_path = cnode_binary()
-    File.exists?(bridge_path) and executable?(bridge_path)
+    ExMaude.Binary.executable?(bridge_path)
   end
 
   def available?(:nif) do
@@ -153,12 +153,5 @@ defmodule ExMaude.Backend do
   def cnode_binary do
     priv_dir = :code.priv_dir(:ex_maude)
     Path.join(priv_dir, "maude_bridge")
-  end
-
-  defp executable?(path) do
-    case File.stat(path) do
-      {:ok, %{mode: mode}} -> Bitwise.band(mode, 0o111) > 0
-      _ -> false
-    end
   end
 end

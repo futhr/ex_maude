@@ -334,6 +334,10 @@ defmodule ExMaude.Maude do
   (configured path, `MAUDE_PATH`, local install, then system PATH). No pool or
   worker is involved, so this works without starting a pool.
 
+  The probe uses the configured `:timeout` (default 5,000 milliseconds) and a
+  64 KiB output limit, returning `:timeout` or `:response_too_large` errors when
+  exceeded. A timed-out or oversized probe's direct subprocess is terminated.
+
   ## Examples
 
       ExMaude.Maude.version()
@@ -351,23 +355,27 @@ defmodule ExMaude.Maude do
   end
 
   @doc false
-  # sobelow_skip ["CI.System"]
-  # The path comes from ExMaude.Binary.find/0 (explicit config, the local
-  # priv binary, or System.find_executable) — the same trust chain every
-  # backend already executes as a worker; --version adds no new exposure.
   @spec version(Path.t()) :: {:ok, String.t()} | {:error, Error.t()}
   def version(path) do
-    case System.cmd(path, ["--version"], stderr_to_stdout: true) do
-      {output, 0} ->
+    timeout = Config.timeout(@default_timeout_ms)
+
+    case ExMaude.Subprocess.run(path, ["--version"], timeout, 65_536) do
+      {:ok, output, 0} ->
         {:ok, String.trim(output)}
 
-      {output, status} ->
+      {:ok, output, status} ->
         {:error,
          Error.exception(:maude_crash, "maude --version exited #{status}: #{String.trim(output)}")}
+
+      {:error, :timeout} ->
+        {:error, Error.timeout(timeout)}
+
+      {:error, :output_too_large} ->
+        {:error, Error.response_too_large(65_536)}
+
+      {:error, reason} ->
+        {:error, Error.exception(:file_not_found, "cannot run #{path}: #{inspect(reason)}")}
     end
-  rescue
-    e in ErlangError ->
-      {:error, Error.exception(:file_not_found, "cannot run #{path}: #{inspect(e.original)}")}
   end
 
   @doc """

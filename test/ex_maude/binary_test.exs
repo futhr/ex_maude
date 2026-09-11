@@ -169,6 +169,21 @@ defmodule ExMaude.BinaryTest do
       {:ok, original: original}
     end
 
+    @tag :tmp_dir
+    test "skips directories and accepts symlinks to executable files", %{tmp_dir: tmp_dir} do
+      Application.put_env(:ex_maude, :maude_path, tmp_dir)
+      refute Binary.find() == Path.expand(tmp_dir)
+      refute Binary.executable?(tmp_dir)
+
+      path = Path.join(tmp_dir, "interpreter")
+      link = Path.join(tmp_dir, "maude")
+      File.write!(path, "#!/bin/sh\nexit 0\n")
+      File.chmod!(path, 0o755)
+      File.ln_s!(path, link)
+      Application.put_env(:ex_maude, :maude_path, link)
+      assert Binary.find() == Path.expand(link)
+    end
+
     test "MAUDE_PATH is used when application config is absent" do
       path = System.find_executable("maude") || Binary.bundled_path()
 
