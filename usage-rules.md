@@ -287,11 +287,20 @@ bytes, retiring the worker rather than silently replacing those bytes.
 Precompiled NIF binaries are attached to GitHub releases and verified by
 checksums shipped in the Hex package for macOS aarch64/x86_64, Linux gnu/musl
 × aarch64/x86_64, and Windows gnu/msvc. On platforms outside that list, force
-a local build:
+a local build with Rust 1.91 or later. Rustler is an optional dependency and is
+not inherited by consumers; add it explicitly to the host project's dependencies:
+
+```elixir
+{:rustler, "~> 0.38", optional: true}
+```
 
 ```bash
+mix deps.get
 EX_MAUDE_BUILD=1 mix deps.compile ex_maude
 ```
+
+Development snapshots with an empty NIF checksum file keep the NIF unavailable
+unless a source build is requested. Port and C-Node remain usable independently.
 
 Verify availability at runtime:
 

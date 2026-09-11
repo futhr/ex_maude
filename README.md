@@ -485,7 +485,7 @@ ExMaude
 ```bash
 mix setup # Setup
 mix test  # Run tests
-mix check # Run all quality checks
+mix check --no-retry # Run all quality checks, including previously passing ones
 mix docs  # Generate documentation
 ```
 

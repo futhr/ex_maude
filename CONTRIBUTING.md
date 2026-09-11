@@ -15,7 +15,7 @@ Thank you for your interest in contributing to ExMaude!
 mix setup          # Install dependencies
 mix test           # Run tests
 mix lint           # Run linters (format, credo, dialyzer)
-mix check          # Run all quality checks
+mix check --no-retry # Run all quality checks, including previously passing ones
 mix docs           # Generate documentation
 mix bench          # Run benchmarks
 ```
@@ -62,7 +62,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 Releases are managed by maintainers using git_ops:
 
-1. Ensure all tests pass: `mix check`
+1. Ensure all tests pass: `mix check --no-retry`
 2. Run `mix release` (alias for `mix git_ops.release`) — updates changelog, bumps version, commits, and tags
 3. Push with tags: `git push --follow-tags`
 4. The tag starts the precompiled-NIF workflow; Hex publishing runs only after
@@ -88,6 +88,8 @@ The `v*` tag drives a two-stage pipeline:
 
 Open an issue for questions or discussions.
 
-The complete `mix check` gate includes Rust tests and RustSec advisory checks.
+The complete `mix check --no-retry` gate includes Rust tests and RustSec advisory
+checks. Without `--no-retry`, ex_check may run only the tools that failed on the
+previous invocation.
 Install the audit tool with `cargo install cargo-audit --locked --version 0.22.1`.
 Release artifacts and native CI use Rust 1.91.1 with the committed Cargo lockfile.

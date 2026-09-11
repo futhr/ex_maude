@@ -100,7 +100,7 @@ mix test                        # Run tests (unit only)
 mix test --include integration  # Run with Maude
 mix test --include network      # Run GitHub API tests
 mix lint                        # Format + Credo + Dialyzer
-mix check                       # All quality checks
+mix check --no-retry             # All quality checks, ignoring cached failures
 mix sobelow                     # Security analysis
 mix docs                        # Generate docs
 mix maude.install               # Install Maude binary
