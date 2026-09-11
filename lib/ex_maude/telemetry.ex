@@ -275,8 +275,9 @@ defmodule ExMaude.Telemetry do
   Executes a function and emits start/stop/exception telemetry events.
 
   This is used internally by ExMaude modules to instrument operations.
-  Tuple results use their first element as the `:result` metadata value;
-  non-tuple results are recorded as `:ok`.
+  Nonempty tuple results use their first element as the `:result` metadata value;
+  all other results, including the empty tuple, are recorded as `:ok`. The
+  callback's return value is preserved unchanged.
 
   ## Parameters
 
@@ -308,7 +309,7 @@ defmodule ExMaude.Telemetry do
     try do
       result = fun.()
       duration = System.monotonic_time() - start_time
-      result_atom = if is_tuple(result), do: elem(result, 0), else: :ok
+      result_atom = if is_tuple(result) and tuple_size(result) > 0, do: elem(result, 0), else: :ok
 
       :telemetry.execute(
         stop_event,

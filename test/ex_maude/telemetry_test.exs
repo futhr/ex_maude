@@ -183,6 +183,12 @@ defmodule ExMaude.TelemetryTest do
       # Non-tuple results should use :ok as the result atom
       assert stop_meta.result == :ok
     end
+
+    test "preserves an empty tuple result without emitting an exception", %{ref: ref} do
+      assert Telemetry.span([:ex_maude, :command], %{}, fn -> {} end) == {}
+      assert_receive {^ref, [:ex_maude, :command, :stop], _, %{result: :ok}}
+      refute_receive {^ref, [:ex_maude, :command, :exception], _, _}
+    end
   end
 
   describe "Prometheus/OpenTelemetry compatibility" do
