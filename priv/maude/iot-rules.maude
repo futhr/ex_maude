@@ -283,15 +283,24 @@ fmod CONFLICT-DETECTOR is
     if find(SF:String, ".", 0) =/= notFound .
   eq cascadeAsRat(SF:String) = rat(SF:String, 10) [owise] .
 
+  *** Compare two floats directly; integer or mixed pairs need exact rationals.
   ops cascadeGt cascadeLt cascadeGte cascadeLte : PropertyValue PropertyValue -> Bool .
   eq cascadeGt(intVal(A1:String), intVal(B1:String)) =
-    cascadeAsRat(A1:String) > cascadeAsRat(B1:String) .
+    if find(A1:String, ".", 0) =/= notFound and find(B1:String, ".", 0) =/= notFound
+    then float(A1:String) > float(B1:String)
+    else cascadeAsRat(A1:String) > cascadeAsRat(B1:String) fi .
   eq cascadeLt(intVal(A1:String), intVal(B1:String)) =
-    cascadeAsRat(A1:String) < cascadeAsRat(B1:String) .
+    if find(A1:String, ".", 0) =/= notFound and find(B1:String, ".", 0) =/= notFound
+    then float(A1:String) < float(B1:String)
+    else cascadeAsRat(A1:String) < cascadeAsRat(B1:String) fi .
   eq cascadeGte(intVal(A1:String), intVal(B1:String)) =
-    cascadeAsRat(A1:String) >= cascadeAsRat(B1:String) .
+    if find(A1:String, ".", 0) =/= notFound and find(B1:String, ".", 0) =/= notFound
+    then float(A1:String) >= float(B1:String)
+    else cascadeAsRat(A1:String) >= cascadeAsRat(B1:String) fi .
   eq cascadeLte(intVal(A1:String), intVal(B1:String)) =
-    cascadeAsRat(A1:String) <= cascadeAsRat(B1:String) .
+    if find(A1:String, ".", 0) =/= notFound and find(B1:String, ".", 0) =/= notFound
+    then float(A1:String) <= float(B1:String)
+    else cascadeAsRat(A1:String) <= cascadeAsRat(B1:String) fi .
   eq cascadeGt(V1:PropertyValue, V2:PropertyValue) = false [owise] .
   eq cascadeLt(V1:PropertyValue, V2:PropertyValue) = false [owise] .
   eq cascadeGte(V1:PropertyValue, V2:PropertyValue) = false [owise] .
@@ -484,11 +493,24 @@ mod IOT-EXEC is
   ceq asRat(SF:String) = rat(float(SF:String)) if find(SF:String, ".", 0) =/= notFound .
   eq asRat(SF:String) = rat(SF:String, 10) [owise] .
 
+  *** Compare two floats directly; integer or mixed pairs need exact rationals.
   ops numGt numLt numGte numLte : PropertyValue PropertyValue -> Bool .
-  eq numGt(intVal(A1:String), intVal(B1:String)) = asRat(A1:String) > asRat(B1:String) .
-  eq numLt(intVal(A1:String), intVal(B1:String)) = asRat(A1:String) < asRat(B1:String) .
-  eq numGte(intVal(A1:String), intVal(B1:String)) = asRat(A1:String) >= asRat(B1:String) .
-  eq numLte(intVal(A1:String), intVal(B1:String)) = asRat(A1:String) <= asRat(B1:String) .
+  eq numGt(intVal(A1:String), intVal(B1:String)) =
+    if find(A1:String, ".", 0) =/= notFound and find(B1:String, ".", 0) =/= notFound
+    then float(A1:String) > float(B1:String)
+    else asRat(A1:String) > asRat(B1:String) fi .
+  eq numLt(intVal(A1:String), intVal(B1:String)) =
+    if find(A1:String, ".", 0) =/= notFound and find(B1:String, ".", 0) =/= notFound
+    then float(A1:String) < float(B1:String)
+    else asRat(A1:String) < asRat(B1:String) fi .
+  eq numGte(intVal(A1:String), intVal(B1:String)) =
+    if find(A1:String, ".", 0) =/= notFound and find(B1:String, ".", 0) =/= notFound
+    then float(A1:String) >= float(B1:String)
+    else asRat(A1:String) >= asRat(B1:String) fi .
+  eq numLte(intVal(A1:String), intVal(B1:String)) =
+    if find(A1:String, ".", 0) =/= notFound and find(B1:String, ".", 0) =/= notFound
+    then float(A1:String) <= float(B1:String)
+    else asRat(A1:String) <= asRat(B1:String) fi .
   eq numGt(V, VC) = false [owise] .
   eq numLt(V, VC) = false [owise] .
   eq numGte(V, VC) = false [owise] .
