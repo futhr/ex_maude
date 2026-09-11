@@ -42,6 +42,12 @@ defmodule ExMaude.PreloadsTest do
     assert Preloads.for_pool(:pool_a) == ["/configured.maude"]
   end
 
+  test "reloaded configured sources follow later runtime sources" do
+    :ok = Preloads.remember(:pool_a, "/runtime.maude")
+    :ok = Preloads.remember(:pool_a, "/configured.maude")
+    assert Preloads.for_pool(:pool_a) == ["/runtime.maude", "/configured.maude"]
+  end
+
   test "does not lose concurrent updates" do
     paths = Enum.map(1..50, &"/concurrent-#{&1}.maude")
 

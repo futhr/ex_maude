@@ -148,19 +148,23 @@ defmodule ExMaude.Maude do
   end
 
   @doc """
-  Loads a Maude file into a pool at most once, safely under concurrency.
+  Ensures every current worker has loaded the current contents of a file.
 
   `load_file/2` broadcasts to every worker on every call, including workers
   currently checked out serving other reductions — those loads fail, so N
   concurrent callers mostly see `:load_error` even though the file is fine.
 
-  This returns `:ok` if the source path was successfully preloaded or the
-  file's content digest is already recorded for the pool. Otherwise it loads
+  This returns `:ok` if the file's current content digest is recorded for every
+  current worker. Loading different contents replaces the previous identity,
+  so restoring an earlier version loads that version again. Otherwise it loads
   inside a per-node lock, re-checking after acquiring it. Prefer it on any path
   that can run concurrently.
 
   A residual race remains if a *new* module is loaded while a long-running
   command holds a worker; `:preload_modules` avoids it for known modules.
+  Loads are not atomic across workers. Keep source files stable while loading;
+  identities do not cover relative imports or modules redefined by other files
+  or raw commands. Explicitly reload when those dependencies change.
 
   ## Options
 
@@ -279,6 +283,9 @@ defmodule ExMaude.Maude do
   end
 
   defp load_on_worker(worker, path, pool) do
+    # Even a semantic failure can leave some definitions changed in Maude.
+    Preloads.forget_loaded(pool, path, worker)
+
     case Server.load_file(worker, path) do
       :ok -> Preloads.mark_loaded(pool, [path], worker)
       error -> error

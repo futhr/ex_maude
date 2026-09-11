@@ -7,10 +7,11 @@ defmodule ExMaude.Preloads do
   @doc false
   @spec for_pool(atom(), [Path.t()] | nil) :: [Path.t()]
   def for_pool(pool \\ @default_pool, configured \\ nil) do
-    Enum.uniq(
-      (configured || Application.get_env(:ex_maude, :preload_modules, [])) ++
-        runtime_for_pool(pool)
-    )
+    configured = configured || Application.get_env(:ex_maude, :preload_modules, [])
+    runtime = runtime_for_pool(pool)
+    reloaded = MapSet.new(runtime, &Path.expand/1)
+
+    Enum.uniq(Enum.reject(configured, &MapSet.member?(reloaded, Path.expand(&1))) ++ runtime)
   end
 
   @doc false
@@ -28,7 +29,7 @@ defmodule ExMaude.Preloads do
 
       workers ->
         workers
-        |> Enum.map(&Map.get(state.loaded, &1, MapSet.new()))
+        |> Enum.map(&MapSet.new(Map.values(Map.get(state.loaded, &1, %{}))))
         |> Enum.reduce(&MapSet.intersection/2)
         |> MapSet.to_list()
     end
@@ -38,21 +39,30 @@ defmodule ExMaude.Preloads do
   @spec remember(atom(), Path.t()) :: :ok
   def remember(pool, path) do
     update(pool, fn state ->
-      if path in state.paths, do: state, else: %{state | paths: [path | state.paths]}
+      %{state | paths: [path | List.delete(state.paths, path)]}
     end)
   end
 
   @doc false
   @spec mark_loaded(atom(), [Path.t()], pid()) :: :ok
   def mark_loaded(pool, paths, worker \\ self()) do
-    identities = MapSet.new(Enum.flat_map(paths, &identity_list/1))
+    identities = Map.new(Enum.flat_map(paths, &identity_entry/1))
 
     update(pool, fn state ->
       loaded =
         state.loaded
         |> Map.filter(fn {pid, _} -> Process.alive?(pid) end)
-        |> Map.update(worker, identities, &MapSet.union(&1, identities))
+        |> Map.update(worker, identities, &Map.merge(&1, identities))
 
+      %{state | loaded: loaded}
+    end)
+  end
+
+  @doc false
+  @spec forget_loaded(atom(), Path.t(), pid()) :: :ok
+  def forget_loaded(pool, path, worker) do
+    update(pool, fn state ->
+      loaded = Map.update(state.loaded, worker, %{}, &Map.delete(&1, Path.expand(path)))
       %{state | loaded: loaded}
     end)
   end
@@ -194,9 +204,9 @@ defmodule ExMaude.Preloads do
     :exit, _ -> []
   end
 
-  defp identity_list(path) do
+  defp identity_entry(path) do
     case identity(path) do
-      {:ok, identity} -> [identity]
+      {:ok, identity} -> [{Path.expand(path), identity}]
       :error -> []
     end
   end

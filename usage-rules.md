@@ -107,6 +107,13 @@ Keep these files available for replacement workers. String modules use private
 cache files that are removed when the owning pool exits. Failed preloads prevent
 a worker from starting; correct the file before restarting the pool.
 
+`ensure_file_loaded/2` compares the current top-level file digest on every live
+worker. Reverting a file to older contents triggers a load again. Replacement
+workers replay distinct runtime sources in their latest successful load order.
+Keep source files stable during loading. Changes to imports, aliases, or modules
+redefined by other files/raw commands require an explicit reload. A broadcast
+is not atomic: some workers may change before another worker reports an error.
+
 ## IoT Conflict Detection
 
 ExMaude includes an equational conflict model for IoT automation rules.

@@ -39,6 +39,40 @@ defmodule ExMaude.ConcurrentLoadTest do
   ]
 
   describe "ensure_file_loaded/2" do
+    test "reloads restored file contents on every worker", %{pool: pool} do
+      path = create_temp_module("fmod RESTORED-CONTENTS is endfm")
+
+      for value <- [1, 2, 1] do
+        File.write!(
+          path,
+          "fmod RESTORED-CONTENTS is protecting NAT . op value : -> Nat . eq value = #{value} . endfm"
+        )
+
+        assert :ok = Maude.ensure_file_loaded(path, pool: pool)
+
+        assert {:ok, values} =
+                 ExMaude.Pool.broadcast(
+                   &ExMaude.Server.execute(&1, "reduce in RESTORED-CONTENTS : value ."),
+                   pool: pool
+                 )
+
+        assert values == List.duplicate({:ok, Integer.to_string(value)}, 4)
+        assert length(ExMaude.Preloads.loaded_for_pool(pool)) == 1
+      end
+    end
+
+    test "a failed reload invalidates an earlier successful identity", %{pool: pool} do
+      source = "fmod FAILED-RELOAD is protecting NAT . endfm"
+      path = create_temp_module(source)
+      assert :ok = Maude.ensure_file_loaded(path, pool: pool)
+      File.write!(path, "fmod FAILED-RELOAD is protecting DOES-NOT-EXIST . endfm")
+      assert {:error, %ExMaude.Error{type: :load_error}} = Maude.load_file(path, pool: pool)
+      File.write!(path, source)
+      assert ExMaude.Preloads.loaded_for_pool(pool) == []
+      assert :ok = Maude.ensure_file_loaded(path, pool: pool)
+      assert {:ok, "3"} = ExMaude.reduce("FAILED-RELOAD", "1 + 2", pool: pool)
+    end
+
     test "is idempotent", %{pool: pool} do
       path = ExMaude.iot_rules_path()
 
@@ -66,6 +100,24 @@ defmodule ExMaude.ConcurrentLoadTest do
       assert Enum.all?(results, &(&1 == :ok)),
              "expected every concurrent load to succeed, got: #{inspect(Enum.frequencies(results))}"
     end
+  end
+
+  test "replacement workers preserve repeated string-module load order" do
+    name = :repeated_source_pool
+    start_supervised!(ExMaude.Pool.child_spec(name: name, pool_size: 1, pool_max_overflow: 0))
+
+    for value <- [1, 2, 1] do
+      assert :ok =
+               ExMaude.load_module(
+                 "fmod REPEATED-SOURCE is protecting NAT . op value : -> Nat . eq value = #{value} . endfm",
+                 pool: name
+               )
+    end
+
+    assert {:ok, "1"} = ExMaude.reduce("REPEATED-SOURCE", "value", pool: name)
+    worker = ExMaude.Pool.checkout(pool: name)
+    GenServer.stop(worker)
+    assert {:ok, "1"} = ExMaude.reduce("REPEATED-SOURCE", "value", pool: name)
   end
 
   describe "detect_conflicts/2 under concurrency" do

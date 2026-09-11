@@ -141,7 +141,7 @@ defmodule ExMaude do
   defdelegate load_file(path, opts \\ []), to: ExMaude.Maude
 
   @doc """
-  Loads a Maude file into a pool at most once, safely under concurrency.
+  Ensures every current worker has loaded the current contents of a file.
 
   Prefer this over `load_file/2` on any path that can run concurrently.
   See `ExMaude.Maude.ensure_file_loaded/2`.
