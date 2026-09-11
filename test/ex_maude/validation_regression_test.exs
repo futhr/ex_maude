@@ -39,7 +39,7 @@ defmodule ExMaude.ValidationRegressionTest do
       assert {:error, errors} = domain.validate_rules([first, second])
 
       assert errors[rule.id] ==
-               expected_first ++ expected_second ++ ["rule ids must be unique"]
+               List.flatten([expected_first, expected_second, "rule ids must be unique"])
     end
   end
 
@@ -48,7 +48,11 @@ defmodule ExMaude.ValidationRegressionTest do
           {ExMaude.IoT, elem(hd(@rules), 1), "rule_0"},
           {ExMaude.AI, elem(List.last(@rules), 1), "<index 0>"}
         ] do
-      invalid = rule |> Map.put(:id, key) |> Map.put(:priority, -1)
+      invalid =
+        rule
+        |> Map.put(:id, key)
+        |> Map.put(:priority, -1)
+
       assert {:error, errors} = domain.validate_rules([%{}, invalid])
       assert "missing required field: id" in errors[key]
       assert "priority must be a non-negative integer" in errors[key]
