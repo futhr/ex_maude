@@ -371,6 +371,39 @@ defmodule Mix.Tasks.Maude.InstallTest do
     end
   end
 
+  describe "staged installation" do
+    test "a missing binary preserves the existing installation", %{tmp_dir: tmp_dir} do
+      destination = Path.join(tmp_dir, "installed")
+      File.mkdir!(destination)
+      File.write!(Path.join(destination, "maude"), "old binary")
+      File.write!(Path.join(destination, "prelude.maude"), "old prelude")
+      archive = create_archive!(tmp_dir, "missing.zip", [{~c"prelude.maude", "new prelude"}])
+
+      assert_raise Mix.Error, ~r/Could not find a recognized Maude binary/, fn ->
+        Mix.Tasks.Maude.Install.install_archive(archive, destination, "3.5.1", tmp_dir)
+      end
+
+      assert File.read!(Path.join(destination, "maude")) == "old binary"
+      assert File.read!(Path.join(destination, "prelude.maude")) == "old prelude"
+    end
+
+    test "installs a runnable renamed executable with its companion files", %{tmp_dir: tmp_dir} do
+      destination = Path.join(tmp_dir, "installed")
+
+      archive =
+        create_archive!(tmp_dir, "release.zip", [
+          {~c"maude.arm64", "#!/bin/sh\nprintf '3.5.1\\n'\n"},
+          {~c"prelude.maude", "prelude"}
+        ])
+
+      assert :ok = Mix.Tasks.Maude.Install.install_archive(archive, destination, "3.5.1", tmp_dir)
+      binary = Path.join(destination, "maude")
+      assert {"3.5.1\n", 0} = System.cmd(binary, ["--version"])
+      assert File.read!(Path.join(destination, "prelude.maude")) == "prelude"
+      refute File.exists?(Path.join(destination, "maude.arm64"))
+    end
+  end
+
   defp create_archive!(directory, name, entries) do
     path = Path.join(directory, name)
     {:ok, _} = :zip.create(String.to_charlist(path), entries)

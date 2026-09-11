@@ -9,6 +9,14 @@ defmodule Mix.Tasks.Maude.Install do
   The binary installs into ExMaude's `priv/maude/bin/` by default, where
   `ExMaude.Binary.find/0` discovers it without any configuration.
 
+  Extraction validates the archive and requires a recognized regular Maude
+  executable before copying any release files. Execute permissions are set in
+  staging. Publication copies multiple files and is not atomic: an I/O failure
+  during copying can leave a partial installation. There is no rollback, stale
+  file removal, or concurrent-install lock. Install into a separate directory
+  when preserving a running installation is required. Filesystem checks assume
+  a trusted destination and do not defend against hostile concurrent writers.
+
   ## Usage
 
       mix maude.install [--version VERSION] [--path PATH] [--force] [--list] [--check]
@@ -244,13 +252,12 @@ defmodule Mix.Tasks.Maude.Install do
         try do
           download_file(url, zip_path)
           verify_checksum(zip_path, sha256)
-          extract_and_install(zip_path, install_path, resolved_version, tmp_dir)
+          install_archive(zip_path, install_path, resolved_version, tmp_dir)
         after
           File.rm_rf(tmp_dir)
         end
 
         maude_binary = Path.join(install_path, "maude")
-        File.chmod!(maude_binary, 0o755)
 
         Mix.shell().info("\n✓ Maude installed successfully at #{maude_binary}")
 
@@ -660,7 +667,9 @@ defmodule Mix.Tasks.Maude.Install do
     end
   end
 
-  defp extract_and_install(zip_path, install_path, version, tmp_dir) do
+  @doc false
+  @spec install_archive(Path.t(), Path.t(), String.t(), Path.t()) :: :ok
+  def install_archive(zip_path, install_path, version, tmp_dir) do
     Mix.shell().info("Extracting...")
     extraction_path = Path.join(tmp_dir, "extracted")
     File.mkdir!(extraction_path)
@@ -669,6 +678,7 @@ defmodule Mix.Tasks.Maude.Install do
       extract_with_erlang(zip_path, extraction_path)
       validate_extracted_tree!(extraction_path)
       rename_maude_binary(extraction_path, version)
+      File.chmod!(Path.join(extraction_path, "maude"), 0o755)
       copy_release_tree!(extraction_path, install_path)
     end
   end
@@ -808,7 +818,7 @@ defmodule Mix.Tasks.Maude.Install do
     found = File.regular?(target) or rename_known_maude_binary(install_path, target, version)
 
     unless found do
-      warn_missing_maude_binary(install_path)
+      raise_missing_maude_binary(install_path)
     end
   end
 
@@ -845,17 +855,16 @@ defmodule Mix.Tasks.Maude.Install do
     end
   end
 
-  defp warn_missing_maude_binary(install_path) do
+  @spec raise_missing_maude_binary(Path.t()) :: no_return()
+  defp raise_missing_maude_binary(install_path) do
     files =
       install_path
       |> File.ls!()
       |> Enum.reject(&File.dir?(Path.join(install_path, &1)))
 
-    Mix.shell().error("""
-    Warning: Could not find Maude binary to rename.
+    Mix.raise("""
+    Could not find a recognized Maude binary in the archive.
     Extracted files: #{inspect(files)}
-
-    You may need to manually rename the correct file to 'maude'.
     """)
   end
 
