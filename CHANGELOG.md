@@ -5,6 +5,31 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.4.3](https://github.com/futhr/ex_maude/compare/v0.4.2...v0.4.3) (2026-09-16)
+
+
+
+
+### Bug Fixes:
+
+* installer: validate the staged executable before copying files by Tobias Bohwalli
+
+* binary: validate executable files and bound version probes by Tobias Bohwalli
+
+* telemetry: preserve empty tuple callback results by Tobias Bohwalli
+
+* backends: parse load diagnostics and reject lossy native output by Tobias Bohwalli
+
+* iot: preserve integer precision in numeric comparisons by Tobias Bohwalli
+
+* validation: reject malformed collections and retain rule errors by Tobias Bohwalli
+
+* preloads: track current contents and preserve replay order by Tobias Bohwalli
+
+### Performance Improvements:
+
+* iot: compare float pairs without rational conversion by Tobias Bohwalli
+
 ## [v0.4.2](https://github.com/futhr/ex_maude/compare/v0.4.1...v0.4.2) (2026-09-07)
 
 
