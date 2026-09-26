@@ -1,6 +1,7 @@
 # IoT verification scope and evidence contract
 
-Version: 0.2.0-target. Documentation target; existing APIs remain unchanged.
+Version: 0.2.0-target. Existing APIs remain unchanged. Additive bundled-model
+receipt functions are implemented; positive proof profiles remain a target.
 
 ## Current behavior
 
@@ -24,7 +25,12 @@ These facts must remain visible to users of the model. A consumer with different
 
 ## Additive receipts
 
-A proposed additive API is specified in [verification receipts](verification-receipts.md). It attributes a run to exact inputs, model closure, execution and bounds without changing the underlying proof scope. No wrapper may synthesize a more precise completion reason from a legacy result that has already discarded it.
+The implemented bundled-model Port receipt API is described in [verification
+receipts](verification-receipts.md). It attributes a run to snapshotted inputs,
+model closure, execution and bounds without changing the underlying proof
+scope. It executes the check directly rather than wrapping a legacy result.
+No wrapper may synthesize a more precise completion reason from a legacy
+result that has already discarded it.
 
 **EMI-04.** Bounded no-counterexample, timeout, output truncation, queue exhaustion, unavailable backend and unsupported model remain distinct where the executed API can observe them. A compatibility wrapper records `legacy_unverified` when it cannot. Raw API success and consumer admission are different axes.
 

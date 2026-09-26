@@ -137,7 +137,9 @@ defmodule ExMaude.Backend.Port do
   def init(opts) do
     maude_path = opts[:maude_path] || find_maude_path()
     pool = Keyword.get(opts, :pool, :ex_maude_pool)
-    preload_modules = Preloads.for_pool(pool, opts[:preload_modules])
+
+    preload_modules = preload_paths(opts, pool)
+
     startup_timeout = opts[:startup_timeout_ms] || @startup_timeout_ms
     max_response_bytes = response_limit(opts[:max_response_bytes])
 
@@ -150,9 +152,14 @@ defmodule ExMaude.Backend.Port do
           max_response_bytes: max_response_bytes
         }
 
+        # Receipt tasks can be killed at their absolute deadline while this
+        # worker is still starting. Retire the native process even when a
+        # killed BEAM process cannot run terminate/2.
+        maybe_guard_os_process(opts, state)
+
         case become_ready(state, preload_modules, startup_timeout) do
           {:ok, state} ->
-            Preloads.mark_loaded(pool, preload_modules)
+            remember_preloads(opts, pool, preload_modules)
             emit_telemetry(:start, %{maude_path: maude_path})
             {:ok, state}
 
@@ -298,6 +305,32 @@ defmodule ExMaude.Backend.Port do
   # Port.close/1 does not signal the OS process — without this a timed-out
   # command would leak a CPU-pegged interpreter. In PTY mode the pid is the
   # wrapper's; killing it tears down its PTY and Maude with it.
+  defp guard_os_process(worker, os_pid) do
+    spawn(fn ->
+      ref = Process.monitor(worker)
+
+      receive do
+        {:DOWN, ^ref, :process, ^worker, :normal} -> :ok
+        {:DOWN, ^ref, :process, ^worker, {:shutdown, _}} -> :ok
+        {:DOWN, ^ref, :process, ^worker, _} -> kill_os_process(os_pid)
+      end
+    end)
+  end
+
+  defp preload_paths(opts, pool) do
+    if opts[:isolated_preloads],
+      do: opts[:preload_modules] || [],
+      else: Preloads.for_pool(pool, opts[:preload_modules])
+  end
+
+  defp maybe_guard_os_process(opts, state) do
+    if opts[:isolated_preloads], do: guard_os_process(self(), state.os_pid)
+  end
+
+  defp remember_preloads(opts, pool, paths) do
+    unless opts[:isolated_preloads], do: Preloads.mark_loaded(pool, paths)
+  end
+
   defp kill_os_process(nil), do: :ok
 
   defp kill_os_process(os_pid) do

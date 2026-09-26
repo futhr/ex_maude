@@ -1,6 +1,17 @@
 # Verification receipts
 
-Version: 0.1.0-target. Proposed additive contract; no new public function is implemented by this document.
+Version: 0.1.0-target. The bundled IoT Port profile now has additive receipt
+functions; the wider profile and attestation requirements below remain a target.
+
+Implemented entry points: `ExMaude.IoT.detect_conflicts_with_receipt/2`,
+`verify_safety_with_receipt/3`, and `verify_liveness_with_receipt/3`. The
+`bundled-iot-v1` profile uses a fresh Port worker and private snapshots of the
+bundled model, executable, and adjacent prelude. It does not use a pool, accept
+custom Maude imports, sign receipts, store private witnesses, or provide a
+positive unbounded proof profile. `:bounded_complete` is a bounded command
+completion only. A completed no-finding search does not establish safety or
+liveness. Callers may pass `:assumptions`, which are labeled as caller
+assertions; the execution observations are separate.
 
 ## Purpose
 

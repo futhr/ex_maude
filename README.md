@@ -280,6 +280,12 @@ rules = [
 ]
 
 {:ok, conflicts} = ExMaude.IoT.detect_conflicts(rules)
+
+# Run an isolated check with an attributable receipt
+{:ok, receipt} = ExMaude.IoT.detect_conflicts_with_receipt(rules)
+receipt.semantic.digest       # same question and pinned model => same digest
+receipt.execution.run_id      # unique to this execution
+receipt.execution.findings    # findings from the four bundled checks
 ```
 
 ### Detected Conflict Types
@@ -292,6 +298,23 @@ rules = [
 | **State-Env Cascading** | Combined cascading effects |
 
 See `ExMaude.IoT` for the full rule schema, trigger types, and action types.
+
+`verify_safety_with_receipt/3` records a bounded search for a reachable bad
+state. `verify_liveness_with_receipt/3` records a bounded search for a terminal
+state missing a goal. Both return `{:ok, receipt}` even when the run times out
+or produces malformed output; inspect `receipt.execution.completion` before
+using findings. `:bounded_complete` means the requested bounded command
+finished, not that safety or liveness was proved. A solution witness contains
+the returned state and substitution, not a transition trace.
+
+Receipt runs start a fresh Port worker with private snapshots of the bundled
+IoT model, Maude executable, and adjacent `prelude.maude`; they do not use a
+shared pool or accept arbitrary model text. The API requires an executable
+with that adjacent prelude. `:timeout` covers preparation and execution;
+`:max_response_bytes` and `:max_witness_bytes` limit evidence size. Caller
+`:assumptions` are recorded in the semantic identity as assertions, not
+verified facts. The profile has no OS memory limit. The legacy APIs and their
+return values are unchanged.
 
 ---
 

@@ -63,8 +63,8 @@ defmodule ExMaude.IoT do
   See `ExMaude.Telemetry` for full event documentation and integration examples.
   """
 
-  alias ExMaude.{Config, Maude}
-  alias ExMaude.IoT.{ConflictParser, Encoder, Validator}
+  alias ExMaude.{Command, Config, Maude}
+  alias ExMaude.IoT.{ConflictParser, Encoder, ReceiptRun, Validator}
 
   @type thing_id :: String.t()
 
@@ -399,6 +399,98 @@ defmodule ExMaude.IoT do
     end
   end
 
+  @doc """
+  Runs the four bundled conflict checks in an isolated Port worker and returns
+  a versioned verification receipt. The receipt records a completed equational
+  check or a failure disposition; it does not authorize device actuation.
+
+  `:timeout` is the entire run deadline. `:max_response_bytes` and
+  `:max_witness_bytes` bound returned evidence. `:assumptions` records caller
+  assertions without treating them as measured facts. Receipt runs do not use
+  a shared pool and reject `:pool`.
+  """
+  @spec detect_conflicts_with_receipt([rule()], keyword()) ::
+          {:ok, ExMaude.Verification.Receipt.t()} | {:error, ExMaude.Error.t() | term()}
+  def detect_conflicts_with_receipt(rules, opts \\ []) do
+    clock = ReceiptRun.start_clock()
+
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- validate_conflict_types(Keyword.get(opts, :conflict_types)),
+         {:ok, encoded} <- Encoder.encode_rules(rules) do
+      command = "reduce in CONFLICT-DETECTOR : detectAllConflicts(#{encoded}) ."
+
+      ReceiptRun.run(
+        :conflicts,
+        command,
+        %{rules: rules, selection: Keyword.get(opts, :conflict_types)},
+        opts,
+        clock
+      )
+    end
+  end
+
+  @doc """
+  Searches for a reachable bad state and returns a versioned receipt.
+
+  A completed run with no finding means only that this bounded search found no
+  matching state. A finding contains the returned state/substitution, not a
+  reconstructed trace.
+  """
+  @spec verify_safety_with_receipt([rule()], state_pred() | [state_pred()], keyword()) ::
+          {:ok, ExMaude.Verification.Receipt.t()} | {:error, ExMaude.Error.t() | term()}
+  def verify_safety_with_receipt(rules, bad_state, opts \\ []) do
+    clock = ReceiptRun.start_clock()
+
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- validate_world_inputs(bad_state, opts, :safety),
+         {:ok, initial} <- build_world(rules, opts) do
+      command =
+        Command.search("IOT-EXEC", initial, bad_state_pattern(bad_state),
+          arrow: "=>*",
+          max_solutions: 1,
+          max_depth: Keyword.get(opts, :max_depth, 50)
+        )
+
+      ReceiptRun.run(
+        :safety,
+        command,
+        %{rules: rules, initial_state: Keyword.get(opts, :initial_state, []), target: bad_state},
+        opts,
+        clock
+      )
+    end
+  end
+
+  @doc """
+  Searches for a reachable terminal world that misses the goal and returns a
+  versioned receipt. This check does not detect livelock or prove liveness.
+  """
+  @spec verify_liveness_with_receipt([rule()], state_pred(), keyword()) ::
+          {:ok, ExMaude.Verification.Receipt.t()} | {:error, ExMaude.Error.t() | term()}
+  def verify_liveness_with_receipt(rules, goal_state, opts \\ []) do
+    clock = ReceiptRun.start_clock()
+
+    with :ok <- Validator.validate_rules(rules),
+         :ok <- validate_world_inputs(goal_state, opts, :liveness),
+         {:ok, initial} <- build_world(rules, opts) do
+      command =
+        Command.search("IOT-EXEC", initial, "world(S:WState, RS:RuleSet)",
+          arrow: "=>!",
+          condition: goal_violation_condition(goal_state),
+          max_solutions: 1,
+          max_depth: Keyword.get(opts, :max_depth, 50)
+        )
+
+      ReceiptRun.run(
+        :deadlock,
+        command,
+        %{rules: rules, initial_state: Keyword.get(opts, :initial_state, []), target: goal_state},
+        opts,
+        clock
+      )
+    end
+  end
+
   # Absence of an answer — pool down, worker missing, command deadline — is
   # not evidence either way and maps to the documented {:ok, :unverified}.
   # Anything else (a rule that encodes to invalid Maude, a missing module,
@@ -527,4 +619,16 @@ defmodule ExMaude.IoT do
   end
 
   defp filter_conflicts(_, _), do: validation_error("conflict_types must be a list")
+
+  defp validate_conflict_types(nil), do: :ok
+
+  defp validate_conflict_types(types) when is_list(types) do
+    if ExMaude.Validation.proper_list?(types) and Enum.all?(types, &(&1 in @conflict_types)) do
+      :ok
+    else
+      validation_error("conflict_types contains an unsupported conflict type")
+    end
+  end
+
+  defp validate_conflict_types(_), do: validation_error("conflict_types must be a list")
 end

@@ -1,6 +1,26 @@
 # IoT verification improvement plan
 
-Version: 0.2.0-target. Documentation plan, not executed test evidence.
+Version: 0.2.0-target. The bundled-model receipt path and focused regressions
+have been implemented; a positive-proof profile remains future work.
+
+## Implementation status
+
+The additive `*_with_receipt` IoT APIs use a new isolated Port worker for every
+run. They snapshot the bundled model, executable, and prelude, record semantic
+and execution identities, bound output and witness data, and keep the legacy
+return shapes intact. `test/ex_maude/iot_receipt_test.exs` covers priority,
+missing predicates, invocation, cascade versus reachability, terminal-state
+evidence, deterministic identity, witness omission, overflow, timeout, and
+telemetry privacy. The isolated path has no pool queue or worker replacement
+within a run; broader shared-pool atomic loading and custom model closures
+are still outside this profile.
+
+The current `IOT-EXEC` model only introduces state values from a finite rule
+set and initial state, so a separate finite-state completion profile may be
+feasible. It would first need a reviewed closure argument, exhaustive checker
+completion evidence, explicit assumptions about unmodeled device/environment
+behavior, and independent witness checking. No positive safety or liveness
+claim follows from the existing bounded searches.
 
 Read [model scope](../specs/iot-home-verification.md) and [receipts](../specs/verification-receipts.md) before changing public behavior.
 
@@ -26,4 +46,4 @@ Do not advertise positive safety/liveness from the existing bounded APIs. A new 
 
 ## 5. Acceptance and release
 
-Map tests to EMI/EMR cases. Run unit/parser tests first, then explicitly selected Maude integration tests using a pinned executable. Measure bounds without broad benchmark claims. Publish source/compatibility changes only after the normal release process. Documentation edits do not mean receipts or positive verification are implemented.
+Map tests to EMI/EMR cases. Run unit/parser tests first, then explicitly selected Maude integration tests using a pinned executable. Measure bounds without broad benchmark claims. Publish source/compatibility changes only after the normal release process. The bundled receipt implementation is available in source; positive verification remains unimplemented.

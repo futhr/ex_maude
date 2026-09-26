@@ -151,6 +151,16 @@ rules = [
 {:error, errors} = ExMaude.IoT.validate_rule(%{})
 ```
 
+For attributable bundled-model runs, use
+`ExMaude.IoT.detect_conflicts_with_receipt/2`,
+`verify_safety_with_receipt/3`, or `verify_liveness_with_receipt/3`.
+They return `{:ok, %ExMaude.Verification.Receipt{}}` for completed and
+incomplete runs. Read `receipt.execution.completion` and findings separately:
+`:bounded_complete` only says the requested bounded command finished.
+No-finding safety and deadlock searches are not positive proofs. Receipt runs
+use an isolated Port worker and require an executable with an adjacent
+`prelude.maude`; they reject `:pool` and unknown semantics options.
+
 ### Conflict Types
 
 - **state_conflict** - Same device, incompatible state changes
