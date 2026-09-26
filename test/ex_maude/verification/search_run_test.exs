@@ -178,6 +178,40 @@ defmodule ExMaude.Verification.SearchRunTest do
     assert result.solutions == []
   end
 
+  test "force-stopping a caller retires its isolated OS worker" do
+    pid_file =
+      Path.join(System.tmp_dir!(), "ex_maude_search_pid_#{System.unique_integer([:positive])}")
+
+    started = pid_file <> ".started"
+
+    on_exit(fn ->
+      File.rm(pid_file)
+      File.rm(started)
+    end)
+
+    path = fake_maude("printf 'ready' > '#{started}'; exec sleep 20", pid_file)
+    parent = self()
+
+    {caller, monitor} =
+      spawn_monitor(fn ->
+        send(parent, {:search_result, SearchRun.run(@model, base_query(), maude_path: path)})
+      end)
+
+    assert eventually(fn -> File.exists?(started) end)
+    os_pid = String.trim(File.read!(pid_file))
+    assert {_, 0} = System.cmd("kill", ["-0", os_pid], stderr_to_stdout: true)
+
+    Process.exit(caller, :kill)
+    assert_receive {:DOWN, ^monitor, :process, ^caller, :killed}
+
+    assert eventually(fn ->
+             {_, status} = System.cmd("kill", ["-0", os_pid], stderr_to_stdout: true)
+             status != 0
+           end)
+
+    refute_receive {:search_result, _}
+  end
+
   test "an unknown terminal marker cannot count as completed", %{path: _path} do
     path = fake_maude("printf '%s\\n\\nSearch stopped.\\nstates: 1\\nMaude> ' \"$line\"")
     assert {:ok, result} = SearchRun.run(@model, base_query(), maude_path: path)
@@ -209,12 +243,14 @@ defmodule ExMaude.Verification.SearchRunTest do
     %{module: "CONJUNCT-SEARCH", initial: "a", pattern: "c", max_depth: 2, max_solutions: 2}
   end
 
-  defp fake_maude(search_action) do
+  defp fake_maude(search_action, pid_file \\ nil) do
     path = Path.join(System.tmp_dir!(), "ex_maude_fake_#{System.unique_integer([:positive])}.sh")
+    pid_line = if pid_file, do: "printf '%s' \"$$\" > '#{pid_file}'", else: ""
 
     File.write!(path, """
     #!/bin/sh
     if [ "$1" = "--version" ]; then printf 'fixture-maude 1\\n'; exit 0; fi
+    #{pid_line}
     printf 'Maude> '
     while IFS= read -r line; do
       case "$line" in
@@ -227,5 +263,17 @@ defmodule ExMaude.Verification.SearchRunTest do
     File.chmod!(path, 0o700)
     on_exit(fn -> File.rm(path) end)
     path
+  end
+
+  defp eventually(condition, attempts \\ 100)
+  defp eventually(condition, 0), do: condition.()
+
+  defp eventually(condition, attempts) do
+    if condition.() do
+      true
+    else
+      Process.sleep(10)
+      eventually(condition, attempts - 1)
+    end
   end
 end

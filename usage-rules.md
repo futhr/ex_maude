@@ -88,9 +88,11 @@ reports `:depth_truncation` when it finds a larger frontier. Read
 `termination`: a completed declared bound is not an unbounded or finite-model
 proof, and a solution limit, timeout, output truncation, worker loss or parser
 error is inconclusive for a no-counterexample claim. Query fields in this
-initial API exclude Maude command delimiters. State-count limits and forced
-caller cancellation remain unsupported, so this API does not yet cover every
-completion/trace outcome required by Conjunct CJ8-04.
+initial API exclude Maude command delimiters. A force-stopped caller retires
+its isolated OS worker; it cannot receive a typed cancellation result after
+termination. State-count limits and a typed cancellation outcome remain
+unsupported, so this API does not yet cover every completion/trace outcome
+required by Conjunct CJ8-04.
 
 ### Loading Modules
 

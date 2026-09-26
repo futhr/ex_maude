@@ -61,9 +61,9 @@ defmodule ExMaude.Verification.SearchRun do
   Runs a bounded search and returns typed evidence even on command failure.
 
   Required `:maude_path` is an explicit executable path. `:timeout` and
-  `:max_response_bytes` are per-command limits. The worker is retired on every
-  normal return; forced termination of the caller remains outside this API's
-  cancellation contract.
+  `:max_response_bytes` are per-command limits. The worker is retired on normal
+  return. If the caller is force-stopped, a monitor retires the worker and its
+  snapshot; the Port backend's OS guard stops the Maude process.
   A completed declared bound is not a finite-model proof. A second search at
   depth `N + 1` on the same worker reports `:depth_truncation` if it discovers
   more states or solutions. An unknown or malformed terminal marker yields
@@ -248,27 +248,29 @@ defmodule ExMaude.Verification.SearchRun do
       error: nil
     }
 
-    case Port.start_link(maude_path: inputs.maude_path, max_response_bytes: inputs.output) do
+    case Port.start_link(
+           maude_path: inputs.maude_path,
+           preload_modules: [model_path],
+           isolated_preloads: true,
+           startup_timeout_ms: inputs.timeout,
+           max_response_bytes: inputs.output
+         ) do
       {:ok, worker} ->
         Process.unlink(worker)
+        watcher = watch_caller(self(), worker, Path.dirname(model_path))
 
         try do
-          case safe_call(fn -> Port.load_file(worker, model_path) end) do
-            :ok ->
-              result =
-                safe_call(fn -> Port.execute(worker, inputs.command, timeout: inputs.timeout) end)
+          result =
+            safe_call(fn -> Port.execute(worker, inputs.command, timeout: inputs.timeout) end)
 
-              interpret(result, worker, inputs, evidence)
-
-            {:error, error} ->
-              {:ok, %{evidence | error: error}}
-          end
+          interpret(result, worker, inputs, evidence)
         after
           retire(worker)
+          send(watcher, :owner_done)
         end
 
       {:error, reason} ->
-        {:ok, %{evidence | error: reason}}
+        {:ok, %{evidence | termination: classify_start(reason), error: reason}}
     end
   end
 
@@ -453,10 +455,33 @@ defmodule ExMaude.Verification.SearchRun do
   defp classify(:missing_state_number), do: :parser_error
   defp classify(_), do: :worker_loss
 
+  defp classify_start({:maude_start_failed, {:preload_failed, _, %Error{} = error}}),
+    do: classify(error)
+
+  defp classify_start({:maude_start_failed, :no_prompt}), do: :timeout
+  defp classify_start({:maude_start_failed, :response_too_large}), do: :output_truncation
+  defp classify_start(_), do: :worker_loss
+
   defp retire(worker) do
     if Process.alive?(worker), do: Port.stop(worker)
   catch
     :exit, _ -> :ok
+  end
+
+  defp watch_caller(owner, worker, directory) do
+    spawn(fn ->
+      ref = Process.monitor(owner)
+
+      receive do
+        :owner_done ->
+          Process.demonitor(ref, [:flush])
+
+        {:DOWN, ^ref, :process, ^owner, _} ->
+          if Process.alive?(worker), do: Process.exit(worker, :kill)
+      end
+
+      File.rm_rf(directory)
+    end)
   end
 
   defp safe_call(call) do
