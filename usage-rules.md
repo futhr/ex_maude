@@ -78,6 +78,18 @@ end
 {:ok, solutions} = ExMaude.search("MY-MOD", "init", "goal")
 ```
 
+The list-returning `search/4` preserves its historical shape and does not
+report completion. For an evidence-bearing bounded run, use
+`ExMaude.Verification.SearchRun.run/3` with exact model bytes, a structured
+query and an explicit Maude executable path. It starts one isolated Port
+worker, retains the search-output digest and retrieves the first solution's
+`show path` bytes before that worker exits. Read `termination`: a completed
+declared bound is not an unbounded or finite-model proof, and a solution limit,
+timeout, output truncation, worker loss or parser error is inconclusive for a
+no-counterexample claim. Query fields in this initial API exclude Maude command
+delimiters. This API does not yet cover every completion/trace outcome required
+by Conjunct CJ8-04.
+
 ### Loading Modules
 
 ```elixir
