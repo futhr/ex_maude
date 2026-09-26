@@ -13,6 +13,14 @@ defmodule ExMaude.Verification.SearchRunTest do
     rl [to-c] : a => c .
   endm
   """
+  @depth_model """
+  mod CONJUNCT-DEPTH is
+    sort State .
+    ops a b c : -> State [ctor] .
+    rl [to-b] : a => b .
+    rl [to-c] : b => c .
+  endm
+  """
 
   setup_all do
     assert path = ExMaude.Binary.find(), "selected Maude executable is required"
@@ -38,6 +46,7 @@ defmodule ExMaude.Verification.SearchRunTest do
     assert complete.termination == :completed_declared_bound
     assert length(complete.solutions) == 3
     assert complete.states_explored == 3
+    assert complete.depth_probe.states_explored == 3
     assert complete.model_digest == cutoff.model_digest
     refute complete.query_digest == cutoff.query_digest
     refute complete.session_id == cutoff.session_id
@@ -56,6 +65,28 @@ defmodule ExMaude.Verification.SearchRunTest do
     assert absent.termination == :completed_declared_bound
     assert absent.solutions == []
     assert absent.trace == nil
+    assert absent.depth_probe.states_explored == 1
+  end
+
+  test "a one-step frontier detects depth truncation without claiming no counterexample", %{
+    path: path
+  } do
+    query = %{
+      module: "CONJUNCT-DEPTH",
+      initial: "a",
+      pattern: "c",
+      max_depth: 1,
+      max_solutions: 3
+    }
+
+    assert {:ok, result} = SearchRun.run(@depth_model, query, maude_path: path)
+    assert result.termination == :depth_truncation
+    assert result.solutions == []
+    assert result.states_explored == 2
+    assert result.depth_probe.max_depth == 2
+    assert result.depth_probe.states_explored == 3
+    assert result.depth_probe.solutions_observed == 1
+    assert result.depth_probe.raw_output_digest =~ ~r/^sha256:[0-9a-f]{64}$/
   end
 
   test "retrieves a nontrivial path inside the same isolated session", %{path: path} do
@@ -115,6 +146,21 @@ defmodule ExMaude.Verification.SearchRunTest do
     assert result.termination == :output_truncation
     assert result.solutions == []
     assert result.raw_output_digest == nil
+  end
+
+  test "a backend parser refusal cannot become an empty completed search", %{path: path} do
+    query = %{
+      module: "MISSING-MODULE",
+      initial: "a",
+      pattern: "c",
+      max_depth: 2,
+      max_solutions: 2
+    }
+
+    assert {:ok, result} = SearchRun.run(@model, query, maude_path: path)
+    assert result.termination == :parser_error
+    assert result.solutions == []
+    assert %ExMaude.Error{type: :module_not_found} = result.error
   end
 
   test "refuses invalid bounds before starting a worker", %{path: path} do

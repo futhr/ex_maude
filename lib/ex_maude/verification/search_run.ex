@@ -32,6 +32,7 @@ defmodule ExMaude.Verification.SearchRun do
 
   @type termination ::
           :completed_declared_bound
+          | :depth_truncation
           | :solution_limit
           | :timeout
           | :output_truncation
@@ -51,6 +52,7 @@ defmodule ExMaude.Verification.SearchRun do
           solutions: list(map()),
           states_explored: non_neg_integer() | nil,
           raw_output_digest: String.t() | nil,
+          depth_probe: map() | nil,
           trace: map() | nil,
           error: term() | nil
         }
@@ -59,9 +61,13 @@ defmodule ExMaude.Verification.SearchRun do
   Runs a bounded search and returns typed evidence even on command failure.
 
   Required `:maude_path` is an explicit executable path. `:timeout` and
-  `:max_response_bytes` are per-command limits; the worker is always retired.
-  A completed declared bound is not a finite-model proof. An unknown or
-  malformed terminal marker yields `:parser_error`.
+  `:max_response_bytes` are per-command limits. The worker is retired on every
+  normal return; forced termination of the caller remains outside this API's
+  cancellation contract.
+  A completed declared bound is not a finite-model proof. A second search at
+  depth `N + 1` on the same worker reports `:depth_truncation` if it discovers
+  more states or solutions. An unknown or malformed terminal marker yields
+  `:parser_error`.
   """
   @spec run(binary(), query(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def run(model_source, query, opts)
@@ -107,7 +113,8 @@ defmodule ExMaude.Verification.SearchRun do
          output: Keyword.get(opts, :max_response_bytes, @max_output),
          depth: depth,
          max_solutions: solutions,
-         command: command
+         command: command,
+         query: query
        }}
     end
   end
@@ -175,9 +182,9 @@ defmodule ExMaude.Verification.SearchRun do
     arrow = Map.get(query, :arrow, "=>*")
 
     cond do
-      not (is_integer(depth) and depth in 1..@max_bound and is_integer(solutions) and
+      not (is_integer(depth) and depth in 1..(@max_bound - 1) and is_integer(solutions) and
                solutions in 1..@max_bound) ->
-        invalid("search bounds must be between 1 and 1000000")
+        invalid("search depth must be below 1000000 and solution bound at most 1000000")
 
       arrow not in ["=>1", "=>+", "=>*", "=>!"] ->
         invalid("unsupported search arrow")
@@ -227,6 +234,7 @@ defmodule ExMaude.Verification.SearchRun do
       session_id: session_id,
       limits: %{
         max_depth: inputs.depth,
+        max_states: :unsupported,
         max_solutions: inputs.max_solutions,
         timeout_ms: inputs.timeout,
         max_response_bytes: inputs.output
@@ -235,6 +243,7 @@ defmodule ExMaude.Verification.SearchRun do
       solutions: [],
       states_explored: nil,
       raw_output_digest: nil,
+      depth_probe: nil,
       trace: nil,
       error: nil
     }
@@ -270,14 +279,15 @@ defmodule ExMaude.Verification.SearchRun do
       {:ok, termination, solutions, states} ->
         case trace(worker, solutions, inputs) do
           {:ok, trace} ->
-            {:ok,
-             %{
-               base
-               | termination: termination,
-                 solutions: solutions,
-                 states_explored: states,
-                 trace: trace
-             }}
+            observed = %{
+              base
+              | termination: termination,
+                solutions: solutions,
+                states_explored: states,
+                trace: trace
+            }
+
+            maybe_probe(worker, inputs, observed)
 
           {:error, error} ->
             {:ok, %{base | termination: classify(error), error: error}}
@@ -290,6 +300,57 @@ defmodule ExMaude.Verification.SearchRun do
 
   defp interpret({:error, error}, _, _, evidence),
     do: {:ok, %{evidence | termination: classify(error), error: error}}
+
+  defp maybe_probe(_, _, %{termination: termination} = evidence)
+       when termination != :completed_declared_bound,
+       do: {:ok, evidence}
+
+  defp maybe_probe(worker, inputs, evidence) do
+    query = Map.put(inputs.query, :max_depth, inputs.depth + 1)
+
+    command =
+      Command.search(query.module, query.initial, query.pattern,
+        max_depth: query.max_depth,
+        max_solutions: inputs.max_solutions,
+        arrow: Map.get(query, :arrow, "=>*"),
+        condition: Map.get(query, :condition)
+      )
+
+    result = safe_call(fn -> Port.execute(worker, command, timeout: inputs.timeout) end)
+
+    case result do
+      {:ok, raw} -> probe_output(raw, command, inputs, evidence)
+      {:error, error} -> {:ok, %{evidence | termination: classify(error), error: error}}
+    end
+  end
+
+  defp probe_output(raw, command, inputs, evidence) do
+    probe_inputs = %{inputs | command: command, max_solutions: inputs.max_solutions}
+
+    case parse(raw, probe_inputs) do
+      {:ok, completion, solutions, states} when states >= evidence.states_explored ->
+        changed =
+          states > evidence.states_explored or solutions != evidence.solutions or
+            completion == :solution_limit
+
+        probe = %{
+          max_depth: inputs.depth + 1,
+          raw_output_digest: digest(raw),
+          states_explored: states,
+          solutions_observed: length(solutions),
+          completion: completion
+        }
+
+        termination = if changed, do: :depth_truncation, else: :completed_declared_bound
+        {:ok, %{evidence | termination: termination, depth_probe: probe}}
+
+      {:ok, _, _, _} ->
+        {:ok, %{evidence | termination: :parser_error, error: :nonmonotonic_state_count}}
+
+      {:error, reason} ->
+        {:ok, %{evidence | termination: :parser_error, error: reason}}
+    end
+  end
 
   defp parse(raw, inputs) do
     parsed = Parser.parse_search_results(raw)
@@ -383,6 +444,11 @@ defmodule ExMaude.Verification.SearchRun do
 
   defp classify(%Error{type: :timeout}), do: :timeout
   defp classify(%Error{type: :response_too_large}), do: :output_truncation
+
+  defp classify(%Error{type: type})
+       when type in [:parse_error, :syntax_error, :module_not_found],
+       do: :parser_error
+
   defp classify(:missing_path_state), do: :parser_error
   defp classify(:missing_state_number), do: :parser_error
   defp classify(_), do: :worker_loss
