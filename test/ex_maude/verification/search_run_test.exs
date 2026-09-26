@@ -163,6 +163,29 @@ defmodule ExMaude.Verification.SearchRunTest do
     assert %ExMaude.Error{type: :module_not_found} = result.error
   end
 
+  test "a delayed CLI response is a timeout, not an empty search" do
+    path = fake_maude("sleep 2")
+    assert {:ok, result} = SearchRun.run(@model, base_query(), maude_path: path, timeout: 500)
+    assert result.termination == :timeout
+    assert result.solutions == []
+    assert result.raw_output_digest == nil
+  end
+
+  test "a lost CLI worker is distinct from parser refusal" do
+    path = fake_maude("exit 7")
+    assert {:ok, result} = SearchRun.run(@model, base_query(), maude_path: path)
+    assert result.termination == :worker_loss
+    assert result.solutions == []
+  end
+
+  test "an unknown terminal marker cannot count as completed", %{path: _path} do
+    path = fake_maude("printf '%s\\n\\nSearch stopped.\\nstates: 1\\nMaude> ' \"$line\"")
+    assert {:ok, result} = SearchRun.run(@model, base_query(), maude_path: path)
+    assert result.termination == :parser_error
+    assert result.solutions == []
+    assert result.raw_output_digest =~ ~r/^sha256:[0-9a-f]{64}$/
+  end
+
   test "refuses invalid bounds before starting a worker", %{path: path} do
     assert {:error, %ExMaude.Error{type: :validation}} =
              SearchRun.run(
@@ -181,4 +204,28 @@ defmodule ExMaude.Verification.SearchRunTest do
 
   defp digest(bytes),
     do: "sha256:" <> Base.encode16(:crypto.hash(:sha256, bytes), case: :lower)
+
+  defp base_query do
+    %{module: "CONJUNCT-SEARCH", initial: "a", pattern: "c", max_depth: 2, max_solutions: 2}
+  end
+
+  defp fake_maude(search_action) do
+    path = Path.join(System.tmp_dir!(), "ex_maude_fake_#{System.unique_integer([:positive])}.sh")
+
+    File.write!(path, """
+    #!/bin/sh
+    if [ "$1" = "--version" ]; then printf 'fixture-maude 1\\n'; exit 0; fi
+    printf 'Maude> '
+    while IFS= read -r line; do
+      case "$line" in
+        search*) #{search_action} ;;
+        *) printf 'Maude> ' ;;
+      esac
+    done
+    """)
+
+    File.chmod!(path, 0o700)
+    on_exit(fn -> File.rm(path) end)
+    path
+  end
 end
