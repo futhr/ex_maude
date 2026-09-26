@@ -107,6 +107,52 @@ defmodule ExMaude.Verification.SearchRunTest do
     assert result.trace.digest == digest(result.trace.bytes)
   end
 
+  test "emits bounded telemetry without model, query or path content", %{path: path} do
+    event = [:ex_maude, :verification, :search_run, :stop]
+    handler_id = "search-run-#{System.unique_integer([:positive])}"
+    parent = self()
+
+    :ok =
+      :telemetry.attach(
+        handler_id,
+        event,
+        fn name, measurements, metadata, _ ->
+          send(parent, {:search_telemetry, name, measurements, metadata})
+        end,
+        nil
+      )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    model = String.replace(@model, "CONJUNCT-SEARCH", "PRIVATE-MODEL-CANARY")
+
+    query = %{
+      module: "PRIVATE-MODEL-CANARY",
+      initial: "a",
+      pattern: "c",
+      max_depth: 5,
+      max_solutions: 5
+    }
+
+    assert {:ok, result} = SearchRun.run(model, query, maude_path: path)
+    assert result.termination == :completed_declared_bound
+
+    assert_receive {:search_telemetry, ^event, measurements, metadata}
+    assert Map.keys(measurements) |> Enum.sort() == [:count, :duration, :solutions_observed]
+    assert measurements.count == 1
+    assert measurements.duration > 0
+    assert measurements.solutions_observed == 1
+    assert metadata == %{backend: :port, termination: :completed_declared_bound}
+    refute inspect({measurements, metadata}) =~ "PRIVATE-MODEL-CANARY"
+    refute inspect({measurements, metadata}) =~ path
+
+    assert {:error, %ExMaude.Error{type: :validation}} =
+             SearchRun.run(model, Map.put(query, :max_depth, 0), maude_path: path)
+
+    assert_receive {:search_telemetry, ^event, %{count: 1, solutions_observed: 0},
+                    %{backend: :port, termination: :validation_error}}
+  end
+
   test "concurrent searches keep independent sessions and paths", %{path: path} do
     query = %{
       module: "CONJUNCT-SEARCH",

@@ -14,6 +14,7 @@ defmodule ExMaude.Verification.SearchRun do
   alias ExMaude.Command
   alias ExMaude.Error
   alias ExMaude.Parser
+  alias ExMaude.Telemetry
 
   @parser_version "ex_maude.search-run.v1"
   @solution ~r/^Solution\s+(\d+)\s+\(state\s+(\d+)\)$/m
@@ -70,8 +71,15 @@ defmodule ExMaude.Verification.SearchRun do
   `:parser_error`.
   """
   @spec run(binary(), query(), keyword()) :: {:ok, t()} | {:error, Error.t()}
-  def run(model_source, query, opts)
-      when is_binary(model_source) and is_map(query) and is_list(opts) do
+  def run(model_source, query, opts) do
+    started = System.monotonic_time()
+    result = do_run(model_source, query, opts)
+    Telemetry.search_run_completed(result, started)
+    result
+  end
+
+  defp do_run(model_source, query, opts)
+       when is_binary(model_source) and is_map(query) and is_list(opts) do
     with true <- Keyword.keyword?(opts),
          {:ok, inputs} <- validate(model_source, query, opts),
          {:ok, executable_digest} <- file_digest(inputs.maude_path),
@@ -88,7 +96,7 @@ defmodule ExMaude.Verification.SearchRun do
     end
   end
 
-  def run(_, _, _),
+  defp do_run(_, _, _),
     do: {:error, Error.new(:validation, "model and query must be bytes and a map")}
 
   defp validate(model_source, query, opts) do
