@@ -6,8 +6,9 @@ defmodule ExMaude.Verification.SearchRun do
   result distinguishes a completed declared bound from a solution cutoff and
   failures. A returned path is fetched before this run's worker is stopped;
   no state number or worker handle survives as a reusable trace capability.
-  The result does not assert that a bounded model is finite or exhausted beyond
-  its declared depth.
+  A bounded result does not assert exhaustion beyond its declared depth. An
+  explicitly unbounded search can report exhaustion only after Maude returns a
+  recognized terminal marker without a solution cutoff.
   """
 
   alias ExMaude.Backend.Port
@@ -16,7 +17,7 @@ defmodule ExMaude.Verification.SearchRun do
   alias ExMaude.Parser
   alias ExMaude.Telemetry
 
-  @parser_version "ex_maude.search-run.v1"
+  @parser_version "ex_maude.search-run.v2"
   @solution ~r/^Solution\s+(\d+)\s+\(state\s+(\d+)\)$/m
   @max_output 16_777_216
   @max_bound 1_000_000
@@ -25,14 +26,15 @@ defmodule ExMaude.Verification.SearchRun do
           required(:module) => String.t(),
           required(:initial) => String.t(),
           required(:pattern) => String.t(),
-          optional(:max_depth) => pos_integer(),
+          optional(:max_depth) => pos_integer() | :unbounded,
           optional(:max_solutions) => pos_integer(),
           optional(:arrow) => String.t(),
           optional(:condition) => String.t()
         }
 
   @type termination ::
-          :completed_declared_bound
+          :exhausted_search_space
+          | :completed_declared_bound
           | :depth_truncation
           | :solution_limit
           | :timeout
@@ -59,10 +61,12 @@ defmodule ExMaude.Verification.SearchRun do
         }
 
   @doc """
-  Runs a bounded search and returns typed evidence even on command failure.
+  Runs a search and returns typed evidence even on command failure.
 
   Required `:maude_path` is an explicit executable path. `:timeout` and
-  `:max_response_bytes` are per-command limits. The worker is retired on normal
+  `:max_response_bytes` are per-command limits. Set `max_depth: :unbounded`
+  explicitly to allow finite reachable state space exhaustion; the timeout,
+  response and solution limits still apply. The worker is retired on normal
   return. If the caller is force-stopped, a monitor retires the worker and its
   snapshot; the Port backend's OS guard stops the Maude process.
   A completed declared bound is not a finite-model proof. A second search at
@@ -190,9 +194,11 @@ defmodule ExMaude.Verification.SearchRun do
     arrow = Map.get(query, :arrow, "=>*")
 
     cond do
-      not (is_integer(depth) and depth in 1..(@max_bound - 1) and is_integer(solutions) and
-               solutions in 1..@max_bound) ->
-        invalid("search depth must be below 1000000 and solution bound at most 1000000")
+      not ((depth == :unbounded or (is_integer(depth) and depth in 1..(@max_bound - 1))) and
+             is_integer(solutions) and solutions in 1..@max_bound) ->
+        invalid(
+          "search depth must be unbounded or below 1000000 and solution bound at most 1000000"
+        )
 
       arrow not in ["=>1", "=>+", "=>*", "=>!"] ->
         invalid("unsupported search arrow")
@@ -309,7 +315,14 @@ defmodule ExMaude.Verification.SearchRun do
   end
 
   defp interpret({:error, error}, _, _, evidence),
-    do: {:ok, %{evidence | termination: classify(error), error: error}}
+    do:
+      {:ok,
+       %{
+         evidence
+         | termination: classify(error),
+           raw_output_digest: error_output_digest(error),
+           error: error
+       }}
 
   defp maybe_probe(_, _, %{termination: termination} = evidence)
        when termination != :completed_declared_bound,
@@ -370,7 +383,7 @@ defmodule ExMaude.Verification.SearchRun do
 
     with :ok <- check_echo(raw, inputs.command),
          :ok <- check_solutions(headers, parsed) do
-      completion(terminal, parsed, states, inputs.max_solutions)
+      completion(terminal, parsed, states, inputs.max_solutions, inputs.depth)
     end
   end
 
@@ -396,13 +409,13 @@ defmodule ExMaude.Verification.SearchRun do
     end
   end
 
-  defp completion(terminal, parsed, states, max_solutions) do
+  defp completion(terminal, parsed, states, max_solutions, depth) do
     cond do
       terminal == "No solution." and parsed == [] and states != nil ->
-        {:ok, :completed_declared_bound, parsed, state_count(states)}
+        {:ok, completion_reason(depth), parsed, state_count(states)}
 
       terminal == "No more solutions." and states != nil ->
-        {:ok, :completed_declared_bound, parsed, state_count(states)}
+        {:ok, completion_reason(depth), parsed, state_count(states)}
 
       terminal == nil and length(parsed) == max_solutions and states != nil ->
         {:ok, :solution_limit, parsed, state_count(states)}
@@ -411,6 +424,9 @@ defmodule ExMaude.Verification.SearchRun do
         {:error, :unknown_terminal}
     end
   end
+
+  defp completion_reason(:unbounded), do: :exhausted_search_space
+  defp completion_reason(_), do: :completed_declared_bound
 
   defp state_count([_, count]), do: String.to_integer(count)
 
@@ -456,8 +472,11 @@ defmodule ExMaude.Verification.SearchRun do
   defp classify(%Error{type: :response_too_large}), do: :output_truncation
 
   defp classify(%Error{type: type})
-       when type in [:parse_error, :syntax_error, :module_not_found],
+       when type in [:parse_error, :syntax_error, :module_not_found, :ambiguous_term, :sort_error],
        do: :parser_error
+
+  defp classify(%Error{type: :unknown, raw_output: output}) when is_binary(output),
+    do: :parser_error
 
   defp classify(:missing_path_state), do: :parser_error
   defp classify(:missing_state_number), do: :parser_error
@@ -469,6 +488,11 @@ defmodule ExMaude.Verification.SearchRun do
   defp classify_start({:maude_start_failed, :no_prompt}), do: :timeout
   defp classify_start({:maude_start_failed, :response_too_large}), do: :output_truncation
   defp classify_start(_), do: :worker_loss
+
+  defp error_output_digest(%Error{raw_output: output}) when is_binary(output),
+    do: digest(output)
+
+  defp error_output_digest(_), do: nil
 
   defp retire(worker) do
     if Process.alive?(worker), do: Port.stop(worker)

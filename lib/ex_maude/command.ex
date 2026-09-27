@@ -38,7 +38,12 @@ defmodule ExMaude.Command do
     arrow = Keyword.get(opts, :arrow, "=>*")
     condition = Keyword.get(opts, :condition)
 
-    base = "search [#{max_solutions}, #{max_depth}] in #{module} : #{initial} #{arrow} #{pattern}"
+    bounds =
+      if max_depth == :unbounded,
+        do: "[#{max_solutions}]",
+        else: "[#{max_solutions}, #{max_depth}]"
+
+    base = "search #{bounds} in #{module} : #{initial} #{arrow} #{pattern}"
 
     if condition, do: "#{base} such that #{condition}", else: base
   end

@@ -8,7 +8,7 @@ defmodule ExMaude.Verification.SearchRunTest do
   @model """
   mod CONJUNCT-SEARCH is
     sort State .
-    ops a b c : -> State [ctor] .
+    ops a b c d : -> State [ctor] .
     rl [to-b] : a => b .
     rl [to-c] : a => c .
   endm
@@ -87,6 +87,33 @@ defmodule ExMaude.Verification.SearchRunTest do
     assert result.depth_probe.states_explored == 3
     assert result.depth_probe.solutions_observed == 1
     assert result.depth_probe.raw_output_digest =~ ~r/^sha256:[0-9a-f]{64}$/
+  end
+
+  test "an unbounded finite search reports exhaustion without a depth probe", %{path: path} do
+    query = %{
+      module: "CONJUNCT-SEARCH",
+      initial: "a",
+      pattern: "d",
+      max_depth: :unbounded,
+      max_solutions: 5
+    }
+
+    assert {:ok, absent} = SearchRun.run(@model, query, maude_path: path)
+    assert absent.termination == :exhausted_search_space
+    assert absent.limits.max_depth == :unbounded
+    assert absent.states_explored == 3
+    assert absent.solutions == []
+    assert absent.depth_probe == nil
+    assert absent.raw_output_digest =~ ~r/^sha256:[0-9a-f]{64}$/
+
+    assert {:ok, cutoff} =
+             SearchRun.run(@model, %{query | pattern: "S:State", max_solutions: 1},
+               maude_path: path
+             )
+
+    assert cutoff.termination == :solution_limit
+    assert length(cutoff.solutions) == 1
+    refute cutoff.query_digest == absent.query_digest
   end
 
   test "retrieves a nontrivial path inside the same isolated session", %{path: path} do
@@ -207,6 +234,16 @@ defmodule ExMaude.Verification.SearchRunTest do
     assert result.termination == :parser_error
     assert result.solutions == []
     assert %ExMaude.Error{type: :module_not_found} = result.error
+  end
+
+  test "a Maude input diagnostic remains a parser refusal", %{path: path} do
+    query = %{base_query() | pattern: "missing"}
+
+    assert {:ok, result} = SearchRun.run(@model, query, maude_path: path)
+    assert result.termination == :parser_error
+    assert result.solutions == []
+    assert %ExMaude.Error{raw_output: output} = result.error
+    assert result.raw_output_digest == digest(output)
   end
 
   test "a delayed CLI response is a timeout, not an empty search" do

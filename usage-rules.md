@@ -79,18 +79,22 @@ end
 ```
 
 The list-returning `search/4` preserves its historical shape and does not
-report completion. For an evidence-bearing bounded run, use
+report completion. For an evidence-bearing run, use
 `ExMaude.Verification.SearchRun.run/3` with exact model bytes, a structured
 query and an explicit Maude executable path. It starts one isolated Port
 worker, retains the search-output digest and retrieves the first solution's
-`show path` bytes before that worker exits. A second search at depth `N+1`
-reports `:depth_truncation` when it finds a larger frontier. Read
+`show path` bytes before that worker exits. A bounded run searches again at
+depth `N+1` and reports `:depth_truncation` when it finds a larger frontier.
+Read
 `termination`: a completed declared bound is not an unbounded or finite-model
-proof, and a solution limit, timeout, output truncation, worker loss or parser
-error is inconclusive for a no-counterexample claim. Query fields in this
-initial API exclude Maude command delimiters. A force-stopped caller retires
-its isolated OS worker; it cannot receive a typed cancellation result after
-termination. State-count limits and a typed cancellation outcome remain
+proof. An explicit `max_depth: :unbounded` search reports
+`:exhausted_search_space` only when Maude finishes with a recognized terminal
+marker and without a solution cutoff; the claim is scoped to the exact model,
+query and executable in its receipt. A solution limit, timeout, output
+truncation, worker loss or parser error is inconclusive for a no-counterexample
+claim. Query fields in this initial API exclude Maude command delimiters. A
+force-stopped caller retires its isolated OS worker; it cannot receive a typed
+cancellation result after termination. State-count limits and a typed cancellation outcome remain
 unsupported, so this API does not yet cover every completion/trace outcome
 required by Conjunct CJ8-04.
 

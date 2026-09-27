@@ -26,3 +26,7 @@ the executable and authorizing model bytes.
 This disposition is limited to the exact recorded lines and current source
 flow. Any change to path provenance, temporary-directory construction or
 scanner behavior requires another review.
+
+The search receipt's unbounded mode moved eight reported source lines without
+changing their operations or path provenance. The reviewed JSON records the
+new line numbers; the scan still reports the same 24 low-confidence findings.
