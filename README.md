@@ -543,7 +543,9 @@ ExMaude includes local benchmarks for parser, pool, and backend behavior.
 
 ### Benchmark Results
 
-- **[bench/output/benchmarks.md](bench/output/benchmarks.md)** - Parser and Maude integration benchmarks
+Benchmark reports are generated locally under `bench/output/` and stay outside
+version control. Retain a report with the exact source and toolchain cohort
+when using it for a performance claim.
 
 Backend performance depends on the Maude model, response size, platform, and
 concurrency. `mix bench.backends` starts each available worker before timing

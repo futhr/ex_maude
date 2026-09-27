@@ -1,9 +1,15 @@
 /_build/
+/AGENTS.md
+/.agents/
+/.claude/
+/.codex/
+/bench/output/
 /cover/
 /deps/
 /doc/
 /tmp/
 erl_crash.dump
+*.log
 *.ez
 ex_maude-*.tar
 .elixir_ls/
