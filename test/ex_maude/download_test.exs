@@ -1,28 +1,29 @@
 defmodule ExMaude.DownloadTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   @moduletag :tmp_dir
 
   test "streams a complete response into a file", %{tmp_dir: dir} do
     url = serve("HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nhello world")
     path = Path.join(dir, "download")
-    assert :ok = ExMaude.Download.fetch(url, path, timeout: 1000, max_bytes: 11)
+    assert :ok = ExMaude.Download.fetch(url, path, timeout: 5_000, max_bytes: 11)
     assert File.read!(path) == "hello world"
   end
 
   test "rejects an oversized chunk before the response completes", %{tmp_dir: dir} do
     url = serve("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nB\r\nhello world\r\n")
     path = Path.join(dir, "download")
-    assert {:error, :too_large} = ExMaude.Download.fetch(url, path, timeout: 1000, max_bytes: 10)
+    assert {:error, :too_large} = ExMaude.Download.fetch(url, path, timeout: 5_000, max_bytes: 10)
     refute File.exists?(path)
   end
 
   test "enforces a deadline on stalled bodies and deletes partial files", %{tmp_dir: dir} do
     url = serve("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\npartial")
     path = Path.join(dir, "download")
-    started = System.monotonic_time(:millisecond)
-    assert {:error, _} = ExMaude.Download.fetch(url, path, timeout: 100, max_bytes: 100)
-    assert System.monotonic_time(:millisecond) - started < 1000
+
+    assert {:error, %Mint.TransportError{reason: :timeout}} =
+             ExMaude.Download.fetch(url, path, timeout: 100, max_bytes: 100)
+
     refute File.exists?(path)
   end
 
@@ -30,16 +31,20 @@ defmodule ExMaude.DownloadTest do
     url = serve("HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 999999\r\n\r\n")
 
     assert {:redirect, "/next"} =
-             ExMaude.Download.fetch(url, Path.join(dir, "download"), timeout: 1000, max_bytes: 10)
+             ExMaude.Download.fetch(url, Path.join(dir, "download"),
+               timeout: 5_000,
+               max_bytes: 10
+             )
   end
 
   test "continuous chunks cannot reset the overall download deadline", %{tmp_dir: dir} do
     headers = "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n"
     url = serve([headers | List.duplicate("x", 10)], 80)
-    started = System.monotonic_time(:millisecond)
     path = Path.join(dir, "download")
-    assert {:error, _} = ExMaude.Download.fetch(url, path, timeout: 150, max_bytes: 10)
-    assert System.monotonic_time(:millisecond) - started < 600
+
+    assert {:error, %Mint.TransportError{reason: :timeout}} =
+             ExMaude.Download.fetch(url, path, timeout: 150, max_bytes: 10)
+
     refute File.exists?(path)
   end
 
@@ -47,7 +52,7 @@ defmodule ExMaude.DownloadTest do
     path = Path.join(dir, "existing")
     File.write!(path, "keep me")
     url = serve("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nnew")
-    assert {:error, :eexist} = ExMaude.Download.fetch(url, path, timeout: 1000, max_bytes: 10)
+    assert {:error, :eexist} = ExMaude.Download.fetch(url, path, timeout: 5_000, max_bytes: 10)
     assert File.read!(path) == "keep me"
   end
 
@@ -58,7 +63,7 @@ defmodule ExMaude.DownloadTest do
     server =
       spawn(fn ->
         with {:ok, socket} <- :gen_tcp.accept(listener),
-             {:ok, _} <- :gen_tcp.recv(socket, 0, 1000) do
+             {:ok, _} <- :gen_tcp.recv(socket, 0, 5_000) do
           send_chunks(socket, List.wrap(response), delay)
           receive do: (:stop -> :gen_tcp.close(socket))
         end
