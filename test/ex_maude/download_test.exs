@@ -21,7 +21,7 @@ defmodule ExMaude.DownloadTest do
     url = serve("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\npartial")
     path = Path.join(dir, "download")
 
-    assert {:error, %Mint.TransportError{reason: :timeout}} =
+    assert {:error, :timeout} =
              ExMaude.Download.fetch(url, path, timeout: 100, max_bytes: 100)
 
     refute File.exists?(path)
@@ -42,7 +42,7 @@ defmodule ExMaude.DownloadTest do
     url = serve([headers | List.duplicate("x", 10)], 80)
     path = Path.join(dir, "download")
 
-    assert {:error, %Mint.TransportError{reason: :timeout}} =
+    assert {:error, :timeout} =
              ExMaude.Download.fetch(url, path, timeout: 150, max_bytes: 10)
 
     refute File.exists?(path)

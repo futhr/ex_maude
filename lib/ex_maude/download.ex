@@ -17,7 +17,7 @@ defmodule ExMaude.Download do
 
       {:ok, result} ->
         File.rm(destination)
-        result
+        normalize_timeout(result)
 
       {:error, reason} ->
         {:error, reason}
@@ -107,4 +107,9 @@ defmodule ExMaude.Download do
   defp consume([{:error, _, reason} | _], _, _, _, _), do: {:error, reason}
 
   defp remaining(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
+
+  defp normalize_timeout({:error, %Mint.TransportError{reason: :timeout}}),
+    do: {:error, :timeout}
+
+  defp normalize_timeout(result), do: result
 end
