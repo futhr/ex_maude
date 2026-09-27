@@ -140,7 +140,6 @@ defmodule ExMaude.MixProject do
         usage-rules.md
         notebooks
         cheatsheets
-        bench/output
       ],
       maintainers: ["Tobias Bohwalli <hi@futhr.io>"]
     ]
@@ -161,18 +160,12 @@ defmodule ExMaude.MixProject do
         "CONTRIBUTING.md": [title: "Contributing"],
         "usage-rules.md": [title: "Usage Rules"],
         "THIRD_PARTY_NOTICES.md": [title: "Third-party Notices"],
-        "bench/output/benchmarks.md": [title: "Benchmark Results"],
-        "bench/output/parser.md": [title: "Parser Benchmarks"],
-        "bench/output/reductions.md": [title: "Reduction Benchmarks"],
-        "bench/output/pool.md": [title: "Pool Benchmarks"],
-        "bench/output/concurrency.md": [title: "Concurrency Benchmarks"],
         LICENSE: [title: "License"]
       ],
       groups_for_extras: [
         "Getting Started": ~r/README|cheatsheet/,
         "Interactive Tutorials": ~r/notebooks\//,
-        Reference: ~r/CHANGELOG|CONTRIBUTING|usage-rules|LICENSE|THIRD_PARTY/,
-        Performance: ~r/bench\/output/
+        Reference: ~r/CHANGELOG|CONTRIBUTING|usage-rules|LICENSE|THIRD_PARTY/
       ],
       groups_for_modules: [
         "Core API": [ExMaude, ExMaude.Maude, ExMaude.Term, ExMaude.Parser],
