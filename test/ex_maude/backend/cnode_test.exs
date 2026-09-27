@@ -21,7 +21,7 @@ defmodule ExMaude.Backend.CNodeTest do
 
     slots =
       for {pid, _} <- workers do
-        assert_receive {^pid, {:ok, slot}}
+        assert_receive {^pid, {:ok, slot}}, 5_000
         slot
       end
 
@@ -30,7 +30,7 @@ defmodule ExMaude.Backend.CNodeTest do
 
     for {pid, ref} <- workers do
       send(pid, :stop)
-      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 5_000
     end
 
     # The registry processes monitor exits asynchronously.
