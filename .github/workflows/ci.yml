@@ -129,7 +129,7 @@ jobs:
           mix deps.audit
 
       - name: Sobelow security scan
-        run: mix sobelow --config
+        run: mix run tools/check_sobelow.exs
 
       - name: Check GitHub Actions workflows
         run: |
