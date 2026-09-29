@@ -27,8 +27,8 @@ defmodule ExMaude.IoT.ReceiptRun do
     with :ok <- validate_opts(operation, opts),
          {:ok, source} <- File.read(ExMaude.iot_rules_path()),
          {:ok, checker} <- checker_identity(),
-         {:ok, encoder_digest} <- encoder_identity(),
-         {:ok, library_digest} <- library_identity(),
+         encoder_digest = module_digest(ExMaude.IoT.Encoder),
+         library_digest = library_identity(),
          {:ok, directory, model_path, checker_path} <- snapshot(source, checker) do
       try do
         identity_sources = %{
@@ -180,20 +180,8 @@ defmodule ExMaude.IoT.ReceiptRun do
     end
   end
 
-  defp encoder_identity do
-    Code.ensure_loaded!(ExMaude.IoT.Encoder)
-
-    case File.read(:code.which(ExMaude.IoT.Encoder)) do
-      {:ok, beam} ->
-        {:ok, digest(beam)}
-
-      {:error, reason} ->
-        {:error, Error.new(:load_error, "Cannot pin encoder: #{inspect(reason)}")}
-    end
-  end
-
   defp library_identity do
-    modules = [
+    [
       __MODULE__,
       ExMaude.IoT,
       ExMaude.Command,
@@ -201,22 +189,18 @@ defmodule ExMaude.IoT.ReceiptRun do
       ExMaude.IoT.ConflictParser,
       ExMaude.Backend.Port
     ]
+    |> Enum.map(&{&1, module_digest(&1)})
+    |> :erlang.term_to_binary()
+    |> digest()
+  end
 
-    Enum.reduce_while(modules, {:ok, []}, fn module, {:ok, hashes} ->
-      Code.ensure_loaded!(module)
-
-      case File.read(:code.which(module)) do
-        {:ok, beam} ->
-          {:cont, {:ok, [{module, digest(beam)} | hashes]}}
-
-        {:error, reason} ->
-          {:halt, {:error, Error.new(:load_error, "Cannot pin library: #{inspect(reason)}")}}
-      end
-    end)
-    |> case do
-      {:ok, hashes} -> {:ok, digest(:erlang.term_to_binary(Enum.reverse(hashes)))}
-      error -> error
-    end
+  # Pins the code the VM is running, not a file on the code path: a module
+  # loaded by cover or from memory has no `.beam` file, and a file on disk can
+  # change after loading. The MD5 covers the code chunks only, so moving,
+  # stripping or re-documenting the module leaves it unchanged.
+  defp module_digest(module) do
+    Code.ensure_loaded!(module)
+    digest(module.module_info(:md5))
   end
 
   defp snapshot(source, checker) do

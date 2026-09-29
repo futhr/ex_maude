@@ -30,3 +30,9 @@ scanner behavior requires another review.
 The search receipt's unbounded mode moved eight reported source lines without
 changing their operations or path provenance. The reviewed JSON records the
 new line numbers; the scan still reports the same 24 low-confidence findings.
+
+`IoT.ReceiptRun` now pins its encoder and library identity from the loaded
+module code instead of reading `.beam` files. That removed file reads from the
+identity path and moved twelve reported lines up by sixteen, again without
+changing their operations or path provenance. The scan still reports the same
+24 low-confidence findings.

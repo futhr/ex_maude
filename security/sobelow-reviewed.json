@@ -26,73 +26,73 @@
       "variable": "prelude"
     },
     {
-      "line": 229,
+      "line": 213,
       "type": "Traversal.FileModule: Directory Traversal in `File.mkdir`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "directory"
     },
     {
-      "line": 230,
+      "line": 214,
       "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "directory"
     },
     {
-      "line": 232,
+      "line": 216,
       "type": "Traversal.FileModule: Directory Traversal in `File.write`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "path"
     },
     {
-      "line": 233,
+      "line": 217,
       "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "path"
     },
     {
-      "line": 235,
+      "line": 219,
       "type": "Traversal.FileModule: Directory Traversal in `File.write`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "checker_path"
     },
     {
-      "line": 236,
+      "line": 220,
       "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "checker_path"
     },
     {
-      "line": 238,
+      "line": 222,
       "type": "Traversal.FileModule: Directory Traversal in `File.write`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "prelude_path"
     },
     {
-      "line": 239,
+      "line": 223,
       "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "prelude_path"
     },
     {
-      "line": 243,
+      "line": 227,
       "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "directory"
     },
     {
-      "line": 468,
+      "line": 452,
       "type": "Traversal.FileModule: Directory Traversal in `File.read`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "model_path"
     },
     {
-      "line": 477,
+      "line": 461,
       "type": "Traversal.FileModule: Directory Traversal in `File.read`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "checker_path"
     },
     {
-      "line": 478,
+      "line": 462,
       "type": "Traversal.FileModule: Directory Traversal in `File.read`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "Elixir.Path"
