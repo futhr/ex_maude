@@ -16,6 +16,7 @@ defmodule ExMaude.Verification.SearchRun do
   alias ExMaude.Error
   alias ExMaude.Parser
   alias ExMaude.Telemetry
+  alias ExMaude.Verification.Budget
   alias ExMaude.Verification.Cancellation
 
   @parser_version "ex_maude.search-run.v3"
@@ -79,11 +80,16 @@ defmodule ExMaude.Verification.SearchRun do
   `ExMaude.Verification.Cancellation` instance. Cancelled receipts retain run
   identity but clear findings and trace data after worker retirement. Recorded
   requests do not interrupt executable identification or model preparation.
+  Optional `:deadline_ms` is a signed integer timestamp from this VM's
+  monotonic millisecond clock. It caps native waits across all phases and is
+  checked again after parsing/retirement, before stop telemetry. Expired full
+  receipts clear findings; setup expiry returns a timeout error. Filesystem,
+  parsing and cleanup latency are not preempted or hard real-time bounded.
   """
   @spec run(binary(), query(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def run(model_source, query, opts) do
     started = System.monotonic_time()
-    result = do_run(model_source, query, opts)
+    result = do_run(model_source, query, opts) |> enforce_deadline(opts)
     Telemetry.search_run_completed(result, started)
     result
   end
@@ -103,8 +109,11 @@ defmodule ExMaude.Verification.SearchRun do
     do: {:error, Error.new(:validation, "model and query must be bytes and a map")}
 
   defp prepared_run(model_source, inputs) do
-    with {:ok, executable_digest} <- file_digest(inputs.maude_path),
-         {:ok, executable_version} <- executable_version(inputs.maude_path, inputs.timeout),
+    with {:ok, _} <- budget(inputs),
+         {:ok, executable_digest} <- file_digest(inputs.maude_path),
+         {:ok, timeout} <- budget(inputs),
+         {:ok, executable_version} <- executable_version(inputs.maude_path, timeout),
+         {:ok, _} <- budget(inputs),
          {:ok, directory, model_path} <- snapshot(model_source) do
       try do
         execute(model_source, inputs, executable_digest, executable_version, model_path)
@@ -141,13 +150,76 @@ defmodule ExMaude.Verification.SearchRun do
          raw_output_digest: nil,
          depth_probe: nil,
          trace: nil,
-         error:
-           Error.new(termination_error(termination), "search ownership ended before completion")
+         error: Error.new(termination_error(termination), incomplete_message(termination))
      }}
   end
 
   defp termination_error(:cancelled), do: :cancelled
   defp termination_error(:worker_loss), do: :pool_error
+  defp termination_error(:timeout), do: :timeout
+  defp incomplete_message(:timeout), do: "absolute search deadline expired"
+  defp incomplete_message(_), do: "search ownership ended before completion"
+
+  defp enforce_deadline({:ok, %{termination: :cancelled}} = result, _), do: result
+
+  defp enforce_deadline({:ok, receipt} = result, opts) do
+    case Keyword.fetch(opts, :deadline_ms) do
+      {:ok, deadline} when is_integer(deadline) ->
+        if deadline <= System.monotonic_time(:millisecond),
+          do: incomplete(receipt, :timeout),
+          else: result
+
+      _ ->
+        result
+    end
+  end
+
+  defp enforce_deadline(result, _), do: result
+
+  defp budget(inputs) do
+    case Budget.remaining(inputs.timeout, inputs.deadline, System.monotonic_time(:millisecond)) do
+      {:ok, _} = result -> result
+      {:error, :expired} -> {:error, Error.new(:timeout, "absolute search deadline expired")}
+    end
+  end
+
+  defp execute_command(worker, command, inputs) do
+    with {:ok, timeout} <- budget(inputs) do
+      safe_call(fn -> Port.execute(worker, command, timeout: timeout) end)
+    end
+  end
+
+  defp start_worker(inputs, model_path) do
+    with {:ok, timeout} <- budget(inputs) do
+      options = [
+        maude_path: inputs.maude_path,
+        preload_modules: [model_path],
+        isolated_preloads: true,
+        use_pty: false,
+        startup_timeout_ms: timeout,
+        max_response_bytes: inputs.output
+      ]
+
+      options =
+        if inputs.deadline == :none,
+          do: options,
+          else: Keyword.put(options, :startup_deadline_ms, inputs.deadline)
+
+      Port.start(options)
+    end
+  end
+
+  defp limits(inputs) do
+    limits = %{
+      max_depth: inputs.depth,
+      max_states: :unsupported,
+      max_solutions: inputs.max_solutions,
+      timeout_ms: inputs.timeout,
+      max_response_bytes: inputs.output
+    }
+
+    if inputs.deadline == :none, do: limits, else: Map.put(limits, :deadline_ms, inputs.deadline)
+  end
 
   defp validate(model_source, query, opts) do
     with :ok <- validate_model(model_source),
@@ -174,7 +246,8 @@ defmodule ExMaude.Verification.SearchRun do
          max_solutions: solutions,
          command: command,
          query: query,
-         cancellation: Keyword.get(opts, :cancellation)
+         cancellation: Keyword.get(opts, :cancellation),
+         deadline: Keyword.get(opts, :deadline_ms, :none)
        }}
     end
   end
@@ -193,7 +266,7 @@ defmodule ExMaude.Verification.SearchRun do
     cond do
       Enum.any?(
         Keyword.keys(opts),
-        &(&1 not in [:maude_path, :timeout, :max_response_bytes, :cancellation])
+        &(&1 not in [:maude_path, :timeout, :max_response_bytes, :cancellation, :deadline_ms])
       ) ->
         invalid("unsupported search option")
 
@@ -207,7 +280,15 @@ defmodule ExMaude.Verification.SearchRun do
         invalid("max_response_bytes is invalid")
 
       true ->
-        :ok
+        validate_deadline_option(opts)
+    end
+  end
+
+  defp validate_deadline_option(opts) do
+    case Keyword.get_values(opts, :deadline_ms) do
+      [] -> :ok
+      [deadline] when is_integer(deadline) -> :ok
+      _ -> invalid("deadline_ms must be one monotonic integer timestamp")
     end
   end
 
@@ -301,13 +382,7 @@ defmodule ExMaude.Verification.SearchRun do
       backend: :port,
       parser_version: @parser_version,
       session_id: session_id,
-      limits: %{
-        max_depth: inputs.depth,
-        max_states: :unsupported,
-        max_solutions: inputs.max_solutions,
-        timeout_ms: inputs.timeout,
-        max_response_bytes: inputs.output
-      },
+      limits: limits(inputs),
       termination: :worker_loss,
       solutions: [],
       states_explored: nil,
@@ -317,14 +392,7 @@ defmodule ExMaude.Verification.SearchRun do
       error: nil
     }
 
-    case Port.start_link(
-           maude_path: inputs.maude_path,
-           preload_modules: [model_path],
-           isolated_preloads: true,
-           use_pty: false,
-           startup_timeout_ms: inputs.timeout,
-           max_response_bytes: inputs.output
-         ) do
+    case start_worker(inputs, model_path) do
       {:ok, worker} ->
         Process.unlink(worker)
         watcher = watch_caller(self(), worker, Path.dirname(model_path), inputs.cancellation)
@@ -332,8 +400,7 @@ defmodule ExMaude.Verification.SearchRun do
         try do
           case bind_cancellation(inputs.cancellation, worker) do
             :ok ->
-              result =
-                safe_call(fn -> Port.execute(worker, inputs.command, timeout: inputs.timeout) end)
+              result = execute_command(worker, inputs.command, inputs)
 
               interpret(result, worker, inputs, evidence)
 
@@ -407,7 +474,7 @@ defmodule ExMaude.Verification.SearchRun do
         condition: Map.get(query, :condition)
       )
 
-    result = safe_call(fn -> Port.execute(worker, command, timeout: inputs.timeout) end)
+    result = execute_command(worker, command, inputs)
 
     case result do
       {:ok, raw} -> probe_output(raw, command, inputs, evidence)
@@ -516,10 +583,7 @@ defmodule ExMaude.Verification.SearchRun do
   defp trace(_, [], _), do: {:ok, nil}
 
   defp trace(worker, [first | _], inputs) when is_integer(first.state_num) do
-    result =
-      safe_call(fn ->
-        Port.execute(worker, "show path #{first.state_num}", timeout: inputs.timeout)
-      end)
+    result = execute_command(worker, "show path #{first.state_num}", inputs)
 
     case result do
       {:ok, raw} ->

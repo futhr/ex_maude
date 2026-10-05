@@ -98,49 +98,49 @@
       "variable": "Elixir.Path"
     },
     {
-      "line": 112,
+      "line": 121,
       "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "directory"
     },
     {
-      "line": 280,
+      "line": 361,
       "type": "Traversal.FileModule: Directory Traversal in `File.mkdir`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "directory"
     },
     {
-      "line": 281,
+      "line": 362,
       "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "directory"
     },
     {
-      "line": 283,
+      "line": 364,
       "type": "Traversal.FileModule: Directory Traversal in `File.write`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "path"
     },
     {
-      "line": 284,
+      "line": 365,
       "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "path"
     },
     {
-      "line": 288,
+      "line": 369,
       "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "directory"
     },
     {
-      "line": 588,
+      "line": 652,
       "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "directory"
     },
     {
-      "line": 602,
+      "line": 666,
       "type": "Traversal.FileModule: Directory Traversal in `File.stream!`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "path"

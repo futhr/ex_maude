@@ -44,3 +44,10 @@ additional cancellation-instance monitor removes the same generated directory
 after worker retirement. No new filesystem operation or untrusted path source
 was added. The complete scan retains the same 24 low-confidence findings and
 no medium/high findings; the JSON records their current locations.
+
+The absolute SearchRun deadline extension moves the same eight findings.
+Executable identification still reads the explicit validated host path; model
+snapshot creation, permissions and cleanup still use the generated private
+directory. Deadline checks and caller-owned unlinked Port startup add no file
+operation or path source. The complete scan retains the same 24 low-confidence
+operations and no medium/high findings; only those eight line locations change.

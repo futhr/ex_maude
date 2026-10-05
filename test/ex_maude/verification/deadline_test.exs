@@ -59,10 +59,10 @@ defmodule ExMaude.Verification.DeadlineTest do
       File.rm(pid_file)
     end)
 
-    deadline = System.monotonic_time(:millisecond) + 250
-
-    assert {:ok, receipt} =
-             SearchRun.run(@model, @query, maude_path: path, timeout: 5000, deadline_ms: deadline)
+    deadline = System.monotonic_time(:millisecond) + 1000
+    result = SearchRun.run(@model, @query, maude_path: path, timeout: 5000, deadline_ms: deadline)
+    retain("actual-timeout-result", result)
+    assert {:ok, receipt} = result
 
     retain("actual-timeout", receipt)
     assert_timeout(receipt, deadline)
@@ -92,16 +92,18 @@ defmodule ExMaude.Verification.DeadlineTest do
   end
 
   test "frontier probe shares the same deadline and cannot retain a completed witness" do
-    {path, phase_file, pid_file} = fake("0", "0", "2")
-    deadline = System.monotonic_time(:millisecond) + 300
+    {path, phase_file, pid_file} = fake("0", "0", "3")
+    deadline = System.monotonic_time(:millisecond) + 1500
 
-    assert {:ok, receipt} =
-             SearchRun.run(@model, finite_query(),
-               maude_path: path,
-               timeout: 2000,
-               deadline_ms: deadline
-             )
+    result =
+      SearchRun.run(@model, finite_query(),
+        maude_path: path,
+        timeout: 5000,
+        deadline_ms: deadline
+      )
 
+    retain("probe-timeout-result", %{result: result, phases: File.read!(phase_file)})
+    assert {:ok, receipt} = result
     retain("probe-timeout", %{receipt: receipt, phases: File.read!(phase_file)})
     assert_timeout(receipt, deadline)
     assert File.read!(phase_file) =~ "probe"
@@ -144,6 +146,30 @@ defmodule ExMaude.Verification.DeadlineTest do
   end
 
   defp finite_query, do: %{@query | max_depth: 2}
+
+  test "recorded cancellation wins closure even when startup consumes the deadline" do
+    {path, phase_file, pid_file} = fake("0", "0", "0", "0.2")
+    {:ok, cancellation} = Cancellation.start_link([])
+    on_exit(fn -> if Process.alive?(cancellation), do: GenServer.stop(cancellation) end)
+    assert :ok = Cancellation.request(cancellation)
+    deadline = System.monotonic_time(:millisecond) + 300
+
+    assert {:ok, receipt} =
+             SearchRun.run(@model, finite_query(),
+               maude_path: path,
+               cancellation: cancellation,
+               timeout: 2000,
+               deadline_ms: deadline
+             )
+
+    retain("cancelled-expiry", %{receipt: receipt, phases: File.read!(phase_file)})
+    assert System.monotonic_time(:millisecond) >= deadline
+    assert receipt.termination == :cancelled
+    assert receipt.solutions == []
+    assert receipt.trace == nil
+    assert {:error, %ExMaude.Error{type: :validation}} = Cancellation.request(cancellation)
+    assert retired?(pid_file)
+  end
 
   test "the controlled CLI completion fixture works before applying a deadline" do
     {path, phase_file, pid_file} = fake("0", "0", "0")

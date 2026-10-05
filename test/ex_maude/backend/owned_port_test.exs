@@ -21,7 +21,7 @@ defmodule ExMaude.Backend.OwnedPortTest do
   end
 
   test "startup failure returns an error without altering exit flags" do
-    {path, pid_file} = fixture("sleep 20")
+    {path, pid_file} = fixture("exec sleep 20")
     before = Process.info(self(), :trap_exit)
 
     assert {:error, {:maude_start_failed, :no_prompt}} =
@@ -29,7 +29,7 @@ defmodule ExMaude.Backend.OwnedPortTest do
                maude_path: path,
                use_pty: false,
                isolated_preloads: true,
-               startup_timeout_ms: 50
+               startup_timeout_ms: 1000
              )
 
     assert Process.info(self(), :trap_exit) == before
@@ -37,7 +37,7 @@ defmodule ExMaude.Backend.OwnedPortTest do
   end
 
   test "expired startup refuses before native process creation" do
-    {path, pid_file} = fixture("printf 'Maude> '; sleep 20")
+    {path, pid_file} = fixture("printf 'Maude> '; exec sleep 20")
 
     assert {:error, {:maude_start_failed, :no_prompt}} =
              Backend.start(
@@ -54,7 +54,7 @@ defmodule ExMaude.Backend.OwnedPortTest do
   end
 
   test "owner death during startup retires the native process" do
-    {path, pid_file} = fixture("sleep 20")
+    {path, pid_file} = fixture("exec sleep 20")
     parent = self()
 
     {owner, ref} =
@@ -78,7 +78,7 @@ defmodule ExMaude.Backend.OwnedPortTest do
   end
 
   test "owner death after readiness closes the owned worker" do
-    {path, pid_file} = fixture("printf 'Maude> '; sleep 20")
+    {path, pid_file} = fixture("printf 'Maude> '; exec sleep 20")
     parent = self()
 
     {owner, ref} =

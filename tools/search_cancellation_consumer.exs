@@ -72,12 +72,32 @@ echo_query = %{
 1 = length(echo_path.edges)
 true = ExMaude.Verification.CommandEcho.matches?("search pair(2, 3) .\n", "search pair(2,3) .")
 false = ExMaude.Verification.CommandEcho.matches?("search \"a b\" .\n", "search \"ab\" .")
+deadline = System.monotonic_time(:millisecond) + 2000
+
+{:ok, deadline_receipt} =
+  SearchRun.run(echo_model, echo_query, maude_path: path, deadline_ms: deadline)
+
+:completed_declared_bound = deadline_receipt.termination
+^deadline = deadline_receipt.limits.deadline_ms
+
+{:error, %ExMaude.Error{type: :timeout}} =
+  SearchRun.run(echo_model, echo_query,
+    maude_path: path,
+    deadline_ms: System.monotonic_time(:millisecond) - 1
+  )
+
+{:ok, 10} = ExMaude.Verification.Budget.remaining(50, -100, -110)
+{:error, :expired} = ExMaude.Verification.Budget.remaining(50, -100, -100)
 {:error, %ExMaude.Error{type: :validation}} = Cancellation.request(instances.first)
 :ok = Supervisor.stop(supervisor)
 false = Process.alive?(instances.first)
 false = Process.alive?(instances.second)
 [] = owned.()
-File.write!("receipts.etf", :erlang.term_to_binary({stopped, completed, echo_receipt}))
+
+File.write!(
+  "receipts.etf",
+  :erlang.term_to_binary({stopped, completed, echo_receipt, deadline_receipt})
+)
 
 IO.puts(
   "Offline installed archive consumer: passive loading, two instances, typed cancellation and supervisor closure passed"

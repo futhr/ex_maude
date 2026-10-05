@@ -33,6 +33,12 @@ defmodule ExMaude.Backend.Port do
   process. Maude has no way to cancel an in-flight computation, so a
   timed-out session is in an indeterminate state — reusing it could deliver
   the previous command's response to the next caller.
+
+  Optional `:startup_deadline_ms` is an integer timestamp in this VM's monotonic
+  millisecond clock. It caps the whole initial prompt/model-preload sequence;
+  `:startup_timeout_ms` still caps each wait. Omitting the deadline preserves
+  the per-wait behavior. Expired startup retires its native process. This does
+  not impose a deadline on later commands or preempt synchronous filesystem I/O.
   """
 
   @behaviour ExMaude.Backend
@@ -75,7 +81,9 @@ defmodule ExMaude.Backend.Port do
           pending: pending() | nil,
           maude_path: String.t() | nil,
           os_pid: non_neg_integer() | nil,
-          max_response_bytes: pos_integer()
+          max_response_bytes: pos_integer(),
+          owner: pid() | nil,
+          owner_ref: reference() | nil
         }
 
   defstruct port: nil,
@@ -85,14 +93,50 @@ defmodule ExMaude.Backend.Port do
             pending: nil,
             maude_path: nil,
             os_pid: nil,
-            max_response_bytes: @default_max_response_bytes
+            max_response_bytes: @default_max_response_bytes,
+            owner: nil,
+            owner_ref: nil
 
   # Client API
 
   @impl ExMaude.Backend
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts)
+    with :ok <- validate_deadline(opts) do
+      GenServer.start_link(__MODULE__, opts)
+    end
   end
+
+  @doc """
+  Starts an unlinked worker owned by the calling process.
+
+  Owner death during startup or operation retires the worker and native process.
+  Startup errors return without changing the caller's exit flags. Use
+  `start_link/1` when the host's supervision tree owns the worker lifetime.
+  """
+  @spec start(keyword()) :: {:ok, pid()} | {:error, term()}
+  def start(opts \\ []) do
+    with :ok <- validate_deadline(opts) do
+      case GenServer.start(__MODULE__, {:owned, self(), opts}) do
+        :ignore -> {:error, Error.new(:pool_error, "owned worker initialization was ignored")}
+        result -> result
+      end
+    end
+  end
+
+  defp validate_deadline(opts) when is_list(opts) do
+    if Keyword.keyword?(opts) do
+      case Keyword.get_values(opts, :startup_deadline_ms) do
+        [] -> :ok
+        [deadline] when is_integer(deadline) -> :ok
+        _ -> {:error, Error.new(:validation, "startup deadline must be one monotonic integer")}
+      end
+    else
+      {:error, Error.new(:validation, "Port options must be a keyword list")}
+    end
+  end
+
+  defp validate_deadline(_),
+    do: {:error, Error.new(:validation, "Port options must be a keyword list")}
 
   @impl ExMaude.Backend
   def execute(server, command, opts \\ []) do
@@ -134,22 +178,30 @@ defmodule ExMaude.Backend.Port do
   # Server callbacks
 
   @impl GenServer
-  def init(opts) do
+  def init({:owned, owner, opts}), do: initialize(opts, owner)
+  def init(opts), do: initialize(opts, nil)
+
+  defp initialize(opts, owner) do
     maude_path = opts[:maude_path] || find_maude_path()
     pool = Keyword.get(opts, :pool, :ex_maude_pool)
 
     preload_modules = preload_paths(opts, pool)
 
-    startup_timeout = opts[:startup_timeout_ms] || @startup_timeout_ms
+    startup_timeout =
+      {opts[:startup_timeout_ms] || @startup_timeout_ms,
+       Keyword.get(opts, :startup_deadline_ms, :none)}
+
     max_response_bytes = response_limit(opts[:max_response_bytes])
 
-    case start_maude_port(maude_path, opts) do
+    case start_before_deadline(maude_path, opts, startup_timeout) do
       {:ok, port} ->
         state = %__MODULE__{
           port: port,
           maude_path: maude_path,
           os_pid: port_os_pid(port),
-          max_response_bytes: max_response_bytes
+          max_response_bytes: max_response_bytes,
+          owner: owner,
+          owner_ref: if(owner, do: Process.monitor(owner))
         }
 
         # Receipt tasks can be killed at their absolute deadline while this
@@ -171,6 +223,21 @@ defmodule ExMaude.Backend.Port do
 
       {:error, reason} ->
         {:stop, {:maude_start_failed, reason}}
+    end
+  end
+
+  defp start_before_deadline(maude_path, opts, startup) do
+    with {:ok, _} <- startup_remaining(startup), do: start_maude_port(maude_path, opts)
+  end
+
+  defp startup_remaining({timeout, deadline}, now \\ System.monotonic_time(:millisecond)) do
+    case ExMaude.Verification.Budget.remaining(
+           timeout,
+           deadline,
+           now
+         ) do
+      {:ok, _} = budget -> budget
+      _ -> {:error, :no_prompt}
     end
   end
 
@@ -263,6 +330,11 @@ defmodule ExMaude.Backend.Port do
     {:noreply, state}
   end
 
+  def handle_info({:DOWN, ref, :process, owner, _}, %{owner_ref: ref, owner: owner} = state)
+      when is_reference(ref) do
+    {:stop, {:shutdown, :owner_lost}, state}
+  end
+
   def handle_info(_, state) do
     {:noreply, state}
   end
@@ -305,17 +377,29 @@ defmodule ExMaude.Backend.Port do
   # Port.close/1 does not signal the OS process — without this a timed-out
   # command would leak a CPU-pegged interpreter. In PTY mode the pid is the
   # wrapper's; killing it tears down its PTY and Maude with it.
-  defp guard_os_process(worker, os_pid) do
+  defp guard_os_process(worker, os_pid, owner) do
     spawn(fn ->
       ref = Process.monitor(worker)
+      owner_ref = if owner, do: Process.monitor(owner)
 
       receive do
-        {:DOWN, ^ref, :process, ^worker, :normal} -> :ok
-        {:DOWN, ^ref, :process, ^worker, {:shutdown, _}} -> :ok
-        {:DOWN, ^ref, :process, ^worker, _} -> kill_os_process(os_pid)
+        {:DOWN, ^ref, :process, ^worker, reason} ->
+          if owner_ref, do: Process.demonitor(owner_ref, [:flush])
+          guard_retirement(reason, os_pid)
+
+        {:DOWN, ^owner_ref, :process, ^owner, _} ->
+          Process.exit(worker, :kill)
+
+          receive do
+            {:DOWN, ^ref, :process, ^worker, reason} -> guard_retirement(reason, os_pid)
+          end
       end
     end)
   end
+
+  defp guard_retirement(:normal, _), do: :ok
+  defp guard_retirement({:shutdown, _}, _), do: :ok
+  defp guard_retirement(_, os_pid), do: kill_os_process(os_pid)
 
   defp preload_paths(opts, pool) do
     if opts[:isolated_preloads],
@@ -324,7 +408,8 @@ defmodule ExMaude.Backend.Port do
   end
 
   defp maybe_guard_os_process(opts, state) do
-    if opts[:isolated_preloads], do: guard_os_process(self(), state.os_pid)
+    if opts[:isolated_preloads] || state.owner,
+      do: guard_os_process(self(), state.os_pid, state.owner)
   end
 
   defp remember_preloads(opts, pool, paths) do
@@ -434,14 +519,20 @@ defmodule ExMaude.Backend.Port do
   end
 
   defp become_ready(state, preload, startup_timeout) do
-    with {:ok, state, _} <- wait_for_ready(state, startup_timeout) do
-      preload_modules(state, preload, startup_timeout)
+    with {:ok, state, _} <- wait_for_ready(state, startup_timeout),
+         {:ok, state} <- preload_modules(state, preload, startup_timeout),
+         {:ok, _} <- startup_remaining(startup_timeout) do
+      {:ok, state}
     end
   end
 
   defp wait_for_ready(state, startup_timeout) do
-    deadline = System.monotonic_time(:millisecond) + startup_timeout
-    wait_for_ready_until(state, "", deadline)
+    now = System.monotonic_time(:millisecond)
+
+    with {:ok, remaining} <- startup_remaining(startup_timeout, now) do
+      deadline = now + remaining
+      wait_for_ready_until(state, "", deadline)
+    end
   end
 
   defp wait_for_ready_until(state, buffer, deadline) do
@@ -467,6 +558,9 @@ defmodule ExMaude.Backend.Port do
 
       {port, {:exit_status, status}} when port == state.port ->
         {:error, {:exited_during_startup, status}}
+
+      {:DOWN, ref, :process, owner, _} when ref == state.owner_ref and owner == state.owner ->
+        {:error, :owner_lost}
     after
       remaining ->
         Logger.error("Timeout waiting for Maude prompt")
@@ -478,13 +572,15 @@ defmodule ExMaude.Backend.Port do
 
   defp preload_modules(state, [path | rest], startup_timeout) do
     if File.exists?(path) do
-      Port.command(state.port, Command.port_command(Command.load_file(path)), [:nosuspend])
-
-      with {:ok, state, output} <- wait_for_ready(state, startup_timeout),
+      with {:ok, _} <- startup_remaining(startup_timeout),
+           true <-
+             Port.command(state.port, Command.port_command(Command.load_file(path)), [:nosuspend]),
+           {:ok, state, output} <- wait_for_ready(state, startup_timeout),
            {:ok, _} <- parse_response(output) do
         preload_modules(state, rest, startup_timeout)
       else
         {:error, reason} -> {:error, {:preload_failed, path, reason}}
+        false -> {:error, {:preload_failed, path, Error.pool_error(:preload_write_refused)}}
       end
     else
       {:error, {:preload_failed, path, Error.file_not_found(path)}}

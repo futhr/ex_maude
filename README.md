@@ -5,6 +5,13 @@ retaining the original query digest. Changed tokens and quoted content refuse;
 semantic pretty-printing outside this layout profile remains unsupported.
 See the [echo identity contract](docs/specs/search-command-echo.md).
 
+SearchRun also accepts an explicit absolute monotonic `:deadline_ms` shared
+across setup, startup, search, path retrieval and probing. Expired full receipts
+clear findings after worker retirement. Synchronous filesystem/parsing and
+cleanup latency do not have a hard real-time bound. Its caller-owned unlinked
+Port startup returns errors without terminating the caller and retires workers
+on owner loss. See the [deadline contract](docs/specs/search-run-deadline.md).
+
 **Elixir bindings for the Maude formal verification system**
 
 [![Hex.pm](https://img.shields.io/hexpm/v/ex_maude.svg)](https://hex.pm/packages/ex_maude) [![Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/ex_maude) [![CI](https://github.com/futhr/ex_maude/actions/workflows/ci.yml/badge.svg)](https://github.com/futhr/ex_maude/actions/workflows/ci.yml) [![Coverage](https://codecov.io/gh/futhr/ex_maude/branch/main/graph/badge.svg)](https://codecov.io/gh/futhr/ex_maude) [![License: MIT](https://img.shields.io/github/license/futhr/ex_maude)](https://opensource.org/licenses/MIT)
