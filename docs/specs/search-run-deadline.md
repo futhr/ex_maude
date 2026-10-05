@@ -14,7 +14,14 @@ per-operation cap. Startup shares this absolute budget across its initial
 prompt and all model preloads. The Port backend owns that startup boundary;
 the consumer cannot implement a private worker controller.
 
-The result is checked again after parsing and worker retirement. A full receipt
+`ExMaude.Backend.Port.start/1` starts an unlinked worker owned by the calling
+process. Startup failure returns an error without changing the caller's exit
+flags. Owner loss during startup or ready operation retires the worker and
+native process. Existing `start_link/1` remains available for host supervision.
+SearchRun uses the caller-owned form so a startup timeout is typed evidence.
+
+The result is settled again after parsing and worker retirement, before stop
+telemetry callbacks. A full receipt
 observed after expiry has termination `:timeout`, a timeout error, no solutions,
 state count, trace, depth probe or complete raw-output digest. Exact identified
 model/query/executable/session identities and declared limits remain. A supplied

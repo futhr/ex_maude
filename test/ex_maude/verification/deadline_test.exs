@@ -74,8 +74,8 @@ defmodule ExMaude.Verification.DeadlineTest do
   end
 
   test "path retrieval shares the search budget and clears partial findings" do
-    {path, phase_file, pid_file} = fake("0.18", "0.18", "0")
-    deadline = System.monotonic_time(:millisecond) + 300
+    {path, phase_file, pid_file} = fake("0.1", "1", "0")
+    deadline = System.monotonic_time(:millisecond) + 500
 
     assert {:ok, receipt} =
              SearchRun.run(@model, finite_query(),
@@ -87,6 +87,7 @@ defmodule ExMaude.Verification.DeadlineTest do
     retain("path-timeout", %{receipt: receipt, phases: File.read!(phase_file)})
     assert_timeout(receipt, deadline)
     assert File.read!(phase_file) =~ "path"
+    refute File.read!(phase_file) =~ "path-finished"
     assert retired?(pid_file)
   end
 
@@ -183,7 +184,7 @@ defmodule ExMaude.Verification.DeadlineTest do
         load*) printf 'load\\n' >> '#{phase_file}'; sleep #{startup_delay}; printf 'Maude> ' ;;
         'search [2, 3]'*) printf 'probe\\n' >> '#{phase_file}'; sleep #{probe_delay}; printf '%s\\n\\nSolution 1 (state 1)\\nempty substitution\\n\\nNo more solutions.\\nstates: 2\\nMaude> ' "$line" ;;
         search*) printf 'search\\n' >> '#{phase_file}'; sleep #{search_delay}; printf '%s\\n\\nSolution 1 (state 1)\\nempty substitution\\n\\nNo more solutions.\\nstates: 2\\nMaude> ' "$line" ;;
-        'show path'*) printf 'path\\n' >> '#{phase_file}'; sleep #{path_delay}; printf 'state 0, Nat: 0\\n===[ rl [next] : N:Nat => s(N:Nat) . ]===>\\nstate 1, Nat: 1\\nMaude> ' ;;
+        'show path'*) printf 'path\\n' >> '#{phase_file}'; sleep #{path_delay}; printf 'path-finished\\n' >> '#{phase_file}'; printf 'state 0, Nat: 0\\n===[ rl [next] : N:Nat => s(N:Nat) . ]===>\\nstate 1, Nat: 1\\nMaude> ' ;;
         *) printf 'Maude> ' ;;
       esac
     done
