@@ -18,7 +18,7 @@ Loss during creation removes output when that synchronous operation settles;
 this is not filesystem preemption. Independent owners/leases cannot remove or
 change each other's bytes. No caller-provided directory is adopted for cleanup.
 
-The internal `ExMaude.Subprocess.run/4` keeps its output/status, timeout and
+The internal ExMaude.Subprocess.run/4 keeps its output/status, timeout and
 output-overflow result contract. Its native process is owned by an unlinked
 collector monitoring the caller before opening the port. Caller loss interrupts
 collection and retires the directly spawned native process. Normal return and
@@ -30,6 +30,8 @@ of that deadline and the relative cap, checks expiry before native creation,
 and retains that timestamp while collecting. Queuing or opening the port cannot
 restart the enclosing SearchRun budget. Expired dispatch returns timeout without
 creating the native child.
+Malformed deadline values refuse before executable creation. A failed initial
+directory creation never adopts or removes that path.
 This does not qualify descendant process trees, external executable sandboxes,
 VM/OS crash cleanup, hard real-time latency or another operating system target.
 

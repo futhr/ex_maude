@@ -31,7 +31,7 @@ defmodule ExMaude.SubprocessOwnershipTest do
         File.rm(file)
       end)
 
-      assert eventually(fn -> File.exists?(file) end)
+      assert eventually(fn -> pid_ready?(file) end)
       native_pid = File.read!(file)
       Process.exit(owner, reason)
       assert_receive {:DOWN, ^ref, :process, ^owner, _}, 1000
@@ -61,6 +61,13 @@ defmodule ExMaude.SubprocessOwnershipTest do
   end
 
   defp nonce, do: Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
+
+  defp pid_ready?(file) do
+    case File.read(file) do
+      {:ok, pid} -> Regex.match?(~r/^[1-9][0-9]*$/, pid)
+      _ -> false
+    end
+  end
 
   defp record(input) do
     if directory = System.get_env("PREPARATION_EVIDENCE_DIR") do

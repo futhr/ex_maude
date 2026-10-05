@@ -4,7 +4,51 @@ defmodule ExMaude.Subprocess do
   @doc false
   @spec run(Path.t(), [String.t()], pos_integer(), pos_integer()) ::
           {:ok, String.t(), non_neg_integer()} | {:error, term()}
-  def run(executable, args, timeout, max_bytes) do
+  def run(executable, args, timeout, max_bytes),
+    do: run(executable, args, timeout, max_bytes, :none)
+
+  @doc false
+  @spec run(Path.t(), [String.t()], pos_integer(), pos_integer(), integer() | :none) ::
+          {:ok, String.t(), non_neg_integer()} | {:error, term()}
+  def run(executable, args, timeout, max_bytes, enclosing_deadline)
+      when enclosing_deadline == :none or is_integer(enclosing_deadline) do
+    cap = System.monotonic_time(:millisecond) + timeout
+    deadline = if enclosing_deadline == :none, do: cap, else: min(cap, enclosing_deadline)
+    owner = self()
+    reply = make_ref()
+
+    {collector, monitor} =
+      spawn_monitor(fn ->
+        owner_ref = Process.monitor(owner)
+
+        result =
+          if Process.alive?(owner),
+            do: run_owned(executable, args, deadline, max_bytes, owner_ref),
+            else: {:error, :owner_lost}
+
+        Process.demonitor(owner_ref, [:flush])
+        send(owner, {reply, self(), result})
+      end)
+
+    receive do
+      {^reply, ^collector, result} ->
+        Process.demonitor(monitor, [:flush])
+        result
+
+      {:DOWN, ^monitor, :process, ^collector, reason} ->
+        {:error, {:collector_exit, reason}}
+    end
+  end
+
+  def run(_, _, _, _, _), do: {:error, :invalid_deadline}
+
+  defp run_owned(executable, args, deadline, max_bytes, owner_ref) do
+    if deadline > System.monotonic_time(:millisecond),
+      do: collect_owned(executable, args, deadline, max_bytes, owner_ref),
+      else: {:error, :timeout}
+  end
+
+  defp collect_owned(executable, args, deadline, max_bytes, owner_ref) do
     port =
       Port.open({:spawn_executable, executable}, [
         :binary,
@@ -15,7 +59,8 @@ defmodule ExMaude.Subprocess do
       ])
 
     try do
-      collect(port, System.monotonic_time(:millisecond) + timeout, max_bytes, [], 0)
+      ownership = {deadline, owner_ref}
+      collect(port, ownership, max_bytes, [], 0)
     after
       stop(port)
     end
@@ -23,12 +68,12 @@ defmodule ExMaude.Subprocess do
     error in ErlangError -> {:error, error.original}
   end
 
-  defp collect(port, deadline, limit, chunks, size) do
+  defp collect(port, {deadline, owner_ref} = ownership, limit, chunks, size) do
     remaining = max(deadline - System.monotonic_time(:millisecond), 0)
 
     receive do
       {^port, {:data, data}} when size + byte_size(data) <= limit ->
-        collect(port, deadline, limit, [data | chunks], size + byte_size(data))
+        collect(port, ownership, limit, [data | chunks], size + byte_size(data))
 
       {^port, {:data, _}} ->
         {:error, :output_too_large}
@@ -40,6 +85,9 @@ defmodule ExMaude.Subprocess do
           |> IO.iodata_to_binary()
 
         {:ok, output, status}
+
+      {:DOWN, ^owner_ref, :process, _, _} ->
+        {:error, :owner_lost}
     after
       remaining -> {:error, :timeout}
     end

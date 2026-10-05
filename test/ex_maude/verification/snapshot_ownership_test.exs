@@ -2,6 +2,7 @@ defmodule ExMaude.Verification.SnapshotOwnershipTest do
   use ExUnit.Case, async: false
   use ExUnitProperties
   import Bitwise
+  alias ExMaude.Verification.Snapshot
   @moduletag :integration
 
   property "generated snapshot schedules retain independent exact bytes" do
@@ -22,7 +23,7 @@ defmodule ExMaude.Verification.SnapshotOwnershipTest do
       end)
 
       before = {File.read(first_path), File.read(second_path)}
-      foreign = apply(ExMaude.Verification.Snapshot, :close, [second_lease])
+      foreign = Snapshot.close(second_lease)
       mode = File.stat!(second_path).mode &&& 0o777
       directory_mode = File.stat!(Path.dirname(second_path)).mode &&& 0o777
       if disposition == :close, do: send(first, :close), else: Process.exit(first, :kill)
@@ -59,12 +60,12 @@ defmodule ExMaude.Verification.SnapshotOwnershipTest do
 
     {owner, ref} =
       spawn_monitor(fn ->
-        result = apply(ExMaude.Verification.Snapshot, :start, [bytes])
+        result = Snapshot.start(bytes)
         send(parent, {:snapshot, key, result})
         {:ok, lease, _} = result
 
         receive do
-          :close -> apply(ExMaude.Verification.Snapshot, :close, [lease])
+          :close -> Snapshot.close(lease)
         end
       end)
 

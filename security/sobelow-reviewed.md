@@ -1,6 +1,6 @@
 # Sobelow review for the non-Phoenix library
 
-Sobelow 0.15.0 scans the complete source tree in `mix check`. Its 24 reported
+Sobelow 0.15.0 scans the complete source tree in `mix check`. Its 22 reported
 findings are all low-confidence `Traversal.FileModule` warnings. The exact
 file, line, operation and variable set is retained in `sobelow-reviewed.json`.
 `tools/check_sobelow.exs` runs Sobelow, refuses every medium/high finding,
@@ -51,3 +51,13 @@ snapshot creation, permissions and cleanup still use the generated private
 directory. Deadline checks and caller-owned unlinked Port startup add no file
 operation or path source. The complete scan retains the same 24 low-confidence
 operations and no medium/high findings; only those eight line locations change.
+
+Snapshot creation and cleanup now belong to an explicitly started private
+monitor. It generates the mode-0700 directory and fixed model filename itself,
+accepts bounded model bytes and permits only its owning caller to close the
+lease. A failed initial mkdir does not adopt or remove the path. Five reported
+snapshot operations replace the seven prior creation/cleanup sites; the
+executable stream remains the validated explicit host path. The complete scan
+now reports 22 exact reviewed low-confidence findings and no medium/high
+findings. The JSON records the moved stream and new snapshot locations; IoT
+operations are unchanged. Caller-provided paths never enter snapshot cleanup.

@@ -98,52 +98,40 @@
       "variable": "Elixir.Path"
     },
     {
-      "line": 121,
-      "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
-      "file": "lib/ex_maude/verification/search_run.ex",
-      "variable": "directory"
-    },
-    {
-      "line": 361,
-      "type": "Traversal.FileModule: Directory Traversal in `File.mkdir`",
-      "file": "lib/ex_maude/verification/search_run.ex",
-      "variable": "directory"
-    },
-    {
-      "line": 362,
-      "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
-      "file": "lib/ex_maude/verification/search_run.ex",
-      "variable": "directory"
-    },
-    {
-      "line": 364,
-      "type": "Traversal.FileModule: Directory Traversal in `File.write`",
-      "file": "lib/ex_maude/verification/search_run.ex",
-      "variable": "path"
-    },
-    {
-      "line": 365,
-      "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
-      "file": "lib/ex_maude/verification/search_run.ex",
-      "variable": "path"
-    },
-    {
-      "line": 369,
-      "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
-      "file": "lib/ex_maude/verification/search_run.ex",
-      "variable": "directory"
-    },
-    {
-      "line": 652,
-      "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
-      "file": "lib/ex_maude/verification/search_run.ex",
-      "variable": "directory"
-    },
-    {
-      "line": 666,
+      "line": 651,
       "type": "Traversal.FileModule: Directory Traversal in `File.stream!`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "path"
+    },
+    {
+      "line": 54,
+      "type": "Traversal.FileModule: Directory Traversal in `File.mkdir`",
+      "file": "lib/ex_maude/verification/snapshot.ex",
+      "variable": "state"
+    },
+    {
+      "line": 61,
+      "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
+      "file": "lib/ex_maude/verification/snapshot.ex",
+      "variable": "state"
+    },
+    {
+      "line": 62,
+      "type": "Traversal.FileModule: Directory Traversal in `File.write`",
+      "file": "lib/ex_maude/verification/snapshot.ex",
+      "variable": "state"
+    },
+    {
+      "line": 63,
+      "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
+      "file": "lib/ex_maude/verification/snapshot.ex",
+      "variable": "state"
+    },
+    {
+      "line": 105,
+      "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
+      "file": "lib/ex_maude/verification/snapshot.ex",
+      "variable": "directory"
     }
   ]
 }

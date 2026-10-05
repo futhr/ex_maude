@@ -8,7 +8,7 @@ defmodule ExMaude.Verification.PreparationTest do
   test "caller loss during version identification retires its native child" do
     {path, pid_file, _} = fixture(:version)
     {owner, ref} = start(path)
-    assert eventually(fn -> File.exists?(pid_file) end)
+    assert eventually(fn -> pid_ready?(pid_file) end)
     native_pid = File.read!(pid_file)
     Process.exit(owner, :kill)
     assert_receive {:DOWN, ^ref, :process, ^owner, :killed}
@@ -26,6 +26,7 @@ defmodule ExMaude.Verification.PreparationTest do
     [_, model_path] = Regex.run(~r/^load "([^"]+)"\s*\.\s*$/, command)
     assert File.read!(model_path) == @model
     directory = Path.dirname(model_path)
+    assert Path.dirname(directory) == Path.expand(System.tmp_dir!())
     on_exit(fn -> File.rm_rf(directory) end)
     native_pid = File.read!(pid_file)
     Process.exit(owner, :kill)
@@ -41,12 +42,16 @@ defmodule ExMaude.Verification.PreparationTest do
   defp start(path) do
     parent = self()
 
-    spawn_monitor(fn ->
-      send(
-        parent,
-        {:search_result, SearchRun.run(@model, @query, maude_path: path, timeout: 5000)}
-      )
-    end)
+    {owner, ref} =
+      spawn_monitor(fn ->
+        send(
+          parent,
+          {:search_result, SearchRun.run(@model, @query, maude_path: path, timeout: 5000)}
+        )
+      end)
+
+    on_exit(fn -> Process.exit(owner, :kill) end)
+    {owner, ref}
   end
 
   defp fixture(phase) do
@@ -81,6 +86,14 @@ defmodule ExMaude.Verification.PreparationTest do
   end
 
   defp retired?(pid), do: elem(System.cmd("kill", ["-0", pid], stderr_to_stdout: true), 1) != 0
+
+  defp pid_ready?(file) do
+    case File.read(file) do
+      {:ok, pid} -> Regex.match?(~r/^[1-9][0-9]*$/, pid)
+      _ -> false
+    end
+  end
+
   defp kill(pid), do: System.cmd("kill", ["-KILL", pid], stderr_to_stdout: true)
   defp nonce, do: Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
   defp eventually(fun, attempts \\ 100)

@@ -139,6 +139,7 @@ defmodule ExMaude.MixProject do
         docs/specs/structured-search-paths.md
         docs/specs/search-command-echo.md
         docs/specs/search-run-deadline.md
+        docs/specs/search-preparation-ownership.md
         LICENSE
         THIRD_PARTY_NOTICES.md
         CHANGELOG.md
@@ -167,6 +168,7 @@ defmodule ExMaude.MixProject do
         "docs/specs/structured-search-paths.md": [title: "Structured paths"],
         "docs/specs/search-command-echo.md": [title: "Search echo identity"],
         "docs/specs/search-run-deadline.md": [title: "Search deadlines"],
+        "docs/specs/search-preparation-ownership.md": [title: "Preparation ownership"],
         "usage-rules.md": [title: "Usage Rules"],
         "THIRD_PARTY_NOTICES.md": [title: "Third-party Notices"],
         LICENSE: [title: "License"]
@@ -239,6 +241,7 @@ defmodule ExMaude.MixProject do
       "bench.search_paths": ["run bench/search_paths.exs"],
       "bench.search_echo": ["run bench/search_echo.exs"],
       "bench.search_budget": ["run bench/search_budget.exs"],
+      "bench.search_snapshot": ["run bench/search_snapshot.exs"],
       # Every backend available in the current VM
       "bench.backends": ["run bench/backends_bench.exs"],
       # Start distribution so the C-Node backend can be included

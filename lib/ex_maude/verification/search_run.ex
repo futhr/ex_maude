@@ -18,6 +18,7 @@ defmodule ExMaude.Verification.SearchRun do
   alias ExMaude.Telemetry
   alias ExMaude.Verification.Budget
   alias ExMaude.Verification.Cancellation
+  alias ExMaude.Verification.Snapshot
 
   @parser_version "ex_maude.search-run.v3"
   @solution ~r/^Solution\s+(\d+)\s+\(state\s+(\d+)\)$/m
@@ -112,13 +113,19 @@ defmodule ExMaude.Verification.SearchRun do
     with {:ok, _} <- budget(inputs),
          {:ok, executable_digest} <- file_digest(inputs.maude_path),
          {:ok, timeout} <- budget(inputs),
-         {:ok, executable_version} <- executable_version(inputs.maude_path, timeout),
+         {:ok, executable_version} <-
+           executable_version(inputs.maude_path, timeout, inputs.deadline),
          {:ok, _} <- budget(inputs),
-         {:ok, directory, model_path} <- snapshot(model_source) do
+         {:ok, lease, model_path} <- Snapshot.start(model_source) do
       try do
-        execute(model_source, inputs, executable_digest, executable_version, model_path)
+        result = execute(model_source, inputs, executable_digest, executable_version, model_path)
+
+        case Snapshot.close(lease) do
+          :ok -> result
+          error -> error
+        end
       after
-        File.rm_rf(directory)
+        if Process.alive?(lease), do: Snapshot.close(lease)
       end
     end
   end
@@ -351,26 +358,6 @@ defmodule ExMaude.Verification.SearchRun do
 
   defp invalid(message), do: {:error, Error.new(:validation, message)}
 
-  defp snapshot(source) do
-    directory =
-      Path.join(
-        System.tmp_dir!(),
-        "ex_maude_search_" <> Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
-      )
-
-    with :ok <- File.mkdir(directory),
-         :ok <- File.chmod(directory, 0o700),
-         path = Path.join(directory, "model.maude"),
-         :ok <- File.write(path, source, [:binary, :exclusive]),
-         :ok <- File.chmod(path, 0o400) do
-      {:ok, directory, path}
-    else
-      {:error, reason} ->
-        File.rm_rf(directory)
-        {:error, Error.new(:load_error, "cannot snapshot search model: #{inspect(reason)}")}
-    end
-  end
-
   defp execute(source, inputs, executable_digest, executable_version, model_path) do
     session_id = Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
 
@@ -395,7 +382,7 @@ defmodule ExMaude.Verification.SearchRun do
     case start_worker(inputs, model_path) do
       {:ok, worker} ->
         Process.unlink(worker)
-        watcher = watch_caller(self(), worker, Path.dirname(model_path), inputs.cancellation)
+        watcher = watch_caller(self(), worker, inputs.cancellation)
 
         try do
           case bind_cancellation(inputs.cancellation, worker) do
@@ -632,7 +619,7 @@ defmodule ExMaude.Verification.SearchRun do
     :exit, _ -> :ok
   end
 
-  defp watch_caller(owner, worker, directory, cancellation) do
+  defp watch_caller(owner, worker, cancellation) do
     spawn(fn ->
       ref = Process.monitor(owner)
       cancellation_ref = if cancellation, do: Process.monitor(cancellation)
@@ -648,8 +635,6 @@ defmodule ExMaude.Verification.SearchRun do
         {:DOWN, ^cancellation_ref, :process, ^cancellation, _} ->
           retire(worker)
       end
-
-      File.rm_rf(directory)
     end)
   end
 
@@ -675,8 +660,8 @@ defmodule ExMaude.Verification.SearchRun do
     end
   end
 
-  defp executable_version(path, timeout) do
-    case ExMaude.Subprocess.run(path, ["--version"], min(timeout, 5_000), 65_536) do
+  defp executable_version(path, timeout, deadline) do
+    case ExMaude.Subprocess.run(path, ["--version"], min(timeout, 5_000), 65_536, deadline) do
       {:ok, output, 0} ->
         {:ok, String.trim(output)}
 

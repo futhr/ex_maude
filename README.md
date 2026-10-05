@@ -11,6 +11,10 @@ clear findings after worker retirement. Synchronous filesystem/parsing and
 cleanup latency do not have a hard real-time bound. Its caller-owned unlinked
 Port startup returns errors without terminating the caller and retires workers
 on owner loss. See the [deadline contract](docs/specs/search-run-deadline.md).
+Private model snapshots and executable-version children also retain ownership
+before worker readiness. Forced caller loss during identification or preloading
+retires native work and removes private snapshots. See
+[preparation ownership](docs/specs/search-preparation-ownership.md) for its scope.
 
 **Elixir bindings for the Maude formal verification system**
 

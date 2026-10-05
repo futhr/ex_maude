@@ -18,4 +18,11 @@ defmodule ExMaude.SubprocessDeadlineTest do
 
     refute File.exists?(pid_file)
   end
+
+  test "malformed deadline refuses without launching an executable" do
+    for deadline <- [nil, 1.0, "1", :unsupported] do
+      assert {:error, :invalid_deadline} =
+               ExMaude.Subprocess.run("/missing", [], 1000, 100, deadline)
+    end
+  end
 end
