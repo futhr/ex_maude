@@ -15,6 +15,9 @@ Private model snapshots and executable-version children also retain ownership
 before worker readiness. Forced caller loss during identification or preloading
 retires native work and removes private snapshots. See
 [preparation ownership](docs/specs/search-preparation-ownership.md) for its scope.
+Executable identification must return a bounded nonempty UTF-8 label with no
+NUL before a worker starts. See the
+[version identity contract](docs/specs/search-version-identity.md).
 
 **Elixir bindings for the Maude formal verification system**
 
@@ -587,6 +590,12 @@ Its explicit limits bound decoding; it does not prove transitions or bound
 native search exploration. See [the structured-path contract](docs/specs/structured-search-paths.md).
 `mix bench.search_paths` measures 30 public decodes over a checked actual Maude
 path, with startup and full result checks outside the measured intervals.
+
+`Verification.Version.decode/1` validates measured executable-version bytes
+and strips ASCII edge layout. It preserves the remaining opaque label;
+executable selection belongs to the host. `mix bench.search_version` retains
+30 decoder-only samples after an actual finite Maude completion and refusal
+checks. The command makes no latency or memory threshold claim.
 
 ### Running Benchmarks
 

@@ -9,7 +9,10 @@ defmodule ExMaude.Backend.OwnedPortTest do
     {:ok, second} = Backend.start(maude_path: maude, use_pty: false, isolated_preloads: true)
 
     on_exit(fn ->
-      for worker <- [first, second], Process.alive?(worker), do: Backend.stop(worker)
+      for worker <- [first, second] do
+        monitor = Process.monitor(worker)
+        assert_receive {:DOWN, ^monitor, :process, ^worker, _}, 1000
+      end
     end)
 
     {:links, links} = Process.info(self(), :links)

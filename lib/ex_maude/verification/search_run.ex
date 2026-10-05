@@ -19,6 +19,7 @@ defmodule ExMaude.Verification.SearchRun do
   alias ExMaude.Verification.Budget
   alias ExMaude.Verification.Cancellation
   alias ExMaude.Verification.Snapshot
+  alias ExMaude.Verification.Version
 
   @parser_version "ex_maude.search-run.v3"
   @solution ~r/^Solution\s+(\d+)\s+\(state\s+(\d+)\)$/m
@@ -663,7 +664,10 @@ defmodule ExMaude.Verification.SearchRun do
   defp executable_version(path, timeout, deadline) do
     case ExMaude.Subprocess.run(path, ["--version"], min(timeout, 5_000), 65_536, deadline) do
       {:ok, output, 0} ->
-        {:ok, String.trim(output)}
+        case Version.decode(output) do
+          {:ok, _} = version -> version
+          {:error, _} -> {:error, Error.new(:load_error, "cannot identify executable version")}
+        end
 
       {:error, :timeout} ->
         {:error, Error.timeout(min(timeout, 5_000))}

@@ -98,7 +98,7 @@
       "variable": "Elixir.Path"
     },
     {
-      "line": 651,
+      "line": 652,
       "type": "Traversal.FileModule: Directory Traversal in `File.stream!`",
       "file": "lib/ex_maude/verification/search_run.ex",
       "variable": "path"
