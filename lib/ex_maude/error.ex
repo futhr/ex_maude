@@ -27,6 +27,7 @@ defmodule ExMaude.Error do
       source, or check that your platform is in the supported targets list)
     * `:nif_error` - Runtime error from the NIF backend
     * `:validation` - Input validation failed
+    * `:cancelled` - An isolated verification run was cancelled
     * `:unknown` - Unrecognized error
 
   ## Usage
@@ -67,6 +68,7 @@ defmodule ExMaude.Error do
           | :nif_not_loaded
           | :nif_error
           | :validation
+          | :cancelled
           | :unknown
 
   @type t :: %__MODULE__{

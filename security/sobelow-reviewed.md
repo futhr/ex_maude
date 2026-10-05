@@ -36,3 +36,11 @@ module code instead of reading `.beam` files. That removed file reads from the
 identity path and moved twelve reported lines up by sixteen, again without
 changing their operations or path provenance. The scan still reports the same
 24 low-confidence findings.
+
+The single-use search cancellation extension moves the eight SearchRun
+findings again. Executable reads still use the explicit host path; snapshot
+creation, permissions and removal still use library-generated paths. The
+additional cancellation-instance monitor removes the same generated directory
+after worker retirement. No new filesystem operation or untrusted path source
+was added. The complete scan retains the same 24 low-confidence findings and
+no medium/high findings; the JSON records their current locations.

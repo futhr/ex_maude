@@ -55,6 +55,28 @@ remains on its own Elixir 1.19.4 / OTP 28.5 pins. Generated checks run 300 real
 Maude schedules per seed with seeds 20261005, 27182818 and 31415926. A shrinker
 retains the original and minimal failing request schedule in the test log.
 
+`mix run tools/check_search_cancellation.exs` is a mandatory part of
+`mix check --no-retry`. It archives the actual Git-listed source bytes and pins
+each file before execution, checks all 900 original schedules and receipts,
+then compiles two separate source mutations outside the checkout. The
+misclassified cancellation and accepted late request must each fail the
+generated property with a retained reduced schedule. Every run uses a fresh
+random evidence directory; evidence from previous BEAM instances cannot satisfy
+its counters. The source must remain unchanged throughout the campaign.
+
+The installed-archive check uses `tools/search_cancellation_consumer.exs` in a
+fresh host project depending only on the unpacked Hex archive. Stage locked
+dependency sources and compile the consumer first with `EX_MAUDE_BUILD=0` and
+`EX_MAUDE_BUILD_CNODE=0`. Then run
+`elixir -pa '_build/dev/lib/*/ebin' search_cancellation_consumer.exs`,
+with network access disabled and an explicit
+`MAUDE_PATH`. Mix compilation uses a local PubSub TCP socket; this is why the
+network-denied execution uses the already compiled application through Elixir.
+The check proves passive loading, two independent instances and supervisor
+closure. Its host-supplied GPL Maude executable is a declared external asset,
+not bundled into the Hex archive. This Port check does not qualify NIF
+cancellation, state-count limits or the broader positive-proof profile.
+
 ## Declared smoke workload
 
 Before timing, execute all correctness checks. Measure the real public
@@ -64,3 +86,5 @@ retained samples, monotonic microseconds, complete receipt validation outside
 each interval. Retain executable/model/query digests, compiler/OTP versions,
 raw intervals and outcome. This is a local correctness smoke workload with no
 latency threshold, peak-throughput or whole-platform qualification claim.
+Stage the complete source before the qualified smoke run; its report retains
+the staged tree and patch identity and refuses unstaged changes before timing.

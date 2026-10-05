@@ -16,6 +16,7 @@ defmodule ExMaude.Verification.SearchRun do
   alias ExMaude.Error
   alias ExMaude.Parser
   alias ExMaude.Telemetry
+  alias ExMaude.Verification.Cancellation
 
   @parser_version "ex_maude.search-run.v2"
   @solution ~r/^Solution\s+(\d+)\s+\(state\s+(\d+)\)$/m
@@ -39,6 +40,7 @@ defmodule ExMaude.Verification.SearchRun do
           | :solution_limit
           | :timeout
           | :output_truncation
+          | :cancelled
           | :worker_loss
           | :parser_error
 
@@ -73,6 +75,10 @@ defmodule ExMaude.Verification.SearchRun do
   depth `N + 1` on the same worker reports `:depth_truncation` if it discovers
   more states or solutions. An unknown or malformed terminal marker yields
   `:parser_error`.
+  Optional `:cancellation` is the PID of a host-started, single-use
+  `ExMaude.Verification.Cancellation` instance. Cancelled receipts retain run
+  identity but clear findings and trace data after worker retirement. Recorded
+  requests do not interrupt executable identification or model preparation.
   """
   @spec run(binary(), query(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def run(model_source, query, opts) do
@@ -85,15 +91,8 @@ defmodule ExMaude.Verification.SearchRun do
   defp do_run(model_source, query, opts)
        when is_binary(model_source) and is_map(query) and is_list(opts) do
     with true <- Keyword.keyword?(opts),
-         {:ok, inputs} <- validate(model_source, query, opts),
-         {:ok, executable_digest} <- file_digest(inputs.maude_path),
-         {:ok, executable_version} <- executable_version(inputs.maude_path, inputs.timeout),
-         {:ok, directory, model_path} <- snapshot(model_source) do
-      try do
-        execute(model_source, inputs, executable_digest, executable_version, model_path)
-      after
-        File.rm_rf(directory)
-      end
+         {:ok, inputs} <- validate(model_source, query, opts) do
+      cancellable(inputs.cancellation, fn -> prepared_run(model_source, inputs) end)
     else
       false -> invalid("options must be a keyword list")
       error -> error
@@ -103,9 +102,57 @@ defmodule ExMaude.Verification.SearchRun do
   defp do_run(_, _, _),
     do: {:error, Error.new(:validation, "model and query must be bytes and a map")}
 
+  defp prepared_run(model_source, inputs) do
+    with {:ok, executable_digest} <- file_digest(inputs.maude_path),
+         {:ok, executable_version} <- executable_version(inputs.maude_path, inputs.timeout),
+         {:ok, directory, model_path} <- snapshot(model_source) do
+      try do
+        execute(model_source, inputs, executable_digest, executable_version, model_path)
+      after
+        File.rm_rf(directory)
+      end
+    end
+  end
+
+  defp cancellable(nil, run), do: run.()
+
+  defp cancellable(instance, run) do
+    with :ok <- Cancellation.claim(instance) do
+      try do
+        result = run.()
+        settle(result, Cancellation.finish(instance))
+      after
+        Cancellation.finish(instance)
+      end
+    end
+  end
+
+  defp settle({:ok, receipt}, {:ok, :cancelled}), do: incomplete(receipt, :cancelled)
+  defp settle({:ok, receipt}, {:error, _}), do: incomplete(receipt, :worker_loss)
+  defp settle(result, _), do: result
+
+  defp incomplete(receipt, termination) do
+    {:ok,
+     %{
+       receipt
+       | termination: termination,
+         solutions: [],
+         states_explored: nil,
+         raw_output_digest: nil,
+         depth_probe: nil,
+         trace: nil,
+         error:
+           Error.new(termination_error(termination), "search ownership ended before completion")
+     }}
+  end
+
+  defp termination_error(:cancelled), do: :cancelled
+  defp termination_error(:worker_loss), do: :pool_error
+
   defp validate(model_source, query, opts) do
     with :ok <- validate_model(model_source),
          :ok <- validate_options(opts),
+         :ok <- validate_cancellation(Keyword.get(opts, :cancellation)),
          :ok <- validate_query(query) do
       depth = Map.get(query, :max_depth, 100)
       solutions = Map.get(query, :max_solutions, 1)
@@ -126,7 +173,8 @@ defmodule ExMaude.Verification.SearchRun do
          depth: depth,
          max_solutions: solutions,
          command: command,
-         query: query
+         query: query,
+         cancellation: Keyword.get(opts, :cancellation)
        }}
     end
   end
@@ -143,7 +191,10 @@ defmodule ExMaude.Verification.SearchRun do
     output = Keyword.get(opts, :max_response_bytes, @max_output)
 
     cond do
-      Enum.any?(Keyword.keys(opts), &(&1 not in [:maude_path, :timeout, :max_response_bytes])) ->
+      Enum.any?(
+        Keyword.keys(opts),
+        &(&1 not in [:maude_path, :timeout, :max_response_bytes, :cancellation])
+      ) ->
         invalid("unsupported search option")
 
       not (is_binary(path) and File.regular?(path)) ->
@@ -159,6 +210,10 @@ defmodule ExMaude.Verification.SearchRun do
         :ok
     end
   end
+
+  defp validate_cancellation(nil), do: :ok
+  defp validate_cancellation(instance) when is_pid(instance), do: :ok
+  defp validate_cancellation(_), do: invalid("cancellation instance must be a PID")
 
   defp validate_query(query) do
     with :ok <- validate_query_shape(query) do
@@ -266,18 +321,28 @@ defmodule ExMaude.Verification.SearchRun do
            maude_path: inputs.maude_path,
            preload_modules: [model_path],
            isolated_preloads: true,
+           use_pty: false,
            startup_timeout_ms: inputs.timeout,
            max_response_bytes: inputs.output
          ) do
       {:ok, worker} ->
         Process.unlink(worker)
-        watcher = watch_caller(self(), worker, Path.dirname(model_path))
+        watcher = watch_caller(self(), worker, Path.dirname(model_path), inputs.cancellation)
 
         try do
-          result =
-            safe_call(fn -> Port.execute(worker, inputs.command, timeout: inputs.timeout) end)
+          case bind_cancellation(inputs.cancellation, worker) do
+            :ok ->
+              result =
+                safe_call(fn -> Port.execute(worker, inputs.command, timeout: inputs.timeout) end)
 
-          interpret(result, worker, inputs, evidence)
+              interpret(result, worker, inputs, evidence)
+
+            :cancelled ->
+              incomplete(evidence, :cancelled)
+
+            {:error, _} ->
+              incomplete(evidence, :worker_loss)
+          end
         after
           retire(worker)
           send(watcher, :owner_done)
@@ -287,6 +352,9 @@ defmodule ExMaude.Verification.SearchRun do
         {:ok, %{evidence | termination: classify_start(reason), error: reason}}
     end
   end
+
+  defp bind_cancellation(nil, _), do: :ok
+  defp bind_cancellation(instance, worker), do: Cancellation.bind(instance, worker)
 
   defp interpret({:ok, raw}, worker, inputs, evidence) do
     base = %{evidence | raw_output_digest: digest(raw)}
@@ -500,16 +568,21 @@ defmodule ExMaude.Verification.SearchRun do
     :exit, _ -> :ok
   end
 
-  defp watch_caller(owner, worker, directory) do
+  defp watch_caller(owner, worker, directory, cancellation) do
     spawn(fn ->
       ref = Process.monitor(owner)
+      cancellation_ref = if cancellation, do: Process.monitor(cancellation)
 
       receive do
         :owner_done ->
           Process.demonitor(ref, [:flush])
+          if cancellation_ref, do: Process.demonitor(cancellation_ref, [:flush])
 
         {:DOWN, ^ref, :process, ^owner, _} ->
           if Process.alive?(worker), do: Process.exit(worker, :kill)
+
+        {:DOWN, ^cancellation_ref, :process, ^cancellation, _} ->
+          retire(worker)
       end
 
       File.rm_rf(directory)

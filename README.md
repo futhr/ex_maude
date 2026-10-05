@@ -558,6 +558,13 @@ timing isolated runs. Its `bench/output/search_run.json` report records the
 selected executable and model digests, environment and observed durations;
 it makes no cross-machine performance claim.
 
+`Verification.SearchRun.run/3` accepts an explicit, host-started
+`Verification.Cancellation` PID. Each instance belongs to one run; recorded
+requests produce a typed cancelled receipt after worker retirement and closure.
+See [the cancellation contract](docs/specs/search-run-cancellation.md) for
+startup limits, race behavior and supervision. `mix bench.search_cancellation`
+retains five correctness-gated startup/retirement smoke samples.
+
 ### Running Benchmarks
 
 See [Development](#development) section for benchmark commands.

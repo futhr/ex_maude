@@ -106,6 +106,35 @@ defmodule ExMaude.Verification.CancellationTest do
     assert eventually(fn -> not Process.alive?(worker) and dead_os?(os_pid) end)
   end
 
+  test "abrupt instance loss cannot retain a worker or completion claim", %{path: path} do
+    handle = start_supervised!({Cancellation, []})
+    task = Task.async(fn -> run(path, handle) end)
+    worker = await_worker(handle)
+    os_pid = :sys.get_state(worker).os_pid |> Integer.to_string()
+    Process.exit(handle, :kill)
+    assert {:ok, receipt} = Task.await(task, 10_000)
+    assert receipt.termination == :worker_loss
+    assert receipt.solutions == []
+    assert receipt.trace == nil
+    assert eventually(fn -> not Process.alive?(worker) and dead_os?(os_pid) end)
+  end
+
+  test "a foreign caller cannot replace or close the run's worker", %{path: path} do
+    handle = start_supervised!({Cancellation, []})
+    task = Task.async(fn -> run(path, handle) end)
+    worker = await_worker(handle)
+    assert {:error, %Error{type: :validation}} = Cancellation.bind(handle, self())
+    assert {:error, %Error{type: :validation}} = Cancellation.finish(handle)
+    assert Process.alive?(worker)
+    assert :ok = Cancellation.request(handle)
+    assert {:ok, receipt} = Task.await(task, 10_000)
+    cancelled(receipt)
+  end
+
+  test "invalid cancellation configuration does not start a worker", %{path: path} do
+    assert {:error, %Error{type: :validation}} = run(path, "not-a-pid")
+  end
+
   test "completed runs reject late requests without changing receipts", %{path: path} do
     handle = start_supervised!({Cancellation, []})
     query = %{@query | initial: "0", pattern: "0", max_depth: 1, arrow: "=>*", max_solutions: 1}
@@ -135,11 +164,15 @@ defmodule ExMaude.Verification.CancellationTest do
             pattern: Integer.to_string(initial)
         }
 
+        original = retain_original(phase, requests, query)
+
         if phase == :early do
           for _ <- 1..requests, do: assert(:ok == Cancellation.request(handle))
 
           assert {:ok, receipt} =
                    SearchRun.run(@model, query, maude_path: path, cancellation: handle)
+
+          retain_receipt(original, receipt)
 
           cancelled(receipt)
         else
@@ -147,6 +180,8 @@ defmodule ExMaude.Verification.CancellationTest do
 
           assert {:ok, receipt} =
                    SearchRun.run(@model, query, maude_path: path, cancellation: handle)
+
+          retain_receipt(original, receipt)
 
           assert receipt.termination == :solution_limit
           assert [%{state_num: 0}] = receipt.solutions
@@ -163,6 +198,37 @@ defmodule ExMaude.Verification.CancellationTest do
 
   defp run(path, handle),
     do: SearchRun.run(@model, @query, maude_path: path, timeout: 10_000, cancellation: handle)
+
+  defp retain_original(phase, requests, query) do
+    case System.get_env("CANCEL_EVIDENCE_DIR") do
+      nil ->
+        nil
+
+      directory ->
+        File.mkdir_p!(directory)
+        path = Path.join(directory, "schedule-#{System.unique_integer([:positive])}")
+        query = effective_query(phase, query)
+        expected = if phase == :late, do: "solution_limit", else: "cancelled"
+
+        original = %{
+          phase: phase,
+          requests: requests,
+          model: @model,
+          query: query,
+          expected: expected
+        }
+
+        File.write!(path <> ".json", Jason.encode!(original, pretty: true) <> "\n")
+        path
+    end
+  end
+
+  defp effective_query(:late, query), do: %{query | max_depth: 1, arrow: "=>*", max_solutions: 1}
+  defp effective_query(_, query), do: query
+  defp retain_receipt(nil, _), do: :ok
+
+  defp retain_receipt(path, receipt),
+    do: File.write!(path <> ".etf", :erlang.term_to_binary(receipt))
 
   defp cancelled(receipt) do
     assert receipt.termination == :cancelled
