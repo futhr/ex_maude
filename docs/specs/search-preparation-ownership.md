@@ -23,6 +23,13 @@ output-overflow result contract. Its native process is owned by an unlinked
 collector monitoring the caller before opening the port. Caller loss interrupts
 collection and retires the directly spawned native process. Normal return and
 refusal also retire it before reply. The caller's exit flags are unchanged.
+Its relative budget starts before collector creation, not after native startup.
+The internal additive `run/5` accepts the enclosing absolute monotonic deadline
+as its fifth argument (`:none` preserves `run/4`). The collector uses the earlier
+of that deadline and the relative cap, checks expiry before native creation,
+and retains that timestamp while collecting. Queuing or opening the port cannot
+restart the enclosing SearchRun budget. Expired dispatch returns timeout without
+creating the native child.
 This does not qualify descendant process trees, external executable sandboxes,
 VM/OS crash cleanup, hard real-time latency or another operating system target.
 
