@@ -70,6 +70,9 @@ defmodule ExMaude.Verification.PathTest do
 
     for bytes <- invalid, do: assert({:error, %Error{type: :parse_error}} = Path.decode(bytes, 4))
     assert {:error, %Error{type: :parse_error}} = Path.decode(@bytes, 3)
+    assert {:error, %Error{type: :parse_error}} = Path.decode("state 0, S: a\n\n", 0)
+    repeated = "state 0, S: a\n===[ rl a => b . ]===> ]===>\nstate 1, S: b"
+    assert {:error, %Error{type: :parse_error}} = Path.decode(repeated, 1)
   end
 
   test "explicit parser resources cannot be silently exceeded" do
@@ -87,7 +90,7 @@ defmodule ExMaude.Verification.PathTest do
           [max_bytes: 0],
           [unknown: 1],
           [max_nodes: 2, max_nodes: 3],
-          [max_nodes: 10001],
+          [max_nodes: 10_001],
           :invalid
         ] do
       assert {:error, %Error{type: :validation}} = Path.decode(@bytes, 4, opts)
@@ -121,7 +124,10 @@ defmodule ExMaude.Verification.PathTest do
         end)
 
       bytes = render(nodes, edges)
-      assert {:ok, path} = Path.decode(bytes, List.last(numbers))
+      original = retain_original(bytes, List.last(numbers), nodes, edges)
+      result = Path.decode(bytes, List.last(numbers))
+      retain_result(original, result)
+      assert {:ok, path} = result
       assert path.nodes == nodes
       assert path.edges == edges
       assert path.digest == digest(bytes)
@@ -139,4 +145,27 @@ defmodule ExMaude.Verification.PathTest do
   end
 
   defp digest(bytes), do: "sha256:" <> Base.encode16(:crypto.hash(:sha256, bytes), case: :lower)
+
+  defp retain_original(bytes, target, nodes, edges) do
+    case System.get_env("PATH_EVIDENCE_DIR") do
+      nil ->
+        nil
+
+      directory ->
+        File.mkdir_p!(directory)
+        path = Elixir.Path.join(directory, "path-#{System.unique_integer([:positive])}")
+
+        File.write!(
+          path <> ".etf",
+          :erlang.term_to_binary(%{bytes: bytes, target: target, nodes: nodes, edges: edges})
+        )
+
+        path
+    end
+  end
+
+  defp retain_result(nil, _), do: :ok
+
+  defp retain_result(path, result),
+    do: File.write!(path <> "-actual.etf", :erlang.term_to_binary(result))
 end

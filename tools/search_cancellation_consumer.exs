@@ -46,6 +46,10 @@ path = System.fetch_env!("MAUDE_PATH")
   )
 
 %{termination: :solution_limit, solutions: [%{state_num: 0}]} = completed
+{:ok, decoded} = ExMaude.Verification.Path.decode(completed.trace.bytes, 0)
+[%{state_num: 0, sort: "Zero", value: "0"}] = decoded.nodes
+[] = decoded.edges
+true = decoded.digest == completed.trace.digest
 true = stopped.model_digest == completed.model_digest
 false = stopped.session_id == completed.session_id
 {:error, %ExMaude.Error{type: :validation}} = Cancellation.request(instances.first)

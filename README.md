@@ -565,6 +565,13 @@ See [the cancellation contract](docs/specs/search-run-cancellation.md) for
 startup limits, race behavior and supervision. `mix bench.search_cancellation`
 retains five correctness-gated startup/retirement smoke samples.
 
+`Verification.Path.decode/3` structures complete returned Port paths into all
+ordered nodes and edges, retaining exact bytes identity and printed rules.
+Its explicit limits bound decoding; it does not prove transitions or bound
+native search exploration. See [the structured-path contract](docs/specs/structured-search-paths.md).
+`mix bench.search_paths` measures 30 public decodes over a checked actual Maude
+path, with startup and full result checks outside the measured intervals.
+
 ### Running Benchmarks
 
 See [Development](#development) section for benchmark commands.

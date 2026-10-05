@@ -136,6 +136,7 @@ defmodule ExMaude.MixProject do
         README.md
         CONTRIBUTING.md
         docs/specs/search-run-cancellation.md
+        docs/specs/structured-search-paths.md
         LICENSE
         THIRD_PARTY_NOTICES.md
         CHANGELOG.md
@@ -161,6 +162,7 @@ defmodule ExMaude.MixProject do
         "CHANGELOG.md": [title: "Changelog"],
         "CONTRIBUTING.md": [title: "Contributing"],
         "docs/specs/search-run-cancellation.md": [title: "Search cancellation"],
+        "docs/specs/structured-search-paths.md": [title: "Structured paths"],
         "usage-rules.md": [title: "Usage Rules"],
         "THIRD_PARTY_NOTICES.md": [title: "Third-party Notices"],
         LICENSE: [title: "License"]
@@ -230,6 +232,7 @@ defmodule ExMaude.MixProject do
       bench: ["run bench/run.exs"],
       "bench.search_run": ["run bench/search_run.exs"],
       "bench.search_cancellation": ["run bench/search_cancellation.exs"],
+      "bench.search_paths": ["run bench/search_paths.exs"],
       # Every backend available in the current VM
       "bench.backends": ["run bench/backends_bench.exs"],
       # Start distribution so the C-Node backend can be included

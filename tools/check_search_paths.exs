@@ -1,21 +1,19 @@
-defmodule ExMaude.CancellationCampaign do
+defmodule ExMaude.PathCampaign do
   @moduledoc false
 
-  @test "test/ex_maude/verification/cancellation_test.exs"
+  @test "test/ex_maude/verification/path_test.exs"
   @seeds [20_261_005, 27_182_818, 31_415_926]
   @mutants [
-    {"cancel-as-worker-loss", "lib/ex_maude/verification/search_run.ex",
-     "defp settle({:ok, receipt}, {:ok, :cancelled}), do: incomplete(receipt, :cancelled)",
-     "defp settle({:ok, receipt}, {:ok, :cancelled}), do: incomplete(receipt, :worker_loss)"},
-    {"accept-late-request", "lib/ex_maude/verification/cancellation.ex",
-     "def handle_call(:request, _, %{closed: false} = state)",
-     "def handle_call(:request, _, %{closed: _} = state)"}
+    {"accept-wrong-target", "lib/ex_maude/verification/path.ex",
+     "List.last(nodes).state_num == target", "is_integer(target)"},
+    {"omit-first-edge", "lib/ex_maude/verification/path.ex", "edges: edges",
+     "edges: Enum.drop(edges, 1)"}
   ]
 
   def run do
     Enum.each(Application.spec(:ex_maude, :modules), &Code.ensure_loaded!/1)
     root = File.cwd!()
-    output = Path.join(root, "_build/cancellation-campaign-#{nonce()}")
+    output = Path.join(root, "_build/path-campaign-#{nonce()}")
     File.mkdir_p!(output)
 
     {paths, 0} =
@@ -31,7 +29,17 @@ defmodule ExMaude.CancellationCampaign do
     baseline =
       for seed <- @seeds do
         directory = Path.join(output, "seed-#{seed}")
-        command = ["test", "--include", "integration", @test, "--seed", Integer.to_string(seed)]
+
+        command = [
+          "test",
+          "--include",
+          "integration",
+          @test,
+          "test/ex_maude/verification/path_integration_test.exs",
+          "--seed",
+          Integer.to_string(seed)
+        ]
+
         {log, status} = mix(root, command, directory, maude)
         File.write!(directory <> ".log", log)
         status == 0 || raise "baseline failed: #{seed}"
@@ -52,7 +60,7 @@ defmodule ExMaude.CancellationCampaign do
       raise "source changed during campaign"
 
     write(output, "report.json", %{
-      schema: "ex_maude.cancellation-campaign.v1",
+      schema: "ex_maude.path-campaign.v1",
       baseline: baseline,
       source_archive_digest: digest(File.read!(archive)),
       mutants: mutants,
@@ -62,7 +70,7 @@ defmodule ExMaude.CancellationCampaign do
     })
 
     IO.puts(
-      "Cancellation campaign passed: 900 real Maude schedules and two compiled mutants; #{output}"
+      "Path campaign passed: 900 independent chains, six actual Maude paths and two compiled mutants; #{output}"
     )
   end
 
@@ -100,18 +108,21 @@ defmodule ExMaude.CancellationCampaign do
     File.cp!(path, evidence <> "-source.ex")
     status == 2 || raise "mutant did not fail ExUnit assertions: #{id}, #{status}"
 
-    String.contains?(log, "1 property, 1 failure (9 excluded)") ||
+    String.contains?(log, "1 property, 1 failure (7 excluded)") ||
       raise "missing property failure"
 
     String.contains?(log, "StreamData.shrink_failure") || raise "missing reducer execution"
-    originals = Path.wildcard(Path.join(evidence, "schedule-*.json"))
+
+    originals =
+      Path.wildcard(Path.join(evidence, "path-*.etf"))
+      |> Enum.reject(&String.ends_with?(&1, "-actual.etf"))
 
     Enum.any?(originals, fn original ->
-      input = original |> File.read!() |> Jason.decode!()
+      input = original |> File.read!() |> :erlang.binary_to_term([:safe])
 
-      input["requests"] == 1 and input["query"]["initial"] == "0" and
-        File.exists?(Path.rootname(original) <> ".etf")
-    end) || raise "missing minimal recorded schedule"
+      input.target == 1 and length(input.nodes) == 2 and hd(input.nodes).value == "0" and
+        File.exists?(String.trim_trailing(original, ".etf") <> "-actual.etf")
+    end) || raise "missing minimal recorded chain"
 
     File.rm_rf!(directory)
     %{id: id, status: status, compiled: true, property_failure: true, reduction: true}
@@ -120,7 +131,7 @@ defmodule ExMaude.CancellationCampaign do
   defp property_line(path) do
     File.read!(path)
     |> String.split("\n")
-    |> Enum.find_index(&String.contains?(&1, "property \"generated"))
+    |> Enum.find_index(&String.contains?(&1, "property \"independent"))
     |> Kernel.+(1)
   end
 
@@ -135,45 +146,29 @@ defmodule ExMaude.CancellationCampaign do
         {"EX_MAUDE_BUILD", "0"},
         {"EX_MAUDE_BUILD_CNODE", "0"},
         {"MAUDE_PATH", maude},
-        {"CANCEL_EVIDENCE_DIR", evidence},
+        {"PATH_EVIDENCE_DIR", evidence},
         {"MISE_ACTIVATE_AGGRESSIVE", "1"}
       ]
     )
   end
 
   defp validate_records(directory, expected) do
-    originals = Path.wildcard(Path.join(directory, "schedule-*.json"))
+    originals =
+      Path.wildcard(Path.join(directory, "path-*.etf"))
+      |> Enum.reject(&String.ends_with?(&1, "-actual.etf"))
+
     length(originals) == expected || raise "missing generated originals"
 
     for original <- originals do
-      input = original |> File.read!() |> Jason.decode!()
-
-      receipt =
-        original
-        |> Path.rootname()
-        |> Kernel.<>(".etf")
-        |> File.read!()
-        |> :erlang.binary_to_term([:safe])
-
-      Atom.to_string(receipt.termination) == input["expected"] || raise "wrong schedule outcome"
-      receipt.model_digest == digest(input["model"]) || raise "wrong source identity"
-      validate_receipt(receipt)
+      input = original |> File.read!() |> :erlang.binary_to_term([:safe])
+      actual = String.trim_trailing(original, ".etf") <> "-actual.etf"
+      {:ok, decoded} = actual |> File.read!() |> :erlang.binary_to_term([:safe])
+      decoded.nodes == input.nodes || raise "lost path node"
+      decoded.edges == input.edges || raise "lost path edge"
+      decoded.state_num == input.target || raise "wrong path target"
+      decoded.digest == digest(input.bytes) || raise "wrong byte identity"
     end
   end
-
-  defp validate_receipt(%{
-         termination: :cancelled,
-         solutions: [],
-         states_explored: nil,
-         trace: nil,
-         depth_probe: nil,
-         raw_output_digest: nil,
-         error: %ExMaude.Error{type: :cancelled}
-       }),
-       do: :ok
-
-  defp validate_receipt(%{termination: :solution_limit, solutions: [%{state_num: 0}]}), do: :ok
-  defp validate_receipt(_), do: raise("incomplete generated receipt")
 
   defp write(directory, name, value),
     do: File.write!(Path.join(directory, name), Jason.encode!(value, pretty: true) <> "\n")
@@ -182,4 +177,4 @@ defmodule ExMaude.CancellationCampaign do
   defp nonce, do: Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
 end
 
-ExMaude.CancellationCampaign.run()
+ExMaude.PathCampaign.run()
