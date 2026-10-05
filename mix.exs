@@ -100,6 +100,7 @@ defmodule ExMaude.MixProject do
       {:ex_check, "~> 0.16", only: [:dev, :test], runtime: false},
       {:doctor, "~> 0.22", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
+      {:stream_data, "~> 1.3", only: :test},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:benchee, "~> 1.3", only: :dev, runtime: false},
