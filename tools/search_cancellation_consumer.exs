@@ -52,12 +52,32 @@ path = System.fetch_env!("MAUDE_PATH")
 true = decoded.digest == completed.trace.digest
 true = stopped.model_digest == completed.model_digest
 false = stopped.session_id == completed.session_id
+
+echo_model =
+  "mod ARCHIVE-ECHO is protecting NAT . sort S . op pair : Nat Nat -> S [ctor] . op bad : -> S [ctor] . rl [fail] : pair(2, 3) => bad . endm\n"
+
+echo_query = %{
+  module: "ARCHIVE-ECHO",
+  initial: "pair(2,3)",
+  pattern: "bad",
+  max_depth: 2,
+  max_solutions: 2
+}
+
+{:ok, echo_receipt} = SearchRun.run(echo_model, echo_query, maude_path: path)
+:completed_declared_bound = echo_receipt.termination
+"ex_maude.search-run.v3" = echo_receipt.parser_version
+{:ok, echo_path} = ExMaude.Verification.Path.decode(echo_receipt.trace.bytes, 1)
+2 = length(echo_path.nodes)
+1 = length(echo_path.edges)
+true = ExMaude.Verification.CommandEcho.matches?("search pair(2, 3) .\n", "search pair(2,3) .")
+false = ExMaude.Verification.CommandEcho.matches?("search \"a b\" .\n", "search \"ab\" .")
 {:error, %ExMaude.Error{type: :validation}} = Cancellation.request(instances.first)
 :ok = Supervisor.stop(supervisor)
 false = Process.alive?(instances.first)
 false = Process.alive?(instances.second)
 [] = owned.()
-File.write!("receipts.etf", :erlang.term_to_binary({stopped, completed}))
+File.write!("receipts.etf", :erlang.term_to_binary({stopped, completed, echo_receipt}))
 
 IO.puts(
   "Offline installed archive consumer: passive loading, two instances, typed cancellation and supervisor closure passed"

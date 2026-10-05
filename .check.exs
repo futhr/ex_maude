@@ -40,6 +40,7 @@ sobelow_command = "mix run tools/check_sobelow.exs"
      command: "mix test --include benchmark test/ex_maude/benchmark_regression_test.exs"},
     {:search_cancellation, command: "mix run tools/check_search_cancellation.exs"},
     {:search_paths, command: "mix run tools/check_search_paths.exs"},
+    {:search_echo, command: "mix run tools/check_search_echo.exs"},
     {:ex_unit, command: "mix test --cover"},
     {:test_nif, command: "mix test.nif"},
     {:test_cnode, command: "mix test.cnode", enabled: File.exists?("priv/maude_bridge")}

@@ -18,7 +18,7 @@ defmodule ExMaude.Verification.SearchRun do
   alias ExMaude.Telemetry
   alias ExMaude.Verification.Cancellation
 
-  @parser_version "ex_maude.search-run.v2"
+  @parser_version "ex_maude.search-run.v3"
   @solution ~r/^Solution\s+(\d+)\s+\(state\s+(\d+)\)$/m
   @max_output 16_777_216
   @max_bound 1_000_000
@@ -456,7 +456,7 @@ defmodule ExMaude.Verification.SearchRun do
   end
 
   defp check_echo(raw, command) do
-    if String.starts_with?(raw, Command.normalize(command)),
+    if ExMaude.Verification.CommandEcho.matches?(raw, Command.normalize(command)),
       do: :ok,
       else: {:error, :missing_command_echo}
   end
