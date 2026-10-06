@@ -11,6 +11,9 @@ defmodule ExMaude.Verification.DeadlineTest do
     max_depth: :unbounded,
     max_solutions: 2
   }
+  # Reserve setup headroom so startup expiry is exercised during model preload.
+  @startup_delay "1.5"
+  @startup_budget_ms 2500
 
   test "expired setup never starts executable identification" do
     {path, phase_file, _} = fake("0", "0", "0")
@@ -111,8 +114,8 @@ defmodule ExMaude.Verification.DeadlineTest do
   end
 
   test "startup and preloading consume one absolute budget" do
-    {path, phase_file, pid_file} = fake("0", "0", "0", "0.2")
-    deadline = System.monotonic_time(:millisecond) + 300
+    {path, phase_file, pid_file} = fake("0", "0", "0", @startup_delay)
+    deadline = System.monotonic_time(:millisecond) + @startup_budget_ms
 
     assert {:ok, receipt} =
              SearchRun.run(@model, finite_query(),
@@ -123,14 +126,14 @@ defmodule ExMaude.Verification.DeadlineTest do
 
     retain("startup-timeout", %{receipt: receipt, phases: File.read!(phase_file)})
     assert_timeout(receipt, deadline)
+    assert File.read!(phase_file) =~ "load"
     refute File.read!(phase_file) =~ "search"
     assert retired?(pid_file)
   end
 
   test "accepted cancellation preserves its disposition under a future deadline" do
     maude = ExMaude.Binary.find() || flunk("Maude executable required")
-    {:ok, cancellation} = Cancellation.start_link([])
-    on_exit(fn -> if Process.alive?(cancellation), do: GenServer.stop(cancellation) end)
+    cancellation = start_supervised!({Cancellation, []})
     assert :ok = Cancellation.request(cancellation)
 
     assert {:ok, receipt} =
@@ -148,11 +151,10 @@ defmodule ExMaude.Verification.DeadlineTest do
   defp finite_query, do: %{@query | max_depth: 2}
 
   test "recorded cancellation wins closure even when startup consumes the deadline" do
-    {path, phase_file, pid_file} = fake("0", "0", "0", "0.2")
-    {:ok, cancellation} = Cancellation.start_link([])
-    on_exit(fn -> if Process.alive?(cancellation), do: GenServer.stop(cancellation) end)
+    {path, phase_file, pid_file} = fake("0", "0", "0", @startup_delay)
+    cancellation = start_supervised!({Cancellation, []})
     assert :ok = Cancellation.request(cancellation)
-    deadline = System.monotonic_time(:millisecond) + 300
+    deadline = System.monotonic_time(:millisecond) + @startup_budget_ms
 
     assert {:ok, receipt} =
              SearchRun.run(@model, finite_query(),
@@ -163,6 +165,8 @@ defmodule ExMaude.Verification.DeadlineTest do
              )
 
     retain("cancelled-expiry", %{receipt: receipt, phases: File.read!(phase_file)})
+    assert File.read!(phase_file) =~ "load"
+    refute File.read!(phase_file) =~ "search"
     assert System.monotonic_time(:millisecond) >= deadline
     assert receipt.termination == :cancelled
     assert receipt.solutions == []
