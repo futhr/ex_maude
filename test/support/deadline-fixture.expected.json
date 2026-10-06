@@ -1,0 +1,45 @@
+{
+  "format": "ex_maude.deadline-fixture-hands.v1",
+  "cases": [
+    {
+      "id": "path-timeout",
+      "phase": "path",
+      "startup_delay_seconds": "0",
+      "search_delay_seconds": "0.1",
+      "budget_ms": 3000,
+      "operation_cap_ms": 10000,
+      "termination": "timeout",
+      "forbidden_phase": "path-finished"
+    },
+    {
+      "id": "probe-timeout",
+      "phase": "probe",
+      "startup_delay_seconds": "0",
+      "search_delay_seconds": "0",
+      "budget_ms": 3000,
+      "operation_cap_ms": 10000,
+      "termination": "timeout",
+      "forbidden_phase": "probe-finished"
+    },
+    {
+      "id": "startup-timeout",
+      "phase": "load",
+      "startup_delay_seconds": "1.2",
+      "search_delay_seconds": "0",
+      "budget_ms": 3000,
+      "operation_cap_ms": 10000,
+      "termination": "timeout",
+      "forbidden_phase": "search"
+    },
+    {
+      "id": "cancelled-expiry",
+      "phase": "load",
+      "startup_delay_seconds": "1.2",
+      "search_delay_seconds": "0",
+      "budget_ms": 3000,
+      "operation_cap_ms": 10000,
+      "termination": "cancelled",
+      "forbidden_phase": "search"
+    }
+  ]
+}
