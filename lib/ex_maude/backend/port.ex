@@ -182,6 +182,9 @@ defmodule ExMaude.Backend.Port do
   def init(opts), do: initialize(opts, nil)
 
   defp initialize(opts, owner) do
+    # Supervisor shutdown must run terminate/2 before the worker exits.
+    Process.flag(:trap_exit, true)
+
     maude_path = opts[:maude_path] || find_maude_path()
     pool = Keyword.get(opts, :pool, :ex_maude_pool)
 
@@ -204,10 +207,8 @@ defmodule ExMaude.Backend.Port do
           owner_ref: if(owner, do: Process.monitor(owner))
         }
 
-        # Receipt tasks can be killed at their absolute deadline while this
-        # worker is still starting. Retire the native process even when a
-        # killed BEAM process cannot run terminate/2.
-        maybe_guard_os_process(opts, state)
+        # Untrappable exits can skip terminate/2, including during startup.
+        guard_os_process(self(), state.os_pid, state.owner)
 
         case become_ready(state, preload_modules, startup_timeout) do
           {:ok, state} ->
@@ -397,7 +398,7 @@ defmodule ExMaude.Backend.Port do
     end)
   end
 
-  defp guard_retirement(:normal, _), do: :ok
+  defp guard_retirement(reason, _) when reason in [:normal, :shutdown], do: :ok
   defp guard_retirement({:shutdown, _}, _), do: :ok
   defp guard_retirement(_, os_pid), do: kill_os_process(os_pid)
 
@@ -405,11 +406,6 @@ defmodule ExMaude.Backend.Port do
     if opts[:isolated_preloads],
       do: opts[:preload_modules] || [],
       else: Preloads.for_pool(pool, opts[:preload_modules])
-  end
-
-  defp maybe_guard_os_process(opts, state) do
-    if opts[:isolated_preloads] || state.owner,
-      do: guard_os_process(self(), state.os_pid, state.owner)
   end
 
   defp remember_preloads(opts, pool, paths) do

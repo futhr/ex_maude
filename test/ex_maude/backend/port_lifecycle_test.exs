@@ -257,6 +257,23 @@ defmodule ExMaude.Backend.PortLifecycleTest do
   end
 
   describe "os process cleanup" do
+    test "supervisor shutdown kills a wedged native process" do
+      {pid, os_pid, caller} = start_wedged_worker()
+
+      assert :ok = stop_supervised(Port)
+      assert Task.await(caller) == :worker_stopped
+      refute Process.alive?(pid)
+      wait_until_dead(os_pid, 50)
+    end
+
+    test "an untrappable worker exit kills a wedged native process" do
+      {pid, os_pid, caller} = start_wedged_worker()
+
+      Process.exit(pid, :kill)
+      assert Task.await(caller) == :worker_stopped
+      wait_until_dead(os_pid, 50)
+    end
+
     test "the fake maude OS process is killed when the worker times out" do
       pid = start_fake_worker()
       %Port{os_pid: os_pid} = :sys.get_state(pid)
@@ -269,6 +286,38 @@ defmodule ExMaude.Backend.PortLifecycleTest do
       # `kill -0` probes for existence: non-zero exit means the pid is gone.
       wait_until_dead(os_pid, 50)
     end
+  end
+
+  defp start_wedged_worker do
+    pid = start_fake_worker()
+    %Port{os_pid: os_pid} = :sys.get_state(pid)
+
+    on_exit(fn ->
+      System.cmd("kill", ["-KILL", Integer.to_string(os_pid)], stderr_to_stdout: true)
+    end)
+
+    caller = Task.async(fn -> execute_until_stopped(pid) end)
+    wait_until_stopped(os_pid)
+    {pid, os_pid, caller}
+  end
+
+  defp execute_until_stopped(pid) do
+    Port.execute(pid, "hang", timeout: 5000)
+  catch
+    :exit, _ -> :worker_stopped
+  end
+
+  defp wait_until_stopped(os_pid) do
+    Enum.reduce_while(1..100, nil, fn _, _ ->
+      {state, 0} = System.cmd("ps", ["-o", "state=", "-p", Integer.to_string(os_pid)])
+
+      if String.starts_with?(String.trim(state), "T") do
+        {:halt, :ok}
+      else
+        Process.sleep(10)
+        {:cont, nil}
+      end
+    end) || flunk("native process did not reach the wedged state")
   end
 
   describe "real Maude integration" do
@@ -324,7 +373,7 @@ defmodule ExMaude.Backend.PortLifecycleTest do
           {:halt, :ok}
       end
     end) ||
-      flunk("OS process #{os_pid} still alive after timeout-triggered worker stop")
+      flunk("OS process #{os_pid} still alive after worker stop")
   end
 
   describe "startup preloads" do

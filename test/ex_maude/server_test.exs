@@ -283,11 +283,9 @@ defmodule ExMaude.ServerTest do
     test "an existing worker keeps its backend when application config changes" do
       fake_maude = Path.expand("../support/fake_maude.sh", __DIR__)
       previous = Application.get_env(:ex_maude, :backend)
-      {:ok, worker} = ExMaude.Backend.Port.start_link(maude_path: fake_maude, use_pty: false)
+      worker = start_supervised!({ExMaude.Backend.Port, maude_path: fake_maude, use_pty: false})
 
       on_exit(fn ->
-        if Process.alive?(worker), do: ExMaude.Backend.Port.stop(worker)
-
         if previous,
           do: Application.put_env(:ex_maude, :backend, previous),
           else: Application.delete_env(:ex_maude, :backend)
