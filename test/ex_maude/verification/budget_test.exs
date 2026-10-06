@@ -26,12 +26,19 @@ defmodule ExMaude.Verification.BudgetTest do
   end
 
   property "independent phase observations keep one fixed deadline" do
+    if directory = System.get_env("BUDGET_EVIDENCE_DIR") do
+      Code.ensure_loaded!(Budget)
+      {Budget, bytes, _} = :code.get_object_code(Budget)
+      File.write!(Path.join(directory, "producer.beam"), bytes, [:exclusive])
+    end
+
     check all(
             now <- integer(-1_000_000..1_000_000),
             remaining <- integer(-2..100),
             timeout <- integer(1..100),
             delays <- list_of(integer(0..100), length: 3),
-            max_runs: 300
+            max_runs: 300,
+            max_shrinking_steps: 1024
           ) do
       deadline = now + remaining
       clocks = Enum.scan(delays, now, &+/2)

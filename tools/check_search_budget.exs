@@ -52,7 +52,9 @@ defmodule ExMaude.BudgetCampaign do
         status == 0 || raise "baseline failed: #{seed}"
         String.contains?(log, "1 property, 17 tests, 0 failures") || raise "incomplete baseline"
         validate_records(directory, 300)
-        %{seed: seed, schedules: 300}
+        beam = File.read!(Path.join(directory, "producer.beam"))
+        {:ok, {ExMaude.Verification.Budget, _}} = :beam_lib.chunks(beam, [:exports])
+        %{seed: seed, schedules: 300, beam_digest: digest(beam)}
       end
 
     mutants = Enum.map(@mutants, &mutant(&1, archive, root, output, maude))
@@ -119,6 +121,8 @@ defmodule ExMaude.BudgetCampaign do
 
     File.write!(evidence <> ".log", log)
     File.cp!(path, evidence <> "-source.ex")
+    beam = File.read!(Path.join(evidence, "producer.beam"))
+    {:ok, {ExMaude.Verification.Budget, _}} = :beam_lib.chunks(beam, [:exports])
     status == 2 || raise "mutant did not fail ExUnit assertions: #{id}, #{status}"
 
     String.contains?(log, "1 property, 1 failure (2 excluded)") ||
@@ -130,15 +134,57 @@ defmodule ExMaude.BudgetCampaign do
       Path.wildcard(Path.join(evidence, "budget-*.etf"))
       |> Enum.reject(&String.ends_with?(&1, "-actual.etf"))
 
-    Enum.any?(originals, fn original ->
-      input = read(original)
+    observations =
+      Enum.map(originals, fn original ->
+        input = read(original)
+        actual = read(String.trim_trailing(original, ".etf") <> "-actual.etf")
+        actual == fault_expected(input, id) || raise "unexpected compiled fault outcome"
+        {original, input, actual}
+      end)
 
-      input.now == 0 and Enum.all?(input.delays, &(&1 == 0)) and
-        File.exists?(String.trim_trailing(original, ".etf") <> "-actual.etf")
-    end) || raise "missing minimal recorded token input"
+    wrong = Enum.filter(observations, fn {_, input, actual} -> input.expected != actual end)
+    wrong != [] || raise "no executed wrong fault outcome"
+
+    {record, input, actual} =
+      Enum.min_by(wrong, fn {_, value, _} ->
+        {value.delays, value.now, value.deadline, value.timeout}
+      end)
+
+    File.write!(Path.join(evidence, "reduced-original.etf"), :erlang.term_to_binary(input), [
+      :exclusive
+    ])
+
+    File.write!(Path.join(evidence, "reduced-actual.etf"), :erlang.term_to_binary(actual), [
+      :exclusive
+    ])
 
     File.rm_rf!(directory)
-    %{id: id, status: status, compiled: true, property_failure: true, reduction: true}
+
+    %{
+      id: id,
+      status: status,
+      compiled: true,
+      property_failure: true,
+      reduction: true,
+      source_digest: digest(File.read!(evidence <> "-source.ex")),
+      beam_digest: digest(beam),
+      reduced_original: Path.basename(record),
+      observations: length(observations),
+      wrong_observations: length(wrong)
+    }
+  end
+
+  defp fault_expected(input, id) do
+    Enum.map(input.clocks, fn now ->
+      left = input.deadline - now
+
+      cond do
+        left == 0 and id == "accept-expiry" -> {:ok, 0}
+        left <= 0 -> {:error, :expired}
+        id == "reset-budget" -> {:ok, input.timeout}
+        true -> {:ok, min(input.timeout, left)}
+      end
+    end)
   end
 
   defp property_line(path) do
