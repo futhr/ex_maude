@@ -1,6 +1,6 @@
 # Sobelow review for the non-Phoenix library
 
-Sobelow 0.15.0 scans the complete source tree in `mix check`. Its 22 reported
+Sobelow 0.16.0 scans the complete source tree in `mix check`. Its 22 reported
 findings are all low-confidence `Traversal.FileModule` warnings. The exact
 file, line, operation and variable set is retained in `sobelow-reviewed.json`.
 `tools/check_sobelow.exs` runs Sobelow, refuses every medium/high finding,
@@ -27,37 +27,7 @@ This disposition is limited to the exact recorded lines and current source
 flow. Any change to path provenance, temporary-directory construction or
 scanner behavior requires another review.
 
-The search receipt's unbounded mode moved eight reported source lines without
-changing their operations or path provenance. The reviewed JSON records the
-new line numbers; the scan still reports the same 24 low-confidence findings.
-
-`IoT.ReceiptRun` now pins its encoder and library identity from the loaded
-module code instead of reading `.beam` files. That removed file reads from the
-identity path and moved twelve reported lines up by sixteen, again without
-changing their operations or path provenance. The scan still reports the same
-24 low-confidence findings.
-
-The single-use search cancellation extension moves the eight SearchRun
-findings again. Executable reads still use the explicit host path; snapshot
-creation, permissions and removal still use library-generated paths. The
-additional cancellation-instance monitor removes the same generated directory
-after worker retirement. No new filesystem operation or untrusted path source
-was added. The complete scan retains the same 24 low-confidence findings and
-no medium/high findings; the JSON records their current locations.
-
-The absolute SearchRun deadline extension moves the same eight findings.
-Executable identification still reads the explicit validated host path; model
-snapshot creation, permissions and cleanup still use the generated private
-directory. Deadline checks and caller-owned unlinked Port startup add no file
-operation or path source. The complete scan retains the same 24 low-confidence
-operations and no medium/high findings; only those eight line locations change.
-
-Snapshot creation and cleanup now belong to an explicitly started private
-monitor. It generates the mode-0700 directory and fixed model filename itself,
-accepts bounded model bytes and permits only its owning caller to close the
-lease. A failed initial mkdir does not adopt or remove the path. Five reported
-snapshot operations replace the seven prior creation/cleanup sites; the
-executable stream remains the validated explicit host path. The complete scan
-now reports 22 exact reviewed low-confidence findings and no medium/high
-findings. The JSON records the moved stream and new snapshot locations; IoT
-operations are unchanged. Caller-provided paths never enter snapshot cleanup.
+Snapshot creation and cleanup belong to a private monitor. It generates the
+mode-0700 directory and fixed model filename, accepts bounded model bytes and
+permits only its owning caller to close the lease. A failed initial mkdir does
+not adopt or remove the path. Caller-provided paths never enter snapshot cleanup.

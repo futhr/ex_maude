@@ -90,7 +90,7 @@ defmodule ExMaude.MixProject do
       # Native code compilation
       {:elixir_make, "~> 0.8", runtime: false},
       # NIF — precompiled binaries downloaded at install time
-      {:rustler_precompiled, "~> 0.8"},
+      {:rustler_precompiled, "~> 0.10"},
       # Rustler only needed when force-building from source
       {:rustler, "~> 0.38", optional: true},
       # Development tools
@@ -105,7 +105,7 @@ defmodule ExMaude.MixProject do
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:benchee, "~> 1.3", only: :dev, runtime: false},
       {:benchee_markdown, "~> 0.3", only: :dev, runtime: false},
-      {:git_ops, "~> 2.6", only: :dev, runtime: false},
+      {:git_ops, "~> 2.12.3", only: :dev, runtime: false},
       {:doctest_formatter, "~> 0.4", only: [:dev, :test], runtime: false}
     ]
   end
