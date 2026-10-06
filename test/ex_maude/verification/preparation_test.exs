@@ -59,6 +59,7 @@ defmodule ExMaude.Verification.PreparationTest do
     path = stem <> ".sh"
     pid_file = stem <> ".pid"
     command_file = stem <> ".command"
+    pending_command = command_file <> ".pending"
 
     version =
       if phase == :version,
@@ -71,7 +72,8 @@ defmodule ExMaude.Verification.PreparationTest do
     printf '%s' "$$" > '#{pid_file}'
     printf 'Maude> '
     IFS= read -r line
-    printf '%s' "$line" > '#{command_file}'
+    printf '%s' "$line" > '#{pending_command}'
+    mv '#{pending_command}' '#{command_file}'
     kill -STOP "$$"
     """)
 
@@ -79,7 +81,7 @@ defmodule ExMaude.Verification.PreparationTest do
 
     on_exit(fn ->
       if File.exists?(pid_file), do: kill(File.read!(pid_file))
-      Enum.each([path, pid_file, command_file], &File.rm/1)
+      Enum.each([path, pid_file, command_file, pending_command], &File.rm/1)
     end)
 
     {path, pid_file, command_file}
