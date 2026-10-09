@@ -4,7 +4,7 @@ defmodule ExMaude.IoT.ReceiptRun do
   alias ExMaude.Backend.Port
   alias ExMaude.{Binary, Error, Parser}
   alias ExMaude.IoT.ConflictParser
-  alias ExMaude.Verification.Receipt
+  alias ExMaude.Verification.{Receipt, Snapshot}
 
   @schema "0.1.0"
   @profile "bundled-iot-v1"
@@ -29,7 +29,8 @@ defmodule ExMaude.IoT.ReceiptRun do
          {:ok, checker} <- checker_identity(),
          encoder_digest = module_digest(ExMaude.IoT.Encoder),
          library_digest = library_identity(),
-         {:ok, directory, model_path, checker_path} <- snapshot(source, checker) do
+         {:ok, lease, snapshot} <-
+           Snapshot.start_receipt(source, checker.executable, checker.prelude_source) do
       try do
         identity_sources = %{
           source: source,
@@ -45,7 +46,7 @@ defmodule ExMaude.IoT.ReceiptRun do
         {result, worker_epoch, phases} =
           if remaining > 0 do
             execute(
-              %{model_path: model_path, checker_path: checker_path},
+              snapshot,
               command,
               operation,
               remaining,
@@ -56,8 +57,11 @@ defmodule ExMaude.IoT.ReceiptRun do
              %{native: :not_started, parse: :not_run}}
           end
 
-        model_observation = observed_model_digest(model_path, source, worker_epoch)
-        checker_observation = observed_checker_digest(checker_path, checker, worker_epoch)
+        model_observation = observed_model_digest(snapshot.model_path, source, worker_epoch)
+
+        checker_observation =
+          observed_checker_digest(snapshot.checker_path, checker, worker_epoch)
+
         result = enforce_identity(result, model_observation, checker_observation)
         provisional_witness = witness(operation, result, opts, semantic)
         result = enforce_deadline(result, start_ms, opts)
@@ -86,7 +90,7 @@ defmodule ExMaude.IoT.ReceiptRun do
 
         {:ok, %Receipt{schema_version: @schema, semantic: semantic, execution: execution}}
       after
-        File.rm_rf(directory)
+        Snapshot.close(lease)
       end
     else
       {:error, %Error{} = error} ->
@@ -187,7 +191,8 @@ defmodule ExMaude.IoT.ReceiptRun do
       ExMaude.Command,
       ExMaude.Parser,
       ExMaude.IoT.ConflictParser,
-      ExMaude.Backend.Port
+      ExMaude.Backend.Port,
+      Snapshot
     ]
     |> Enum.map(&{&1, module_digest(&1)})
     |> :erlang.term_to_binary()
@@ -201,32 +206,6 @@ defmodule ExMaude.IoT.ReceiptRun do
   defp module_digest(module) do
     Code.ensure_loaded!(module)
     digest(module.module_info(:md5))
-  end
-
-  defp snapshot(source, checker) do
-    directory =
-      Path.join(
-        System.tmp_dir!(),
-        "ex_maude_receipt_" <> Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
-      )
-
-    with :ok <- File.mkdir(directory),
-         :ok <- File.chmod(directory, 0o700),
-         path = Path.join(directory, "iot-rules.maude"),
-         :ok <- File.write(path, source, [:binary, :exclusive]),
-         :ok <- File.chmod(path, 0o400),
-         checker_path = Path.join(directory, "maude"),
-         :ok <- File.write(checker_path, checker.executable, [:binary, :exclusive]),
-         :ok <- File.chmod(checker_path, 0o500),
-         prelude_path = Path.join(directory, "prelude.maude"),
-         :ok <- File.write(prelude_path, checker.prelude_source, [:binary, :exclusive]),
-         :ok <- File.chmod(prelude_path, 0o400) do
-      {:ok, directory, path, checker_path}
-    else
-      {:error, reason} ->
-        File.rm_rf(directory)
-        {:error, Error.new(:load_error, "Cannot snapshot bundled model: #{inspect(reason)}")}
-    end
   end
 
   defp semantic(operation, command, identities, opts, sources) do
@@ -270,11 +249,10 @@ defmodule ExMaude.IoT.ReceiptRun do
 
     task =
       Task.async(fn ->
-        Process.flag(:trap_exit, true)
         startup = max(1, remaining_ms_from(deadline))
 
         try do
-          case Port.start_link(
+          case Port.start(
                  maude_path: snapshot.checker_path,
                  preload_modules: [snapshot.model_path],
                  isolated_preloads: true,

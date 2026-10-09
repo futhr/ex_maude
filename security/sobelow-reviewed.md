@@ -1,6 +1,6 @@
 # Sobelow review for the non-Phoenix library
 
-Sobelow 0.16.0 scans the complete source tree in `mix check`. Its 22 reported
+Sobelow 0.16.0 scans the complete source tree in `mix check`. Its 12 reported
 findings are all low-confidence `Traversal.FileModule` warnings. The exact
 file, line, operation and variable set is retained in `sobelow-reviewed.json`.
 `tools/check_sobelow.exs` runs Sobelow, refuses every medium/high finding,

@@ -8,91 +8,31 @@
       "variable": "Elixir.ExMaude"
     },
     {
-      "line": 89,
-      "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "directory"
-    },
-    {
-      "line": 166,
+      "line": 170,
       "type": "Traversal.FileModule: Directory Traversal in `File.read`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "path"
     },
     {
-      "line": 167,
+      "line": 171,
       "type": "Traversal.FileModule: Directory Traversal in `File.read`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "prelude"
     },
     {
-      "line": 213,
-      "type": "Traversal.FileModule: Directory Traversal in `File.mkdir`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "directory"
-    },
-    {
-      "line": 214,
-      "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "directory"
-    },
-    {
-      "line": 216,
-      "type": "Traversal.FileModule: Directory Traversal in `File.write`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "path"
-    },
-    {
-      "line": 217,
-      "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "path"
-    },
-    {
-      "line": 219,
-      "type": "Traversal.FileModule: Directory Traversal in `File.write`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "checker_path"
-    },
-    {
-      "line": 220,
-      "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "checker_path"
-    },
-    {
-      "line": 222,
-      "type": "Traversal.FileModule: Directory Traversal in `File.write`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "prelude_path"
-    },
-    {
-      "line": 223,
-      "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "prelude_path"
-    },
-    {
-      "line": 227,
-      "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
-      "file": "lib/ex_maude/iot/receipt_run.ex",
-      "variable": "directory"
-    },
-    {
-      "line": 452,
+      "line": 430,
       "type": "Traversal.FileModule: Directory Traversal in `File.read`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "model_path"
     },
     {
-      "line": 461,
+      "line": 439,
       "type": "Traversal.FileModule: Directory Traversal in `File.read`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "checker_path"
     },
     {
-      "line": 462,
+      "line": 440,
       "type": "Traversal.FileModule: Directory Traversal in `File.read`",
       "file": "lib/ex_maude/iot/receipt_run.ex",
       "variable": "Elixir.Path"
@@ -104,31 +44,31 @@
       "variable": "path"
     },
     {
-      "line": 54,
+      "line": 82,
       "type": "Traversal.FileModule: Directory Traversal in `File.mkdir`",
       "file": "lib/ex_maude/verification/snapshot.ex",
       "variable": "state"
     },
     {
-      "line": 61,
+      "line": 89,
       "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
       "file": "lib/ex_maude/verification/snapshot.ex",
       "variable": "state"
     },
     {
-      "line": 62,
+      "line": 103,
       "type": "Traversal.FileModule: Directory Traversal in `File.write`",
       "file": "lib/ex_maude/verification/snapshot.ex",
-      "variable": "state"
+      "variable": "path"
     },
     {
-      "line": 63,
+      "line": 104,
       "type": "Traversal.FileModule: Directory Traversal in `File.chmod`",
       "file": "lib/ex_maude/verification/snapshot.ex",
-      "variable": "state"
+      "variable": "path"
     },
     {
-      "line": 105,
+      "line": 154,
       "type": "Traversal.FileModule: Directory Traversal in `File.rm_rf`",
       "file": "lib/ex_maude/verification/snapshot.ex",
       "variable": "directory"
