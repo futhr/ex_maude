@@ -16,7 +16,7 @@ defmodule ExMaude.EchoCampaign do
     Enum.each(Application.spec(:ex_maude, :modules), &Code.ensure_loaded!/1)
     Enum.each([:a, :b, :bound, :space, :command, :echo, :changed], &Atom.to_string/1)
     root = File.cwd!()
-    output = Path.join(root, "_build/echo-campaign-#{nonce()}")
+    output = Path.join(Mix.Project.build_path(), "echo-campaign-#{nonce()}")
     File.mkdir_p!(output)
 
     {paths, 0} =
@@ -34,6 +34,13 @@ defmodule ExMaude.EchoCampaign do
     :ok = :erl_tar.create(String.to_charlist(archive), Enum.map(paths, &String.to_charlist/1), [])
     maude = ExMaude.Binary.find() || raise "Maude executable is required"
 
+    baseline_paths = %{
+      deps: Path.join(output, "otp28-baseline-deps"),
+      build: Path.join(output, "otp28-baseline-build")
+    }
+
+    File.cp_r!(Mix.Project.deps_path(), baseline_paths.deps)
+
     baseline =
       for seed <- @seeds do
         directory = Path.join(output, "seed-#{seed}")
@@ -48,7 +55,7 @@ defmodule ExMaude.EchoCampaign do
           Integer.to_string(seed)
         ]
 
-        {log, status} = mix(root, command, directory, maude)
+        {log, status} = mix(root, command, directory, maude, baseline_paths)
         File.write!(directory <> ".log", log)
         status == 0 || raise "baseline failed: #{seed}"
         String.contains?(log, "1 property, 5 tests, 0 failures") || raise "incomplete baseline"
@@ -56,7 +63,7 @@ defmodule ExMaude.EchoCampaign do
         %{seed: seed, schedules: 300}
       end
 
-    mutants = Enum.map(@mutants, &mutant(&1, archive, root, output, maude))
+    mutants = Enum.map(@mutants, &mutant(&1, archive, baseline_paths, output, maude))
 
     {current_paths, 0} =
       System.cmd("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
@@ -88,58 +95,76 @@ defmodule ExMaude.EchoCampaign do
     )
   end
 
-  defp mutant({id, file, before, replacement}, archive, root, output, maude) do
+  defp mutant({id, file, before, replacement}, archive, baseline_paths, output, maude) do
     directory =
       Path.join(System.tmp_dir!(), "ex_maude_mutant_#{id}_#{nonce()}")
 
-    File.mkdir_p!(directory)
-    :ok = :erl_tar.extract(String.to_charlist(archive), [{:cwd, String.to_charlist(directory)}])
-    File.cp_r!(Path.join(root, "deps"), Path.join(directory, "deps"))
-    File.mkdir_p!(Path.join(directory, "_build"))
-    File.cp_r!(Path.join(root, "_build/test"), Path.join(directory, "_build/test"))
-    path = Path.join(directory, file)
-    source = File.read!(path)
-    length(:binary.matches(source, before)) == 1 || raise "mutant does not have one exact target"
-    File.write!(path, String.replace(source, before, replacement, global: false))
-    evidence = Path.join(output, id)
+    File.mkdir!(directory)
 
-    {compile, compile_status} =
-      mix(directory, ["compile", "--force", "--warnings-as-errors"], evidence, maude, "test")
+    try do
+      :ok = :erl_tar.extract(String.to_charlist(archive), [{:cwd, String.to_charlist(directory)}])
+      paths = %{deps: Path.join(directory, "deps"), build: Path.join(directory, "_build/test")}
+      File.cp_r!(baseline_paths.deps, paths.deps)
+      File.mkdir_p!(Path.dirname(paths.build))
+      File.cp_r!(baseline_paths.build, paths.build)
+      # Rebuild the producer so its priv links belong to this mutant checkout.
+      File.rm_rf!(Path.join(paths.build, "lib/ex_maude"))
+      path = Path.join(directory, file)
+      source = File.read!(path)
 
-    File.write!(evidence <> "-compile.log", compile)
-    compile_status == 0 || raise "mutation compilation failed: #{id}"
-    line = property_line(Path.join(directory, @test))
+      length(:binary.matches(source, before)) == 1 ||
+        raise "mutant does not have one exact target"
 
-    {log, status} =
-      mix(
-        directory,
-        ["test", "--include", "integration", "#{@test}:#{line}", "--seed", "20261005"],
-        evidence,
-        maude
-      )
+      File.write!(path, String.replace(source, before, replacement, global: false))
+      evidence = Path.join(output, id)
 
-    File.write!(evidence <> ".log", log)
-    File.cp!(path, evidence <> "-source.ex")
-    status == 2 || raise "mutant did not fail ExUnit assertions: #{id}, #{status}"
+      {compile, compile_status} =
+        mix(
+          directory,
+          ["compile", "--force", "--warnings-as-errors"],
+          evidence,
+          maude,
+          paths,
+          "test"
+        )
 
-    String.contains?(log, "1 property, 1 failure (4 excluded)") ||
-      raise "missing property failure"
+      File.write!(evidence <> "-compile.log", compile)
+      compile_status == 0 || raise "mutation compilation failed: #{id}"
+      line = property_line(Path.join(directory, @test))
 
-    String.contains?(log, "StreamData.shrink_failure") || raise "missing reducer execution"
+      {log, status} =
+        mix(
+          directory,
+          ["test", "--include", "integration", "#{@test}:#{line}", "--seed", "20261005"],
+          evidence,
+          maude,
+          paths
+        )
 
-    originals =
-      Path.wildcard(Path.join(evidence, "echo-*.etf"))
-      |> Enum.reject(&String.ends_with?(&1, "-actual.etf"))
+      File.write!(evidence <> ".log", log)
+      File.cp!(path, evidence <> "-source.ex")
+      status == 2 || raise "mutant did not fail ExUnit assertions: #{id}, #{status}"
 
-    Enum.any?(originals, fn original ->
-      input = read(original)
+      String.contains?(log, "1 property, 1 failure (4 excluded)") ||
+        raise "missing property failure"
 
-      input.a == 0 and input.b == 0 and input.bound == 1 and
-        File.exists?(String.trim_trailing(original, ".etf") <> "-actual.etf")
-    end) || raise "missing minimal recorded token input"
+      String.contains?(log, "StreamData.shrink_failure") || raise "missing reducer execution"
 
-    File.rm_rf!(directory)
-    %{id: id, status: status, compiled: true, property_failure: true, reduction: true}
+      originals =
+        Path.wildcard(Path.join(evidence, "echo-*.etf"))
+        |> Enum.reject(&String.ends_with?(&1, "-actual.etf"))
+
+      Enum.any?(originals, fn original ->
+        input = read(original)
+
+        input.a == 0 and input.b == 0 and input.bound == 1 and
+          File.exists?(String.trim_trailing(original, ".etf") <> "-actual.etf")
+      end) || raise "missing minimal recorded token input"
+
+      %{id: id, status: status, compiled: true, property_failure: true, reduction: true}
+    after
+      File.rm_rf!(directory)
+    end
   end
 
   defp property_line(path) do
@@ -149,7 +174,7 @@ defmodule ExMaude.EchoCampaign do
     |> Kernel.+(1)
   end
 
-  defp mix(directory, args, evidence, maude, environment \\ "test") do
+  defp mix(directory, args, evidence, maude, paths, environment \\ "test") do
     File.mkdir_p!(evidence)
 
     System.cmd("mise", ["exec", "elixir@1.19.4-otp-28", "erlang@28.5", "--", "mix" | args],
@@ -157,6 +182,10 @@ defmodule ExMaude.EchoCampaign do
       stderr_to_stdout: true,
       env: [
         {"MIX_ENV", environment},
+        {"MIX_BUILD_PATH", paths.build},
+        {"MIX_BUILD_ROOT", nil},
+        {"MIX_DEPS_PATH", paths.deps},
+        {"MIX_LOCKFILE", nil},
         {"EX_MAUDE_BUILD", "0"},
         {"EX_MAUDE_BUILD_CNODE", "0"},
         {"MAUDE_PATH", maude},
