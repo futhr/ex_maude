@@ -5,6 +5,37 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.5.0](https://github.com/futhr/ex_maude/compare/v0.4.3...v0.5.0) (2026-10-10)
+
+
+
+
+### Features:
+
+* enforce absolute search deadlines by Tobias Bohwalli
+
+* decode complete verification paths by Tobias Bohwalli
+
+* cancel isolated verification searches by Tobias Bohwalli
+
+### Bug Fixes:
+
+* keep native builds disabled in mutation campaign checkouts
+
+* isolate mutation campaign build caches by futhr
+
+* retire receipt snapshots when callers exit by futhr
+
+* port: retire native children on worker shutdown by futhr
+
+* refuse incomplete executable identity by Tobias Bohwalli
+
+* retire search preparation on caller loss by Tobias Bohwalli
+
+* preserve search echo token identity by Tobias Bohwalli
+
+* receipt: pin code identity from loaded modules by Tobias Bohwalli
+
 ## [v0.4.3](https://github.com/futhr/ex_maude/compare/v0.4.2...v0.4.3) (2026-09-16)
 
 
