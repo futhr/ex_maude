@@ -100,8 +100,8 @@ jobs:
         id: setup-beam
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          elixir-version: "1.19"
-          otp-version: "28"
+          elixir-version: "1.20"
+          otp-version: "29"
 
       - name: Restore deps cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -153,8 +153,8 @@ jobs:
         id: setup-beam
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          elixir-version: "1.19"
-          otp-version: "28"
+          elixir-version: "1.20"
+          otp-version: "29"
 
       - name: Restore deps cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -191,8 +191,8 @@ jobs:
         id: setup-beam
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          elixir-version: "1.19"
-          otp-version: "28"
+          elixir-version: "1.20"
+          otp-version: "29"
 
       - name: Restore deps cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -238,8 +238,8 @@ jobs:
         id: setup-beam
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          elixir-version: "1.19"
-          otp-version: "28"
+          elixir-version: "1.20"
+          otp-version: "29"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4

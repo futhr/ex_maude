@@ -60,8 +60,8 @@ defmodule ExMaude.PreparationCampaign do
     maude = ExMaude.Binary.find() || raise "Maude executable is required"
 
     baseline_paths = %{
-      deps: Path.join(output, "otp28-baseline-deps"),
-      build: Path.join(output, "otp28-baseline-build")
+      deps: Path.join(output, "otp29-baseline-deps"),
+      build: Path.join(output, "otp29-baseline-build")
     }
 
     File.cp_r!(Mix.Project.deps_path(), baseline_paths.deps)
@@ -86,7 +86,10 @@ defmodule ExMaude.PreparationCampaign do
         {log, status} = mix(root, command, directory, maude, baseline_paths)
         File.write!(directory <> ".log", log)
         status == 0 || raise "baseline failed: #{seed}"
-        String.contains?(log, "2 properties, 7 tests, 0 failures") || raise "incomplete baseline"
+
+        String.contains?(log, "Result: 9 passed (2 properties, 7 tests)") ||
+          raise "incomplete baseline"
+
         validate_records(directory, 300)
         %{seed: seed, snapshot_schedules: 300, subprocess_schedules: 300}
       end
@@ -173,7 +176,8 @@ defmodule ExMaude.PreparationCampaign do
       File.cp!(path, evidence <> "-source.ex")
       status == 2 || raise "mutant did not fail ExUnit assertions: #{id}, #{status}"
 
-      String.contains?(log, "1 property, 1 failure") ||
+      (Regex.match?(~r/^Result: 0\/1 passed(?:, \d+ excluded)?$/m, log) and
+         String.contains?(log, "\nFailed: 1 property\n")) ||
         raise "missing property failure"
 
       String.contains?(log, "StreamData.shrink_failure") || raise "missing reducer execution"
@@ -211,8 +215,8 @@ defmodule ExMaude.PreparationCampaign do
       "mise",
       [
         "exec",
-        "elixir@1.19.4-otp-28",
-        "erlang@28.5",
+        "elixir@1.20.4-otp-29",
+        "erlang@29.0.4",
         "--",
         "env",
         "EX_MAUDE_BUILD=0",

@@ -68,7 +68,7 @@ Releases are managed by maintainers using git_ops:
 4. The tag starts the precompiled-NIF workflow; Hex publishing runs only after
    that workflow succeeds and its exact tagged commit is verified
 
-The publishing runner installs the project's pinned Elixir 1.19/OTP 28 baseline
+The publishing runner installs the project's pinned Elixir 1.20/OTP 29 baseline
 with mise for the mutation campaigns, then runs the complete gate on Elixir
 1.20/OTP 29. If publishing fails before registry publication, fix the publishing
 workflow on `main` and dispatch `Publish` with the successful native workflow's
