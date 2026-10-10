@@ -221,7 +221,19 @@ defmodule ExMaude.BudgetCampaign do
   defp mix(directory, args, evidence, maude, paths, environment \\ "test") do
     File.mkdir_p!(evidence)
 
-    System.cmd("mise", ["exec", "elixir@1.19.4-otp-28", "erlang@28.5", "--", "mix" | args],
+    # Set native-build policy after mise has applied the checkout's environment.
+    System.cmd(
+      "mise",
+      [
+        "exec",
+        "elixir@1.19.4-otp-28",
+        "erlang@28.5",
+        "--",
+        "env",
+        "EX_MAUDE_BUILD=0",
+        "EX_MAUDE_BUILD_CNODE=0",
+        "mix" | args
+      ],
       cd: directory,
       stderr_to_stdout: true,
       env: [
@@ -230,8 +242,6 @@ defmodule ExMaude.BudgetCampaign do
         {"MIX_BUILD_ROOT", nil},
         {"MIX_DEPS_PATH", paths.deps},
         {"MIX_LOCKFILE", nil},
-        {"EX_MAUDE_BUILD", "0"},
-        {"EX_MAUDE_BUILD_CNODE", "0"},
         {"MAUDE_PATH", maude},
         {"BUDGET_EVIDENCE_DIR", evidence},
         {"MISE_ACTIVATE_AGGRESSIVE", "1"}
