@@ -4,34 +4,68 @@ on:
   workflow_run:
     workflows: ["Build precompiled NIFs"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      nif_run_id:
+        description: Successful tagged Build precompiled NIFs run to publish
+        required: true
+        type: string
+
+concurrency:
+  group: publish-${{ github.event.workflow_run.id || inputs.nif_run_id }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   publish:
     name: Publish to Hex.pm
     runs-on: ubuntu-latest
     if: >-
-      ${{ github.event.workflow_run.conclusion == 'success' &&
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_repository.full_name == github.repository }}
+          github.event.workflow_run.head_repository.full_name == github.repository) }}
 
     steps:
+      - name: Resolve successful tagged native build
+        id: native_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NIF_RUN_ID: ${{ github.event.workflow_run.id || inputs.nif_run_id }}
+        run: |
+          [[ "${NIF_RUN_ID}" =~ ^[0-9]+$ ]]
+          metadata="${RUNNER_TEMP}/native-release-run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${NIF_RUN_ID}" > "${metadata}"
+          release_sha="$(jq -er --arg repository "${GITHUB_REPOSITORY}" 'select(.conclusion == "success" and .event == "push" and .path == ".github/workflows/release.yml" and .head_repository.full_name == $repository and (.head_branch | test("^v[0-9]+[.][0-9]+[.][0-9]+([-.][0-9A-Za-z.-]+)?$"))) | .head_sha | select(test("^[0-9a-f]{40}$"))' "${metadata}")"
+          release_tag="$(jq -er '.head_branch' "${metadata}")"
+          echo "sha=${release_sha}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${release_tag}" >> "${GITHUB_OUTPUT}"
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ steps.native_release.outputs.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify release provenance
         env:
-          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_SHA: ${{ steps.native_release.outputs.sha }}
+          NATIVE_RELEASE_TAG: ${{ steps.native_release.outputs.tag }}
         run: |
           project_version="$(sed -n 's/^  @version "\(.*\)"/\1/p' mix.exs | head -n1)"
           release_tag="v${project_version}"
+          test "${release_tag}" = "${NATIVE_RELEASE_TAG}"
           git fetch --force origin "refs/tags/${release_tag}:refs/tags/${release_tag}"
           test "$(git rev-list -n1 "${release_tag}")" = "${RELEASE_SHA}"
+
+      - name: Set up mutation campaign baseline
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          add_shims_to_path: false
 
       - name: Set up Elixir
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1

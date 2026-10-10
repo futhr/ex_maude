@@ -68,6 +68,14 @@ Releases are managed by maintainers using git_ops:
 4. The tag starts the precompiled-NIF workflow; Hex publishing runs only after
    that workflow succeeds and its exact tagged commit is verified
 
+The publishing runner installs the project's pinned Elixir 1.19/OTP 28 baseline
+with mise for the mutation campaigns, then runs the complete gate on Elixir
+1.20/OTP 29. If publishing fails before registry publication, fix the publishing
+workflow on `main` and dispatch `Publish` with the successful native workflow's
+`nif_run_id`. Recovery revalidates that run's repository, workflow, tag, outcome
+and commit before checking out the original release source. It reruns the full
+gate and retains the existing tag and native release assets.
+
 ### What the tag triggers
 
 The `v*` tag drives a two-stage pipeline:
