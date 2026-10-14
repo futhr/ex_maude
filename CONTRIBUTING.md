@@ -99,5 +99,5 @@ Open an issue for questions or discussions.
 The complete `mix check --no-retry` gate includes Rust tests and RustSec advisory
 checks. Without `--no-retry`, ex_check may run only the tools that failed on the
 previous invocation.
-Install the audit tool with `cargo install cargo-audit --locked --version 0.22.1`.
+Install the audit tool with `cargo install cargo-audit --locked --version 0.22.2`.
 Release artifacts and native CI use Rust 1.91.1 with the committed Cargo lockfile.

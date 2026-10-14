@@ -50,7 +50,7 @@ jobs:
 
       - name: Setup Rust for NIF coverage
         if: matrix.elixir == '1.20' && matrix.otp == '29'
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: "1.91.1"
 
@@ -135,7 +135,7 @@ jobs:
         run: |
           install_dir="${RUNNER_TEMP}/actionlint"
           mkdir -p "${install_dir}"
-          GOBIN="${install_dir}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          GOBIN="${install_dir}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           "${install_dir}/actionlint"
 
       - name: Check shell scripts
@@ -242,7 +242,7 @@ jobs:
           otp-version: "29"
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: "1.91.1"
 
@@ -324,7 +324,7 @@ jobs:
           otp-version: "29"
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: "1.91.1"
           components: rustfmt, clippy
@@ -340,7 +340,7 @@ jobs:
 
       - name: Rust security audit
         run: |
-          cargo install cargo-audit --locked --version 0.22.1
+          cargo install cargo-audit --locked --version 0.22.2
           cargo audit --file native/ex_maude_nif/Cargo.lock
 
       - name: C format and static analysis

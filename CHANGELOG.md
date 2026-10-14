@@ -5,6 +5,13 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## Unreleased
+
+### Changed
+
+- Refresh Elixir dependency locks, update the native Rustler crate to 0.39, and refresh pinned CI actions and audit tools.
+
+
 ## [v0.5.0](https://github.com/futhr/ex_maude/compare/v0.4.3...v0.5.0) (2026-10-10)
 
 

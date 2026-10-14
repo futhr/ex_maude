@@ -63,7 +63,7 @@ jobs:
           test "$(git rev-list -n1 "${release_tag}")" = "${RELEASE_SHA}"
 
       - name: Set up mutation campaign baseline
-        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           add_shims_to_path: false
 
@@ -75,7 +75,7 @@ jobs:
           otp-version: "29"
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: "1.91.1"
           components: rustfmt, clippy
@@ -94,7 +94,7 @@ jobs:
         run: mix deps.get
 
       - name: Install Rust audit tool
-        run: cargo install cargo-audit --locked --version 0.22.1
+        run: cargo install cargo-audit --locked --version 0.22.2
 
       - name: Run complete release gate
         env:
