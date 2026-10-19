@@ -174,15 +174,24 @@ defmodule ExMaude.ServerTest do
 
     @tag :integration
     test "handles timeout", %{maude_available: true} do
-      {:ok, pid} = Server.start_link([])
+      pid =
+        start_supervised!(%{
+          id: :timeout_server,
+          start: {Server, :start_link, [[]]},
+          restart: :temporary
+        })
+
+      ref = Process.monitor(pid)
 
       # Very short timeout may or may not fail depending on system speed
-      # We just verify it returns either :ok or :timeout without crashing
-      result = Server.execute(pid, "reduce in NAT : 1 + 1 .", timeout: 1)
+      # A timeout retires the worker; its supervisor must own that exit.
+      case Server.execute(pid, "reduce in NAT : 1 + 1 .", timeout: 1) do
+        {:ok, "2"} ->
+          GenServer.stop(pid)
 
-      assert match?({:ok, _}, result) or match?({:error, %ExMaude.Error{type: :timeout}}, result)
-
-      GenServer.stop(pid)
+        {:error, %ExMaude.Error{type: :timeout}} ->
+          assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, :command_timeout}}, 1_000
+      end
     end
 
     @tag :integration

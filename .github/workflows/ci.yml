@@ -336,7 +336,11 @@ jobs:
         run: cargo clippy --manifest-path native/ex_maude_nif/Cargo.toml --lib -- -D warnings
 
       - name: Rust tests
-        run: cargo test --manifest-path native/ex_maude_nif/Cargo.toml
+        run: cargo test --locked --manifest-path native/ex_maude_nif/Cargo.toml
+
+      # BEAM supplies the NIF symbols; the NIF jobs exercise it inside the VM.
+      - name: Build Rust NIF
+        run: cargo build --locked --release --manifest-path native/ex_maude_nif/Cargo.toml
 
       - name: Rust security audit
         run: |

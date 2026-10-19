@@ -29,6 +29,11 @@ sobelow_command = "mix run tools/check_sobelow.exs"
      command: "cargo test --locked",
      cd: "native/ex_maude_nif",
      enabled: File.dir?("native/ex_maude_nif")},
+    # BEAM supplies the NIF symbols; test_nif exercises it inside the VM.
+    {:rust_build,
+     command: "cargo build --locked --release",
+     cd: "native/ex_maude_nif",
+     enabled: File.dir?("native/ex_maude_nif")},
     {:rust_audit,
      command: "cargo audit", cd: "native/ex_maude_nif", enabled: File.dir?("native/ex_maude_nif")},
     {:mix_audit, command: "mix deps.audit"},

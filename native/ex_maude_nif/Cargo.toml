@@ -11,6 +11,12 @@ rust-version = "1.91"
 [lib]
 name = "ex_maude_nif"
 crate-type = ["cdylib"]
+# The loadable NIF needs BEAM symbols. Test its VM-independent reader directly.
+test = false
+
+[[test]]
+name = "response_reader"
+path = "src/response.rs"
 
 [dependencies]
 rustler = "0.39"

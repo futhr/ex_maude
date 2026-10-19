@@ -177,9 +177,9 @@ defmodule Mix.Tasks.Maude.InstallTest do
   end
 
   describe "version normalization" do
-    @tag :integration
+    # Keep GitHub requests behind the explicit network opt-in.
     @tag :network
-    test "accepts version without Maude prefix" do
+    test "accepts version without Maude prefix", %{tmp_dir: tmp_dir} do
       output =
         capture_io(fn ->
           try do
@@ -187,7 +187,7 @@ defmodule Mix.Tasks.Maude.InstallTest do
               "--version",
               "3.5.1",
               "--path",
-              "/tmp/maude-test-#{:rand.uniform(10000)}"
+              Path.join(tmp_dir, "maude-bin")
             ])
           rescue
             Mix.Error -> :ok
@@ -197,9 +197,8 @@ defmodule Mix.Tasks.Maude.InstallTest do
       assert output =~ "3.5.1" or output =~ "Maude3.5.1" or output =~ "Detecting platform"
     end
 
-    @tag :integration
     @tag :network
-    test "accepts version with Maude prefix" do
+    test "accepts version with Maude prefix", %{tmp_dir: tmp_dir} do
       output =
         capture_io(fn ->
           try do
@@ -207,7 +206,7 @@ defmodule Mix.Tasks.Maude.InstallTest do
               "--version",
               "Maude3.5.1",
               "--path",
-              "/tmp/maude-test-#{:rand.uniform(10000)}"
+              Path.join(tmp_dir, "maude-bin")
             ])
           rescue
             Mix.Error -> :ok
@@ -218,7 +217,6 @@ defmodule Mix.Tasks.Maude.InstallTest do
       assert output =~ "3.5.1" or output =~ "Maude3.5.1" or output =~ "Detecting platform"
     end
 
-    @tag :integration
     @tag :network
     test "reports unknown version", %{tmp_dir: tmp_dir} do
       install_path = Path.join(tmp_dir, "maude-unknown-version")
