@@ -284,6 +284,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Elixir
+        id: setup-beam
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
           elixir-version: "1.20"
@@ -295,7 +296,7 @@ jobs:
           path: |
             deps
             _build
-          key: cnode-${{ runner.os }}-${{ hashFiles('**/mix.lock', 'c_src/**') }}
+          key: cnode-${{ runner.os }}-${{ steps.setup-beam.outputs.otp-version }}-${{ steps.setup-beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock', 'c_src/**') }}
 
       - name: Install dependencies
         run: mix deps.get

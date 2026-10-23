@@ -62,11 +62,17 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 Releases are managed by maintainers using git_ops:
 
-1. Ensure all tests pass: `mix check --no-retry`
-2. Run `mix release` (alias for `mix git_ops.release`) — updates changelog, bumps version, commits, and tags
-3. Push with tags: `git push --follow-tags`
-4. The tag starts the precompiled-NIF workflow; Hex publishing runs only after
-   that workflow succeeds and its exact tagged commit is verified
+1. Complete changes on `main` and pass `mix check --no-retry`.
+2. Run `mix release` (alias for `mix git_ops.release`) to generate the changelog
+   and version updates. Answer no to the commit-and-tag prompt while validating
+   the release. Do not hand-edit the generated changelog.
+3. Review the generated diff, rerun the complete gate and commit the release
+   updates on `main` with the generated release commit subject.
+4. Push only `main` and wait for CI to pass on that exact release commit.
+5. Create an annotated version tag from the generated release notes on the
+   validated commit, then push only that tag. It starts the precompiled-NIF
+   workflow; Hex publishing runs only after all native targets succeed and
+   the exact tagged commit is verified.
 
 The publishing runner installs the project's pinned Elixir 1.20/OTP 29 baseline
 with mise for the mutation campaigns, then runs the complete gate on Elixir
@@ -101,3 +107,15 @@ checks. Without `--no-retry`, ex_check may run only the tools that failed on the
 previous invocation.
 Install the audit tool with `cargo install cargo-audit --locked --version 0.22.2`.
 Release artifacts and native CI use Rust 1.91.1 with the committed Cargo lockfile.
+
+Dependency/build and PLT caches use exact installed Elixir and OTP versions,
+including every restore prefix. Regression checks change each runtime patch
+independently to ensure caches cannot cross that boundary.
+
+The publishing workflow checks for a clean source tree before generating the
+NIF checksum file. After package validation it retains the built archive,
+publishes to Hex, compares the registry archive byte for byte, and attests those
+registry bytes. Verify package contents, all eight native asset checksums,
+documentation and signed provenance before cleaning generated outputs. The
+`workflow_run` publisher runs from `main`; its attestation identifies that
+workflow revision, while the native-run and tag checks select the release source.
