@@ -5,6 +5,23 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.5.1](https://github.com/futhr/ex_maude/compare/v0.5.0...v0.5.1) (2026-10-23)
+
+
+
+
+### Bug Fixes:
+
+* ci: exercise native backends from clean checkouts by Tobias Bohwalli
+
+* ci: isolate native caches and verify published packages by Tobias Bohwalli
+
+* ci: repair native checks and test process ownership by futhr
+
+* tooling: align mutation campaigns and quality gates with Elixir 1.20 by futhr
+
+* ci: install mutation toolchain and recover tagged publishing by futhr
+
 ## Unreleased
 
 ### Changed
