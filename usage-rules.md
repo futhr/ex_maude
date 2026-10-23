@@ -94,9 +94,13 @@ query and executable in its receipt. A solution limit, timeout, output
 truncation, worker loss or parser error is inconclusive for a no-counterexample
 claim. Query fields in this initial API exclude Maude command delimiters. A
 force-stopped caller retires its isolated OS worker; it cannot receive a typed
-cancellation result after termination. State-count limits and a typed cancellation outcome remain
-unsupported, so this API does not yet cover every completion/trace outcome
-required by Conjunct CJ8-04.
+cancellation result after termination. For a typed `:cancelled` receipt, pass a
+host-supervised, single-use `ExMaude.Verification.Cancellation` PID as
+`:cancellation` and call `Cancellation.request/1`; await the SearchRun result
+after the request is recorded. Cancellation preserves run identity and clears
+findings after worker retirement. It does not interrupt executable identification
+or model preparation. See the [cancellation contract](docs/specs/search-run-cancellation.md).
+State-count limits and the broader positive-proof profile remain unsupported.
 
 ### Loading Modules
 

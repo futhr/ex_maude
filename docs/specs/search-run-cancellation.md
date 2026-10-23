@@ -50,8 +50,8 @@ The lifecycle uses [GenServer stop semantics](https://hexdocs.pm/elixir/GenServe
 and [OTP process monitors](https://www.erlang.org/docs/28/system/ref_man_processes.html).
 Worker termination and external OS-process reaping are distinct observations;
 tests must check both rather than inferring OS cleanup from a result label.
-The inspected online GenServer documentation is for Elixir 1.20.4; the producer
-remains on its own Elixir 1.19.4 / OTP 28.5 pins. Generated checks run 300 real
+The producer and generated campaigns use the Elixir 1.20.4 / OTP 29.0.4 pins
+in `.tool-versions`. Generated checks run 300 real
 Maude schedules per seed with seeds 20261005, 27182818 and 31415926. A shrinker
 retains the original and minimal failing request schedule in the test log.
 
