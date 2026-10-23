@@ -96,13 +96,12 @@ fn find_prompt_boundary(haystack: &[u8], start: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::find_prompt_boundary;
+    use super::*;
+    use crossbeam_channel::bounded;
+    use std::time::Duration;
 
     #[test]
     fn response_reader_scans_fragmented_output_in_linear_work() {
-        use super::*;
-        use crossbeam_channel::bounded;
-        use std::time::Duration;
         let (tx, rx) = bounded(64);
         let size = 128 * 1024;
         for _ in 0..32 {
@@ -123,6 +122,88 @@ mod tests {
         .unwrap();
         assert_eq!(output, "x".repeat(size));
         SCANNED_WINDOWS.with(|count| assert!(count.get() < size * 2));
+    }
+
+    #[test]
+    fn preserves_a_coalesced_next_response() {
+        let (tx, rx) = bounded(1);
+        tx.send(ReaderMsg::Data(b"one\nMaude> two\nMaude> ".to_vec()))
+            .unwrap();
+        drop(tx);
+        let pending = Mutex::new(Vec::new());
+        for expected in ["one", "two"] {
+            let actual = read_until_deadline(
+                &rx,
+                &pending,
+                1000,
+                32,
+                Instant::now() + Duration::from_secs(1),
+            );
+            assert_eq!(actual, Ok(expected.to_string()));
+        }
+        assert!(pending.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn enforces_the_byte_limit_for_multibyte_text() {
+        let bytes = "é\nMaude> ".as_bytes().to_vec();
+        assert_eq!(
+            read(vec![ReaderMsg::Data(bytes.clone())], 3),
+            Ok("é".into())
+        );
+        assert_eq!(
+            read(vec![ReaderMsg::Data(bytes)], 2),
+            Err(ReadError::ResponseTooLarge(2))
+        );
+    }
+
+    #[test]
+    fn refuses_invalid_utf8_before_returning_a_response() {
+        let error = read(vec![ReaderMsg::Data(b"\xff\nMaude> ".to_vec())], 32).unwrap_err();
+        assert!(matches!(error, ReadError::Io(message) if message.contains("invalid UTF-8")));
+    }
+
+    #[test]
+    fn refuses_oversized_output_without_a_prompt() {
+        assert_eq!(
+            read(vec![ReaderMsg::Data(b"12345678901234567890".to_vec())], 4),
+            Err(ReadError::ResponseTooLarge(4))
+        );
+    }
+
+    #[test]
+    fn distinguishes_native_read_errors_and_end_of_stream() {
+        assert_eq!(read(vec![ReaderMsg::Eof], 32), Err(ReadError::Eof));
+        assert_eq!(read(vec![], 32), Err(ReadError::Eof));
+        assert_eq!(
+            read(vec![ReaderMsg::Io("broken pipe".into())], 32),
+            Err(ReadError::Io("broken pipe".into()))
+        );
+    }
+
+    #[test]
+    fn expires_a_partial_response_without_waiting_for_more_bytes() {
+        let (_tx, rx) = bounded(1);
+        let pending = Mutex::new(b"partial".to_vec());
+        assert_eq!(
+            read_until_deadline(&rx, &pending, 1000, 32, Instant::now()),
+            Err(ReadError::Timeout(1000))
+        );
+    }
+
+    fn read(messages: Vec<ReaderMsg>, limit: usize) -> Result<String, ReadError> {
+        let (tx, rx) = bounded(messages.len() + 1);
+        for message in messages {
+            tx.send(message).unwrap();
+        }
+        drop(tx);
+        read_until_deadline(
+            &rx,
+            &Mutex::new(Vec::new()),
+            1000,
+            limit,
+            Instant::now() + Duration::from_secs(1),
+        )
     }
 
     #[test]
