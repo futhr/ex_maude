@@ -105,6 +105,9 @@ Open an issue for questions or discussions.
 The complete `mix check --no-retry` gate includes Rust tests and RustSec advisory
 checks. Without `--no-retry`, ex_check may run only the tools that failed on the
 previous invocation.
+The C-Node gate is selected from the source directory before compilation, so a
+clean checkout still runs it after building the bridge. Every Elixir/OTP matrix
+pair also runs the Port integration suite with the checked-in Maude executable.
 Install the audit tool with `cargo install cargo-audit --locked --version 0.22.2`.
 Release artifacts and native CI use Rust 1.91.1 with the committed Cargo lockfile.
 

@@ -51,6 +51,6 @@ sobelow_command = "mix run tools/check_sobelow.exs"
     {:search_version, command: "mix run tools/check_search_version.exs"},
     {:ex_unit, command: "mix test --cover"},
     {:test_nif, command: "mix test.nif"},
-    {:test_cnode, command: "mix test.cnode", enabled: File.exists?("priv/maude_bridge")}
+    {:test_cnode, command: "mix test.cnode", enabled: File.dir?("c_src")}
   ]
 ]

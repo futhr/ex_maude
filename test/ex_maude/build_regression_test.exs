@@ -4,6 +4,26 @@ defmodule ExMaude.BuildRegressionTest do
   @moduletag :tmp_dir
   @project_file Path.expand("../../mix.exs", __DIR__)
   @makefile Path.expand("../../c_src/Makefile", __DIR__)
+  @check_file Path.expand("../../.check.exs", __DIR__)
+
+  test "a clean checkout retains the C-Node gate before the bridge is built", %{tmp_dir: dir} do
+    File.mkdir!(Path.join(dir, "c_src"))
+
+    script =
+      "{config, _} = Code.eval_file(System.fetch_env!(\"CHECK_CONFIG\")); " <>
+        "tools = Keyword.fetch!(config, :tools); " <>
+        "IO.inspect(tools |> Keyword.fetch!(:test_cnode) |> Keyword.fetch!(:enabled))"
+
+    {output, status} =
+      System.cmd(System.find_executable("elixir"), ["-e", script],
+        cd: dir,
+        stderr_to_stdout: true,
+        env: [{"CHECK_CONFIG", @check_file}]
+      )
+
+    assert status == 0, output
+    assert String.trim(output) == "true"
+  end
 
   test "a clean checkout can disable C or skip a missing compiler", %{tmp_dir: dir} do
     File.mkdir!(Path.join(dir, "c_src"))
