@@ -1,6 +1,6 @@
 /_build/
-/AGENTS.md
-/.agents/
+/.agents/*
+!/.agents/skills/
 /.claude/
 /.codex/
 /bench/output/
