@@ -1,33 +1,69 @@
 ---
 name: security-review
-description: "Assess requested security reviews or audits and changed Maude command construction, subprocess/NIF execution, parser limits or installer downloads. Trace caller input, process authority, deadlines and artifact integrity; exclude unrelated mathematical-model review."
+description: "Assess requested security audits and changed structured-rule encoding, Maude execution, native protocols, parser limits, installation or release provenance. Trace input authority, process ownership and artifact identity; exclude unrelated mathematical-model review."
 ---
 
 # Security review
 
 Read [the repository instructions](../../../AGENTS.md), CONTRIBUTING and the
-owning verification or installer contract. Separate trusted operator-authored
-Maude programs from lower-trust expressions, files, executable selectors and
-download metadata. A mathematical result does not establish host containment.
+implemented entry point's contract. Distinguish implemented guarantees from
+target requirements in verification specifications.
 
-Trace input through validation/encoding, executable and argv selection,
-[subprocess ownership](../../../lib/ex_maude/subprocess.ex), output parsing and
-[verification receipts](../../../lib/ex_maude/verification/search_run.ex).
-Check exact command/echo identity, framing, byte/depth/work bounds, one enclosing
-deadline, owner cancellation and process retirement. Do not infer operating
-system isolation from a BEAM timeout or a result tagged verified.
+Establish input authority before tracing it. General term, raw-command and
+module/file-loading APIs accept Maude code; executable and pool selection belong
+to the host. Do not classify intentional code or executable authority as
+injection without an additional privilege crossing. For structured
+[AI](../../../lib/ex_maude/ai.ex) and [IoT](../../../lib/ex_maude/iot.ex) inputs,
+follow the public facade through its validator, encoder, command and result
+parser. Check alternate representations, string escaping, nesting and enum
+validation at the actual consumer. Modeled tenants, capabilities, approvals and
+jurisdictions do not implement host authorization or real tool/device actions.
 
-Review [the native boundary](../../../native/ex_maude_nif/src/lib.rs) separately
-from the external process. Check which failures can affect the BEAM and which
-claims require an isolated native fixture. Inspect
+Trace command construction through the selected backend, executable/argv,
+transport framing, output parsing and worker reuse. Review
+[Port](../../../lib/ex_maude/backend/port.ex),
+[C-node](../../../lib/ex_maude/backend/cnode.ex) and
+[NIF](../../../lib/ex_maude/backend/nif.ex) separately:
+the [C bridge](../../../c_src/maude_bridge.c) is external, while
+[Rust NIF code](../../../native/ex_maude_nif/src/lib.rs) runs inside the BEAM.
+Inspect native decoder contracts, byte/allocation bounds, serialization,
+request/response identity and cookie handling. Establish the authority of an
+Erlang distribution peer rather than assuming an unauthenticated network input.
+A backend response ceiling does not bound direct calls to public parsers.
+
+Review [SearchRun](../../../lib/ex_maude/verification/search_run.ex) and
+[IoT receipts](../../../lib/ex_maude/iot/receipt_run.ex) against their separate
+profiles. Trace exact query/echo, model/checker/import identity, completion
+classification and witness bounds. Apply the owning API's per-command timeout
+or enclosing-deadline contract; SearchRun's explicit `:deadline_ms` is optional.
+A timeout, malformed result, cancellation or truncated witness must not become
+completed no-finding evidence. Unsigned attribution and bounded completion are
+not executable authentication, positive safety proofs or OS containment.
+
+Follow pool-specific [preloads](../../../lib/ex_maude/preloads.ex), private
+snapshots and [subprocess ownership](../../../lib/ex_maude/subprocess.ex)
+through startup, caller loss, cancellation, replacement and retirement. Do not
+transfer one backend's ownership guarantee to another or infer descendant
+cleanup, memory limits or hard return latency from direct-child termination.
+Check telemetry and error payloads for command, rule, credential or private-state
+disclosure, including opt-in behavior.
+
+Inspect [binary resolution](../../../lib/ex_maude/binary.ex),
 [installation](../../../lib/mix/tasks/maude.install.ex) and download handling for
-trusted origins, artifact identity, archive/path safety and executable authority.
-An audit does not authorize installation or fetching toolchains.
+effective executable selection, origins, credential recipients, expected digest,
+archive/path bounds and destination authority. A digest from the release API
+shares that upstream trust; it is not an independent signature.
+For distribution changes, trace the [native release](../../../.github/workflows/release.yml)
+and [Hex publisher](../../../.github/workflows/publish.yml) through repository,
+run, tag, commit, version, checksums, package bytes and credential scope.
+Review tracked source, examples and configuration for embedded access-granting
+secrets without using them. An audit does not authorize installing interpreters,
+fetching toolchains, publication or credential use.
 
-Use the existing subprocess, parser, installer and verification regressions for
-the selected public path. Distinguish a fake Maude process, native library proof
-and actual solver execution. A missing solver or native harness leaves that
-proof unverified while source tracing continues.
+Use existing validation commands from CONTRIBUTING and the selected public
+path's regressions. Distinguish source inspection, a fake Maude process,
+executed native tests and actual solver evidence. A missing solver or isolated
+native harness leaves that proof unverified while source tracing continues.
 
 ## Scope, evidence and execution
 
